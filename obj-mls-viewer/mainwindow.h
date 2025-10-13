@@ -1,18 +1,20 @@
 ﻿#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QMainWindow>
+#include <QWidget>
 #include <QDir>
 #include <QFileInfoList>
 #include <QGridLayout>
+#include <QMap>
 
 class QLineEdit;
 class QPushButton;
 class QScrollArea;
 class QWidget;
+class QToolBox;
 
 
-class MainWindow : public QMainWindow
+class MainWindow : public QWidget
 {
     Q_OBJECT
 
@@ -20,9 +22,12 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-private slots:
-    void on_scanBtn_clicked();
-    void on_browseBtn_clicked();
+    void initializeToolBox();
+
+    // 添加工具箱页面
+    void addToolBoxPage(const QString &category, const QStringList &files);
+
+    void setData(const QMap<QString, QStringList> &data);
 
 private:
 
@@ -33,13 +38,10 @@ private:
     QScrollArea *scrollArea;
     QWidget *filesWidget;
     
-    // 扫描目录中的OBJ和对应的MLS文件
-    QFileInfoList scanObjFiles(const QString &directory);
-    
-    // 清除现有布局中的所有控件
-    void clearLayout(QLayout *layout);
-    
-    // 创建文件显示控件并添加到布局
-    void addFileWidgets(const QFileInfoList &objFiles);
+
+private:
+    QToolBox *toolBox;
+    QMap<QString, QStringList>  dataStructure;
+
 };
 #endif // MAINWINDOW_H

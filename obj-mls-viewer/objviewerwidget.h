@@ -33,9 +33,6 @@ public:
     // 加载OBJ文件
     bool loadObjFile(const QString &filePath);
 
-    // 加载MLS文件 (kept but does not affect UI)
-    bool loadMlsFile(const QString &filePath);
-
 private slots:
     void onFrame();
 

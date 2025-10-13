@@ -20,7 +20,7 @@
 
 
 // 用于处理MLS文件的假设实现
-#include "mlsreader.h"
+#include "imagepreviewwidget.h"
 
 // Helper to create GraphicsWindowQt (conventional setup)
 static osg::ref_ptr<osgQt::GraphicsWindowQt> createGraphicsWindow(int x, int y, int w, int h)
@@ -170,15 +170,4 @@ bool ObjViewerWidget::loadObjFile(const QString &filePath)
     return true;
 }
 
-bool ObjViewerWidget::loadMlsFile(const QString &filePath)
-{
-    if (filePath.isEmpty()) return false;
-    MlsReader reader;
-    if (!reader.read(filePath)) {
-        qWarning() << "无法读取MLS文件:" << filePath;
-        return false;
-    }
 
-    // 示例：仅更改状态指示，真实实现应解析MLS并应用到场景
-    return true;
-}
