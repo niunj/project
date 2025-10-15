@@ -62,16 +62,12 @@ void MainWindow::addToolBoxPage(const QString &category, const QStringList &file
 
    // 添加文件到布局
    for (const QString &fileName : files) {
+       // 使用QFileInfo解析文件路径
+       QFileInfo fileInfo(fileName);
 
 
-
-
-           // 使用QFileInfo解析文件路径
-        QFileInfo fileInfo(fileName);
-
-
-        // 构造新的文件名（替换后缀为.jpg）
-        QString jpgFileName = fileInfo.baseName() + ".jpg";
+       // 构造新的文件名（替换后缀为.jpg）
+       QString jpgFileName = fileInfo.baseName() + ".jpg";
 
         // 组合完整路径
        QString imageFilename = fileInfo.path() + "/" + jpgFileName;
