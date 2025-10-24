@@ -1,0 +1,46 @@
+// 基本属性值（存放 int/float 等基础类型）
+class QPropertyValue {
+public:
+    QString name;         // 属性名称（如 "width"）
+    QString unit;         // 单位（如 "mm"）
+    double minValue;      // 最小值（统一用 double 兼容数值类型）
+    double maxValue;      // 最大值
+    int precision;        // 精度（如小数位数，对字符串无效）
+    QVariant value;       // 存储实际值（QVariant 支持 int/float/ QString 等）
+    QMetaType::Type type; // 类型标记（如 QMetaType::Int、QMetaType::QString）
+};
+
+// 属性对象（递归结构：包含属性值列表 + 子属性对象列表）
+class QPropertyObject {
+public:
+    QString name;                      // 对象名称（如 "Size"、"Person"）
+    QList<QPropertyValue> properties;  // 基本类型属性列表
+    QList<QPropertyObject> children;   // 子属性对象列表（用于结构体/嵌套对象）
+};
+
+class QPropertyList {
+public:
+    QString name;                      // 列表名称（如 "scores"、"students"）
+    QMetaType::Type elementType;       // 元素类型（如 QMetaType::Int、QMetaType::UserType）
+    // 若元素是结构体（自定义类型），则用 QPropertyObject 描述元素结构
+    QPropertyObject elementStruct;     // 仅当 elementType 是自定义结构体时有效
+    QList<QVariant> elements;          // 存储列表元素（基础类型直接存，结构体存 QPropertyObject*）
+};
+
+class QPropertyMap {
+public:
+    QString name;                      // 映射名称（如 "idToScore"）
+    QMetaType::Type keyType;           // 键类型（如 QMetaType::QString、QMetaType::Int）
+    QMetaType::Type valueType;         // 值类型（如 QMetaType::Int、QMetaType::UserType）
+    QPropertyObject valueStruct;       // 若值是结构体，存放其属性结构
+    QMap<QVariant, QVariant> entries;  // 存储键值对（键存基础类型，值存基础类型或 QPropertyObject*）
+};
+
+class QPropertyObject {
+public:
+    QString name;
+    QList<QPropertyValue> properties;       // 基础类型属性
+    QList<QPropertyObject> children;        // 子结构体（嵌套对象）
+    QList<QPropertyList> lists;             // 列表类型属性
+    QList<QPropertyMap> maps;               // 映射类型属性
+};
