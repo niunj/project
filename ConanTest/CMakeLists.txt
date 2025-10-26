@@ -11,14 +11,12 @@ if(EXISTS ${CMAKE_BINARY_DIR}/conan_toolchain.cmake)
 endif()
 
 # 寻找Conan提供的依赖
-find_package(glfw3 REQUIRED)
-find_package(OpenGL REQUIRED)
+find_package(OpenSceneGraph REQUIRED)
 
 # 创建可执行文件
 add_executable(${PROJECT_NAME} "src/main.cpp")
 
 # 链接依赖
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    glfw
-    OpenGL::GL
+    openscenegraph::openscenegraph
 )

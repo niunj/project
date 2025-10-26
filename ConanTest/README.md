@@ -1,6 +1,6 @@
 # ConanTest 项目
 
-这是一个使用 Conan 包管理器和 CMake 构建系统的简单 C++ 项目示例，使用 GLFW 和 OpenGL 创建基本图形应用。
+这是一个使用 Conan 包管理器和 CMake 构建系统的简单 C++ 项目示例，使用 OpenSceneGraph 创建 3D 可视化应用程序。
 
 ## 项目结构
 
@@ -15,8 +15,7 @@ ConanTest/
 
 ## 依赖项
 
-- glfw/3.4 - 跨平台窗口和 OpenGL 上下文创建库
-- opengl/system - OpenGL 图形 API 支持
+- openscenegraph/3.6.5 - 开源 3D 图形工具包
 
 ## 构建步骤
 
@@ -53,3 +52,4 @@ ConanTest/
 - 支持使用鼠标进行视角操作（通过 TrackballManipulator）
 - 窗口大小为 800x600，位置在屏幕左上角 (100, 100)
 - 支持 Debug 构建模式
+- 切换回使用 OpenSceneGraph 作为主要图形库
