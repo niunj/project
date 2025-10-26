@@ -1,0 +1,40 @@
+# 构建目录
+build/
+
+# Conan缓存和生成文件
+conan.lock
+conanbuildinfo.cmake
+conanbuildinfo.txt
+conan_toolchain.cmake
+CMakeUserPresets.json
+CMakePresets.json
+
+# CMake生成的文件
+CMakeFiles/
+CMakeCache.txt
+Makefile
+*.cmake
+
+# 编译输出
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.so
+*.dylib
+
+# IDE和编辑器文件
+.vs/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
