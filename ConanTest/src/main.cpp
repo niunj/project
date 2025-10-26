@@ -9,7 +9,7 @@ int main() {
     // 创建一个简单的查看器
     osgViewer::Viewer viewer;
     
-    // 设置一个基本的场景（这里不使用复杂的几何体）创建一个基本窗口。
+    // 设置一个基本的场景（这里不使用复杂的几何体）
     viewer.setSceneData(nullptr);
     
     std::cout << "Viewer initialized successfully" << std::endl;
