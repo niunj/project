@@ -1,0 +1,9 @@
+[requires]
+vsg/1.0.9
+
+[options]
+vsg:shared=True
+
+[generators]
+CMakeDeps
+CMakeToolchain
