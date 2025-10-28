@@ -1,6 +1,6 @@
 # OpenSceneGraph项目模板
 
-这个项目模板包含了使用CMake、Conan和Visual Studio 2022构建OpenSceneGraph应用程序所需的基础配置。您可以直接拷贝这个文件夹到其他目录，快速搭建一个新的OpenSceneGraph项目。
+这个项目模板包含了使用CMake、Conan和Visual Studio 2022构建Vulkan应用程序所需的基础配置。您可以直接拷贝这个文件夹到其他目录，快速搭建一个新的Vulkan项目。
 
 ## 目录结构
 
@@ -64,4 +64,4 @@ project_template/
 
 要添加其他源文件，请将它们放在`src`目录中，CMake会自动查找并包含这些文件。
 
-要添加其他OpenSceneGraph模块或第三方库，请在`conanfile.txt`中添加相应的依赖，并在`CMakeLists.txt`中配置链接。
+`conanfile.txt`中添加相应的依赖，并在`CMakeLists.txt`中配置链接。
