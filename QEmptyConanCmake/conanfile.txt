@@ -1,0 +1,12 @@
+[requires]
+vsg/1.0.9
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[layout]
+cmake_layout
+
+[options]
+# 可以根据需要添加选项
