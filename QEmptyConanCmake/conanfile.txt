@@ -1,12 +1,10 @@
 [requires]
-vsg/1.0.9
+gdal/3.7.3
 
 [generators]
-CMakeDeps
-CMakeToolchain
-
+cmake_find_package
+cmake_paths
 [layout]
 cmake_layout
-
 [options]
-# 可以根据需要添加选项
+# Options for dependencies can be specified here
