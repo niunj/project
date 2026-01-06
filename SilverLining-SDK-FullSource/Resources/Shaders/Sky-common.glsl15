@@ -1,0 +1,40 @@
+//Sky-common.glsl15
+#define SKY_SHADER
+
+#ifdef USE_UBO
+#define UNIFORM_DECL_PREFIX
+#else
+#define UNIFORM_DECL_PREFIX uniform
+#endif
+
+#if defined(USE_UBO)
+layout(std140) uniform sl_ShaderParameters_UBO {
+#endif
+    // These are used in vertex shader
+    UNIFORM_DECL_PREFIX mat4 sl_modelView;
+    UNIFORM_DECL_PREFIX mat4 sl_modelViewProj;
+    UNIFORM_DECL_PREFIX mat4 sl_XYZtoRGB;
+    UNIFORM_DECL_PREFIX vec4 sl_xPerezABC;
+    UNIFORM_DECL_PREFIX vec4 sl_xPerezDE;
+    UNIFORM_DECL_PREFIX vec4 sl_yPerezABC;
+    UNIFORM_DECL_PREFIX vec4 sl_yPerezDE;
+    UNIFORM_DECL_PREFIX vec4 sl_YPerezABC;
+    UNIFORM_DECL_PREFIX vec4 sl_YPerezDE;
+    UNIFORM_DECL_PREFIX vec4 sl_sunPerez;
+    UNIFORM_DECL_PREFIX vec4 sl_zenithPerez;
+    UNIFORM_DECL_PREFIX vec4 sl_sunPos;
+    UNIFORM_DECL_PREFIX vec4 sl_luminanceScales;
+    UNIFORM_DECL_PREFIX vec4 sl_kAndLdmax;
+    UNIFORM_DECL_PREFIX vec4 sl_overcast;
+    UNIFORM_DECL_PREFIX vec4 sl_fog;
+
+#if SLVULKAN
+    UNIFORM_DECL_PREFIX vec4 sl_forceDepth;
+#endif
+
+    // These are used in fragment shader
+    UNIFORM_DECL_PREFIX vec4 sl_outputScale;
+
+#if defined(USE_UBO)
+};
+#endif

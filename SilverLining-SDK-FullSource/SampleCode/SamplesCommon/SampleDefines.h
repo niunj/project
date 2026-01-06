@@ -1,0 +1,31 @@
+#pragma once
+
+
+#define SL_LEAK_CHECK_ENABLED 0
+
+#if SL_LEAK_CHECK_ENABLED
+#define VLD_FORCE_ENABLE
+#include <vld.h>
+#endif
+
+enum Action
+{
+      PITCH_UP = 0
+    , PITCH_DOWN
+    , YAW_LEFT
+    , YAW_RIGHT
+    , MOVE_FORWARD
+    , MOVE_BACK
+    , NEXT_CLOUD_LAYER
+    , ADVANCE_TIME
+    , UNADVANCE_TIME
+    , NEXT_PRECIPITATION_TYPE
+
+    , CONTROL_MAIN_VIEW
+    , CONTROL_LEFT_SMALL_VIEW
+    , CONTROL_RIGHT_SMALL_VIEW
+    , RESET_VIEWS
+    , DELETE_LAYER
+    , UNKNOWN
+};
+

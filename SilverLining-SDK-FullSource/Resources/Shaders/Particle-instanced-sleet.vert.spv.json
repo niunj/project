@@ -1,0 +1,164 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "vert"
+        }
+    ],
+    "types" : {
+        "_17" : {
+            "name" : "Particle",
+            "members" : [
+                {
+                    "name" : "sl_particlePosition",
+                    "type" : "vec3",
+                    "offset" : 0
+                },
+                {
+                    "name" : "sl_textureIndex",
+                    "type" : "int",
+                    "offset" : 12
+                },
+                {
+                    "name" : "sl_lightingColor",
+                    "type" : "vec4",
+                    "offset" : 16
+                }
+            ]
+        },
+        "_19" : {
+            "name" : "sl_particles_SSBO",
+            "members" : [
+                {
+                    "name" : "particles",
+                    "type" : "_17",
+                    "array" : [
+                        0
+                    ],
+                    "array_size_is_literal" : [
+                        true
+                    ],
+                    "offset" : 0,
+                    "array_stride" : 32
+                }
+            ]
+        },
+        "_40" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_proj",
+                    "type" : "mat4",
+                    "offset" : 0,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_cameraModelView",
+                    "type" : "mat4",
+                    "offset" : 64,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_rotateTranslate",
+                    "type" : "mat4",
+                    "offset" : 128,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_scale",
+                    "type" : "mat4",
+                    "offset" : 192,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_outputScale",
+                    "type" : "vec4",
+                    "offset" : 256
+                }
+            ]
+        },
+        "_77" : {
+            "name" : "gl_PerVertex",
+            "members" : [
+                {
+                    "name" : "gl_Position",
+                    "type" : "vec4"
+                },
+                {
+                    "name" : "gl_PointSize",
+                    "type" : "float"
+                },
+                {
+                    "name" : "gl_ClipDistance",
+                    "type" : "float",
+                    "array" : [
+                        1
+                    ],
+                    "array_size_is_literal" : [
+                        true
+                    ]
+                },
+                {
+                    "name" : "gl_CullDistance",
+                    "type" : "float",
+                    "array" : [
+                        1
+                    ],
+                    "array_size_is_literal" : [
+                        true
+                    ]
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertex",
+            "location" : 0
+        },
+        {
+            "type" : "vec4",
+            "name" : "texcoord",
+            "location" : 2
+        },
+        {
+            "type" : "vec4",
+            "name" : "color",
+            "location" : 1
+        }
+    ],
+    "outputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertColor",
+            "location" : 0
+        },
+        {
+            "type" : "int",
+            "name" : "textureIndex",
+            "location" : 2
+        },
+        {
+            "type" : "vec3",
+            "name" : "vertTexcoord",
+            "location" : 1
+        }
+    ],
+    "ssbos" : [
+        {
+            "type" : "_19",
+            "name" : "sl_particles_SSBO",
+            "block_size" : 0,
+            "set" : 2,
+            "binding" : 0
+        },
+        {
+            "type" : "_40",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 272,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

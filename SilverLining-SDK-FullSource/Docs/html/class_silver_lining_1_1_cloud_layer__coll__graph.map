@@ -1,0 +1,6 @@
+<map id="SilverLining::CloudLayer" name="SilverLining::CloudLayer">
+<area shape="rect" id="node1" title="A collection of clouds of uniform classification organized into a &quot;deck&quot; of similar altitudes." alt="" coords="27,185,206,212"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_mem_object.html" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="26,5,207,32"/>
+<area shape="rect" id="node3" href="$class_silver_lining_1_1_atmosphere.html" title="This class is the main interface to SilverLining." alt="" coords="24,81,209,108"/>
+<area shape="rect" id="node4" href="$class_silver_lining_1_1_vector3.html" title="A 3D double&#45;precision Vector class and its operations." alt="" coords="234,81,389,108"/>
+</map>

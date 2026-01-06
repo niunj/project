@@ -1,0 +1,48 @@
+#if OPENGL
+varying float eyeDepth;
+#else
+
+#if SLVULKAN
+layout(location = 0) in vec4 vertex;
+layout(location = 1) in vec4 color;
+layout(location = 2) in vec4 texcoord;
+
+layout(location = 0) out vec4 vertColor;
+layout(location = 1) out vec4 vertTexCoord;
+layout(location = 2) out float eyeDepth;
+#else
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+out vec3 vertTexCoord;
+
+out float eyeDepth;
+#endif
+
+#endif
+
+void overrideStratocumulusColor(inout vec4 finalColor);
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+#if OPENGL
+    vec4 color = gl_Color;
+    overrideStratocumulusColor(color);
+#endif
+
+    // The vertex is in eye coords
+#if OPENGL
+    gl_FrontColor = color;
+    gl_TexCoord[0] = gl_MultiTexCoord0;
+    eyeDepth = -gl_Vertex.z;
+    gl_Position = overridePosition(sl_projectionMatrix * gl_Vertex);
+#else
+    vertColor = color;
+    vertTexCoord = texcoord;
+    eyeDepth = -vertex.z;
+    gl_Position = overridePosition(sl_projectionMatrix * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+#endif
+}

@@ -1,0 +1,12 @@
+#version 150
+
+#define LINE_SHADER
+
+uniform vec4 sl_colorConstant;
+
+void writeFragmentData(in vec4 finalColor);
+
+void main()
+{
+    writeFragmentData(sl_colorConstant);
+}

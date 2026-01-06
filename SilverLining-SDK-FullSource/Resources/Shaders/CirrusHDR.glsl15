@@ -1,0 +1,49 @@
+#if OPENGL
+#else
+#if SLVULKAN
+layout(location = 0) in vec4 vertex;
+layout(location = 1) in vec4 color;
+layout(location = 2) in vec4 texcoord;
+
+layout(location = 0) out vec4 vertColor;
+layout(location = 1) out vec4 vertTexcoord;
+#else
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+out vec3 vertTexcoord;
+#endif
+#endif
+
+void overrideCirrusLighting(in vec3 lightColor, in vec3 fogColor, in float fogBlend, in float alpha, inout vec4 finalColor);
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+#if OPENGL
+    vec3 eyePosition = (sl_modelView * vec4(gl_Vertex.x, gl_Vertex.y, gl_Vertex.z, 1.0)).xyz;
+#else
+    vec3 eyePosition = (sl_modelView * vec4(vertex.x, vertex.y, vertex.z, 1.0)).xyz;
+#endif
+    float fogDistance = length(eyePosition);
+    float fogExponent = fogDistance * sl_fogColorAndDensity.w;
+    float fogFactor = clamp(exp(-abs(fogExponent)), 0.0, 1.0);
+
+    vec4 finalColor;
+    finalColor.xyz = mix(sl_fogColorAndDensity.xyz, sl_lightingColor.xyz, fogFactor);
+    finalColor.w = fogFactor * sl_lightingColor.w;
+
+    overrideCirrusLighting(sl_lightingColor.xyz, sl_fogColorAndDensity.xyz, fogFactor, sl_lightingColor.w, finalColor);
+
+#if OPENGL
+    gl_FrontColor = finalColor * gl_Color;
+    gl_Position = overridePosition(sl_modelViewProj * vec4(gl_Vertex.x, gl_Vertex.y, gl_Vertex.z, 1.0));
+    gl_TexCoord[0] = gl_MultiTexCoord0;
+#else
+    vertColor = finalColor * color;
+    gl_Position = overridePosition(sl_modelViewProj * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+    vertTexcoord = texcoord;
+#endif
+}

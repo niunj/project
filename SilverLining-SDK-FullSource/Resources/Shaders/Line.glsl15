@@ -1,0 +1,13 @@
+#version 150
+
+#define LINE_SHADER
+
+in vec4 vertex;
+uniform mat4 sl_modelViewProj;
+
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+    gl_Position = overridePosition(sl_modelViewProj * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+}

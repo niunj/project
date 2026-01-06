@@ -1,0 +1,49 @@
+#version 150
+
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+
+uniform mat4 sl_modelViewProj;
+uniform vec4 sl_sunPosition;
+//uniform mat4 sl_world;
+uniform vec4 sl_fadeDistVec;
+uniform mat4 sl_billboard;
+
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+    //vec4 posWorld = vec4( vertex, 1.0) * sl_world;
+    //vec3 nPos = normalize(posWorld.xyz / posWorld.w);
+    //float dp = dot(nPos, sl_sunPosition.xyz);
+
+    float r = sl_fadeDistVec.z + texcoord.y;
+
+    vec4 vtx = vec4( vertex.xy * r, vertex.z, 1.0 );
+
+    gl_Position = overridePosition(sl_modelViewProj * vtx);
+
+    vec3 nPos = normalize(sl_billboard * vtx).xyz;
+    float dp = dot(nPos, sl_sunPosition.xyz);
+
+    float d = texcoord.z;
+
+    vec4 density = vec4(d, d, d, 1.0);
+
+    float fade = sl_fadeDistVec.y;
+
+    if (dp <= 0.0) {
+        fade = -dp / sl_fadeDistVec.x;
+
+        fade = clamp(1.0 - fade, 0.0, 1.0);
+    }
+
+    vec4 fadeColor = vec4(fade, fade, fade, 1.0);
+
+    vec4 baseColor = vec4(0.5, 0.5, 1.0, 1.0);
+
+    vertColor = baseColor * density * fadeColor;
+}

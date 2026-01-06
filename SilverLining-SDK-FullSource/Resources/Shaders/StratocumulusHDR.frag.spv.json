@@ -1,0 +1,163 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "frag"
+        }
+    ],
+    "types" : {
+        "_190" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_projectionMatrix",
+                    "type" : "mat4",
+                    "offset" : 0,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_lightColor",
+                    "type" : "vec4",
+                    "offset" : 64
+                },
+                {
+                    "name" : "sl_lightObjectDirAndConstTerm",
+                    "type" : "vec4",
+                    "offset" : 80
+                },
+                {
+                    "name" : "sl_lightTexCoords",
+                    "type" : "vec4",
+                    "offset" : 96
+                },
+                {
+                    "name" : "sl_viewSampleDimensions",
+                    "type" : "vec4",
+                    "offset" : 112
+                },
+                {
+                    "name" : "sl_lightSampleDimensions",
+                    "type" : "vec4",
+                    "offset" : 128
+                },
+                {
+                    "name" : "sl_voxelDimensions",
+                    "type" : "vec4",
+                    "offset" : 144
+                },
+                {
+                    "name" : "sl_lightWorldDirAndExtinction",
+                    "type" : "vec4",
+                    "offset" : 160
+                },
+                {
+                    "name" : "sl_cameraTexCoords",
+                    "type" : "vec4",
+                    "offset" : 176
+                },
+                {
+                    "name" : "sl_skyLightColor",
+                    "type" : "vec4",
+                    "offset" : 192
+                },
+                {
+                    "name" : "sl_originTexCoords",
+                    "type" : "vec4",
+                    "offset" : 208
+                },
+                {
+                    "name" : "sl_fadeFlag",
+                    "type" : "vec4",
+                    "offset" : 224
+                },
+                {
+                    "name" : "sl_fogColorAndDensity",
+                    "type" : "vec4",
+                    "offset" : 240
+                },
+                {
+                    "name" : "sl_multipleScatteringTerm",
+                    "type" : "vec4",
+                    "offset" : 256
+                },
+                {
+                    "name" : "sl_noiseOffset",
+                    "type" : "vec4",
+                    "offset" : 272
+                },
+                {
+                    "name" : "sl_extinctionCoefficient",
+                    "type" : "vec4",
+                    "offset" : 288
+                },
+                {
+                    "name" : "sl_jitter",
+                    "type" : "vec4",
+                    "offset" : 304
+                },
+                {
+                    "name" : "sl_unitScale",
+                    "type" : "vec4",
+                    "offset" : 320
+                },
+                {
+                    "name" : "sl_outputScale",
+                    "type" : "vec4",
+                    "offset" : 336
+                },
+                {
+                    "name" : "sl_roundCenter",
+                    "type" : "vec4",
+                    "offset" : 352
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertTexCoord",
+            "location" : 1
+        },
+        {
+            "type" : "float",
+            "name" : "eyeDepth",
+            "location" : 2
+        },
+        {
+            "type" : "vec4",
+            "name" : "vertColor",
+            "location" : 0
+        }
+    ],
+    "outputs" : [
+        {
+            "type" : "vec4",
+            "name" : "outFragColor",
+            "location" : 0
+        }
+    ],
+    "textures" : [
+        {
+            "type" : "sampler3D",
+            "name" : "sl_tex3D2",
+            "set" : 1,
+            "binding" : 1
+        },
+        {
+            "type" : "sampler3D",
+            "name" : "sl_tex3D",
+            "set" : 1,
+            "binding" : 0
+        }
+    ],
+    "ssbos" : [
+        {
+            "type" : "_190",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 368,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

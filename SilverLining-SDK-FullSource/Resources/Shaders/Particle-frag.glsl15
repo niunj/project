@@ -1,0 +1,21 @@
+#version 150
+
+#define PARTICLE_SHADER
+
+uniform vec4 sl_outputScale;
+uniform sampler2D sl_tex2D;
+
+in vec4 vertColor;
+in vec3 vertTexcoord;
+
+void overrideParticleColor(in vec4 textureColor, in vec4 lightColor, inout vec4 particleColor);
+void writeFragmentData(in vec4 finalColor);
+
+void main()
+{
+    vec4 texel = texture(sl_tex2D, vertTexcoord.st);
+    vec4 particleColor = texel * vertColor;
+    overrideParticleColor(texel, vertColor, particleColor);
+    particleColor.xyz *= sl_outputScale.xyz;
+    writeFragmentData(particleColor);
+}

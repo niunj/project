@@ -1,0 +1,20 @@
+#ifdef USE_UBO
+#define UNIFORM_DECL_PREFIX
+#else
+#define UNIFORM_DECL_PREFIX uniform
+#endif
+
+#if defined(USE_UBO)
+layout(std140) uniform sl_ShaderParameters_UBO {
+#endif
+    // These are used in vertex shader
+    UNIFORM_DECL_PREFIX mat4 sl_modelView;
+    UNIFORM_DECL_PREFIX mat4 sl_modelViewProj;
+    UNIFORM_DECL_PREFIX vec4 sl_lightingColor;
+
+    // These are used in fragment shader
+    UNIFORM_DECL_PREFIX vec4 sl_outputScale;
+
+#if defined(USE_UBO)
+};
+#endif

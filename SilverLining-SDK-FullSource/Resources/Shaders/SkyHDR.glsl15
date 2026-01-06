@@ -1,0 +1,170 @@
+#if OPENGL
+
+#elif SLVULKAN
+layout(location = 0) in vec4 vertex;
+layout(location = 1) in vec4 color;
+layout(location = 2) in vec4 texcoord;
+
+layout(location = 0) out vec4 vertColor;
+#else
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+#endif
+
+void overrideSkyColor(in vec3 vertexPos, in float fogDensity, in vec4 preFogColor, inout vec4 finalColor);
+vec4 overridePosition(in vec4 position);
+
+float Perez(vec4 ABC, vec4 DE, float costheta, float gamma, float cosGamma)
+{
+    float perez = (1.0 + ABC.x * exp(ABC.y / costheta)) *
+                  (1.0 + ABC.z * exp(DE.x * gamma) + DE.y * cosGamma * cosGamma);
+
+    return perez;
+}
+
+vec3 toneMap(vec3 xyY, float mC, float mR, float k, float Ldmax)
+{
+    // This is based on Durand's operator, which is based on Ferwerda
+    // which is based on Ward...
+
+    // Convert Kcd/m2 to cd/m2
+    float Y = xyY.z * 1000.0;
+
+    // deal with negative luminances (nonsensical)
+    // max() doesn't work here for some reason...
+    if (Y < 0.0) {
+        Y = 0.0;
+    }
+
+    vec3 XYZ;
+    float R;
+    // Convert xyY to XYZ
+    XYZ.x = xyY.x * (xyY.z / xyY.y);
+    XYZ.y = xyY.z;
+    XYZ.z = (1.0 - xyY.x - xyY.y) * (xyY.z / xyY.y);
+
+    const vec3 scotopic = vec3(-0.702, 1.039, 0.433);
+    R = dot(XYZ, scotopic);
+
+    // Apply perceptual blue-shift in scotopic conditions (Durand)
+    const vec3 blue = vec3(0.3, 0.3, 1.0);
+    xyY = mix(xyY, blue, k);
+
+    // Apply the photopic and scotopic scales that were precomputed in
+    // the app per Ferwerda and Durand's operator
+    float Ldp = Y * mC;
+    float Lds = R * mR;
+
+    Y = Ldp + k * Lds;
+    // Normalize to display range
+    Y = Y / Ldmax;
+
+    xyY.z = Y;
+
+    return xyY;
+}
+
+vec4 xyYtoRGB(vec3 xyY, mat4 XYZtoRGB)
+{
+    vec4 XYZ, RGB;
+
+    // Convert xyY to XYZ
+    XYZ.x = xyY.x * (xyY.z / xyY.y);
+    XYZ.y = xyY.z;
+    XYZ.z = (1.0 - xyY.x - xyY.y) * (xyY.z / xyY.y);
+    XYZ.w = 1.0;
+
+    // Convert XYZ to RGB
+    RGB = (XYZ * XYZtoRGB);
+
+    // Deal with negative values
+    float w = min(0.0, RGB.x);
+    w = min(w, RGB.y);
+    w = min(w, RGB.z);
+    RGB += -w;
+
+    RGB.w = 1.0;
+
+    return RGB;
+}
+
+void main()
+{
+#if OPENGL
+    gl_Position = overridePosition(sl_modelViewProj * gl_Vertex);
+#else
+    gl_Position = overridePosition(sl_modelViewProj * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+#endif
+
+#if SLVULKAN
+    if (sl_forceDepth.x > 0.0) {
+        gl_Position.z = sl_forceDepth.y; // infinite depth
+    }
+#endif
+
+    vec3 xyY;
+    vec3 xyYo = vec3(0.310, 0.316, 0.0);
+
+    // Find gamma angles
+
+#if OPENGL
+    vec3 normalPos = normalize(gl_Vertex).xyz;
+#else
+    vec3 normalPos = normalize(vertex).xyz;
+#endif
+    float cosGammaS = dot(sl_sunPos.xyz, normalPos);
+    float gammaS = acos(cosGammaS);
+
+    // cos(Theta) was stuffed in u coord
+
+#if OPENGL
+    float costheta = gl_MultiTexCoord0.x;
+#else
+    float costheta = texcoord.x;
+#endif
+
+    // Evaluate Perez functions
+    xyY.x = Perez(sl_xPerezABC, sl_xPerezDE, costheta, gammaS, cosGammaS);
+    xyY.y = Perez(sl_yPerezABC, sl_yPerezDE, costheta, gammaS, cosGammaS);
+    xyY.z = Perez(sl_YPerezABC, sl_YPerezDE, costheta, gammaS, cosGammaS);
+
+    // Normalize against zenith and sun
+    xyY = sl_zenithPerez.xyz * (xyY / sl_sunPerez.xyz);
+
+    float overcastBlend = sl_overcast.y;
+    float overcastFactor = (1.0 + 2.0 * costheta) / 3.0;
+    xyYo.z = sl_zenithPerez.z * overcastFactor;
+
+    xyY = mix(xyY, xyYo, overcastBlend);
+
+    vec4 skyColor = xyYtoRGB(xyY, sl_XYZtoRGB);
+
+    // Add fog
+    float f = 0.0;
+    float fogDensity = sl_fog.w;
+    vec4 finalColor;
+
+    if (fogDensity > 0.0) {
+        vec4 fogColor;
+        fogColor.xyz = sl_fog.xyz;
+        fogColor.w = 1.0;
+        float volumeDistance = sl_overcast.w;
+        float fogDistance = volumeDistance / costheta;
+        f = clamp( exp(-(fogDensity * fogDistance)), 0.0, 1.0);
+
+        finalColor = mix(fogColor, skyColor, f);
+    } else {
+        finalColor = skyColor;
+    }
+
+#if OPENGL
+    overrideSkyColor(gl_Vertex.xyz, f, skyColor, finalColor);
+    gl_FrontColor = finalColor;
+#else
+    overrideSkyColor(vertex.xyz, f, skyColor, finalColor);
+    vertColor = finalColor;
+#endif
+}

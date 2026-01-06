@@ -1,0 +1,2828 @@
+SilverLining (tm) Release Notes
+
+Version 7.08 September 12, 2024
+- Vulkan only: use host visible + host coherent memory for ssbo's and ubo's
+  instead of host visible + host coherent + device local
+
+Version 7.07 August 21, 2024
+- Added --shareAtmosphere option to the Vulkan example, illustrating sharing
+one Atmosphere instance and its resources across multiple windows
+
+Version 7.06 August 30, 2024
+- Fix issue where user shaders were not linked into the line shader in the OpenGL 3.2 renderer.
+- This fix also introduces a new variant of ThreadCameraStreamData::Initialize() that accepts
+a list of userShader objects that should be used if you have user shaders to link in and are
+instantiating your own ThreadCameraStreamData objects.
+
+Version 7.05 August 22, 2024
+- Further improvements / fixes to sharing textures across contexts in Vulkan
+- Add --shareAtmosphere parameter to Vulkan example for testing shared Atmospheres across views
+
+Version 7.04 August 16, 2024
+- Share all textures across contexts when textures-are-shared is "yes", not just
+the cloud textures.
+
+Version 7.03 August 9, 2024
+- Fix validation errors against Vulkan SDK 1.3.290.0
+- Enable bindless indirect rendering in OpenGL 3.2+ core non-compatibility profiles
+
+Version 7.02 August 6, 2024
+- Re-use samplers in the Vulkan renderer to make more efficient use of them
+
+Version 7.01 June 14, 2024
+- Changes to allow inclusion of GL extensions in user shaders with
+  OPENGL32CORE renderer
+
+Version 7.00 January 31, 2024
+- Official release of Vulkan support!
+- Rocky/VSG sample integration added (https://github.com/pelicanmapping/rocky)
+- Fix depth of sky under Vulkan to allow drawing the sky after terrain
+
+Version 6.42 January 24, 2024 (Windows only)
+- Fix handling of device loss in Direct3D 9
+
+Version 6.41 January 6, 2024
+- Add Atmosphere::SettingsChanged method (Vulkan only), allowing updated
+  VulkanInitInfo data to be associated with SilverLining at runtime. 
+  Only renderPass, sampleCount, colorFormat, and depthFormat may be changed
+  on the fly.
+- More sophisticated built-in memory management with Vulkan to reduce the number 
+  of memory blocks allocated on the GPU. You may still plug in your own memory 
+  manager as well.
+- Building SilverLining for Vulkan now requires C++17
+- RandomNumberGenerator::Seed() now takes an unsigned integer (this avoids compiler
+  issues with gcc's optimizer that could lead to infinite loops on startup)
+
+Version 6.40 January 3, 2024
+- Remove usage of VK_DYNAMIC_STATE_FRONT_FACE in Vulkan mode
+- Add VulkanSceneGraph and Diligent examples to Linux SDK
+
+Version 6.39 January 3, 2024
+- Increase size of shared vertex buffers for clouds under Vulkan in order
+  to limit the number of allocated objects on the GPU
+
+Version 6.38 January 2, 2024
+- Experimental beta Vulkan support! Refer to updated documentation, the new Vulkan samples,
+  and the Sundog Blog at https://sundog-soft.com/blog/
+- Atmosphere::SetOutputScale and Atmosphere::GetOutputScale now take a Vector3 instead
+  of a single floating point value.
+- Fix compatibility with Diligent Engine's OpenGL renderer
+- Added Diligent Engine, Vulkan, and VulkanSceneGraph samples
+- Fix calculation of projection matrix while rendering precipitation
+- Removed config settings for near and far NDC clip planes (they are no longer used)
+- Fix depth write and blend state leakage when drawing crepuscular rays
+- Fix render target leakage when drawing shadow maps
+- Add x64 targets in OpenGL multi-threaded sample
+
+Version 6.37 September 8, 2023
+- Fix bug where passing true for useDepthBuffer on CloudLayer::SetPrecipitation() would
+  still modify the projection matrix used to draw precipitation (making depth testing
+  impossible in this case)
+
+Version 6.36 August 3, 2023
+- Make CloudLayer::OverrideCloudColor take effect immediately when called at runtime
+- Add optional geocentric parameter in Atmosphere::DrawSky() and Atmosphere::DrawObjects()
+  in the C# interface
+
+Version 6.35 June 24, 2023
+- Fix compiler issues with RHEL (Linux)
+
+Version 6.34 June 12, 2023
+- Reverted to our older algorithm for positioning individual clouds in geocentric
+  databases; this should prevent banding of clouds in osgEarth. If you find this
+  creates new problems, please let us know at support@sundog-soft.com, and you
+  can set the previous behavior back by setting alternate-geocentric-adjustment = yes
+  in the Resources/SilverLining.config file.
+
+Version 6.33 April 27, 2023
+- Added optional distanceInside parameter to CloudLayer::IsInsideCloud(). This may
+  be used to modulate visibility effects in your scene based on how far into a cloud
+  the viewpoint is. This is only an estimate based on bounding boxes, for performance.
+
+Version 6.32 April 17, 2023
+- Added CIRROSTRATUS cloud type
+- Make index buffers context-specific
+- Make geocentric cloud altitudes thread-specific
+- Beginnings of internal work for Vulkan support
+
+Version 6.31 March 28, 2023
+- Fix bug in positioning cumulus clouds in non-infinite, geocentric, wrapping cloud 
+  layers
+
+Version 6.30 March 9, 2023
+- Update Windows target platform in vc14 projects to 10.0.22000.0
+
+Version 6.29 March 3, 2023
+- Automatically disable bindless indirect rendering of cumulus clouds when an OpenGL
+  core profile (non-compatibility) is in use
+- Update OpenGL 3.2 core sample app to actually use a core profile, when linked against
+  freeglut.
+
+Version 6.28 February 9, 2023
+- Fix stratus cloud lighting when cloud color override is in use
+
+Version 6.27 November 20, 2022
+- Add some null checks to prevent crashing when using the API before initializing
+- Fix bug in atmospheric limb shader for OpenGL 32 core renderer.
+
+Version 6.26 October 18, 2022
+- Fix access violation when initializing non-infinite stratus clouds
+
+Version 6.25 August 22, 2022
+- Added Atmosphere::GetBillboardShaderInstanced() for retrieving the shader handle
+  to instanced billboards. If you are passing uniforms to custom shaders,  you will
+  need this shader program for affecting the instanced cumulus cloud puffs, and in
+  addition you will need Atmosphere::GetBillboardShader() to retrieve the non-instanced
+  billboard shader used for the sun and moon.
+
+Version 6.24 August 3, 2022
+- Fix Atmosphere::GetBillboardShader() to return the instanced version of the shader
+  when instancing is in use.
+- Dropped support for Visual Studio 2010, 2012, and 2013. Visual Studio 2015 is now
+  the minimum version supported (the new Effects11 library forced our hand on this.)
+  A build of the previous version will be preserved if you need it; contact 
+  support@sundog-soft.com if you need a link.
+- Added Visual Studio 2022 support; look for "vc143" libraries, projects, and DLL's
+  if you select Visual Studio 2022 when installing the SDK. Visual Studio 2017 and
+  2109 users may continue to use the vc14 libraries, provided "global optimization"
+  is not used when building your app.
+- Updated Visual C++ runtime distributables for Visual Studio 2015-2022
+- Updated Effects11 library for DirectX to latest release
+- Fix stratus cloud layers to compute and store look up data only once.
+
+Version 6.23 June 9, 2022
+- Fix precipitation in OPENGL renderer
+
+Version 6.22 May 21, 2022
+- Improve performance of STRATOCUMULUS_PARTCILES in low visiblity conditions
+- Fix seams across channels when inside cumulus clouds
+- Fix particle shader compile error in OpenGL32 renderer
+
+Version 6.21 February 9, 2022
+- Fix bindless/indirect rendering in the OPENGL renderer (speeds it up a lot)
+
+Version 6.20 February 7, 2022
+- Read from rain-velocity-factor every frame instead of only at startup
+- Added snow-velocity-factor and sleet-velocity-factor settings.
+- Always clamp alpha values to 1.0 internally, even with HDR enabled.
+
+Version 6.19 January 20, 2022
+- Added lightning-length-extension config option
+- Recreate virga and lightning when SetBaseAltitude is called on a cumulonimbus layer
+- Fix NO_GLU define flag
+
+Version 6.18 January 18, 2022
+- Allow setting of different times & locations per view (using tcsData parameters)
+
+Version 6.17 January 6, 2022
+- Fix issue where OPENGL renderer was assuming UBO's were bound to location 0
+- Port dithering (anti-color-banding) to OPENGL32CORE renderer
+- Added a note into SilverLining.config documenting that cumulus-draw-bindless-indirect
+  will use UBO's no matter what you've set use-ubos to.
+
+Version 6.16 December 28, 2021
+- Added Atmosphere::ForceMoonPhaseAngle() to allow forcing both waning and waxing
+  moon phases if required.
+
+Version 6.15 December 13, 2021
+- Introduced dithering in OpenGL renderers to combat banding artifacts at dawn/dusk.
+  This is implemented within the Shaders/UserFunctions-frag.glsl file; it can be 
+  disabled via the #define DITHER at the top of the file. If you are using your own
+  UserFunctions-frag.glsl, you might want to consider integrating the new default
+  code in our writeFragmentData function to pick up this change.
+- Fix ability to change lightning discharge modes at runtime on cumulonimbus layers.
+
+Version 6.14 November 16, 2021
+- Properly restore camera matrices after rendering environment map faces
+
+version 6.013 October 19, 2021
+- Moved TimeZone enumeration into the SilverLining namespace
+- Fix up StaticOpenGLReleaseDLL target in vc14 project solution
+- Consistently use forward slashes for resource paths internally
+
+Version 6.012 October 14, 2021
+- Added shadow-fade config option to control whether cloud shadows have the
+  "fade toward edges" effect applied to them or not.
+
+Version 6.011 October 13, 2021
+- Add tcsData parameter to CloudLayer::SetDensityMultiplier / GetDensityMultiplier
+- Ensure cloud layer curve mode is applied across each view when using tcsData
+
+Version 6.010 October 12, 2021
+- Fix uninitialized member variables in Metaball class
+- Added tcsData parameter to Atmosphere::SetInfraRedMode
+
+Version 6.009 July 22, 2021
+- Include OpenGL32Example and OpenGLMultiThreadedSample in Linux distribution
+- Try not to leave our textures bound (the app is still responsible for resetting
+  any assumptions about the current state when using the OPENGL32CORE renderer
+  however)
+- Change default GLSL version in the user shaders from 150 to 450 in the
+  OPENGL32CORE renderer
+
+Version 6.008 July 6, 2021
+- Prevent crash when calling Atmosphere::Initialize() before MetaballTextureManager
+  has been created
+- Ensure buffers in OpenGL are unbound when we are done with them
+
+Version 6.007 June 19, 2021
+- Fix CMake files for OSG samples
+
+Version 6.006 June 11, 2021
+- (Linux-only release) Fix Makefile to avoid conflicts from object files with 
+  duplicate names, and to avoid unnecessary recompiling
+
+Version 6.005 June 5, 2021
+- Fix saving and restoring cloud layers that use a cloud atlas (towering cumulus,
+  cumulonimbus, and cumulus congestus hi-res.) You will need to re-save
+  layers to pick up this fix.
+
+Version 6.004 April 14, 2021
+- Fix synchronization of lightning strikes across multiple views
+
+Version 6.003 March 22, 2021
+- Fix broken shaders on systems that do not support OpenGL 4 (eg MacOS)
+- Updated documentation for ThreadCameraStreamData for restrictions with bindless
+  graphics and occlusion queries when using deferred rendering mode
+- Fixed several bugs with deferred rendering mode
+- ThreadCameraStreamData::DeInitialize() must now be called prior to deleting
+  an Atmosphere it is tied to
+
+Version 6.002 March 17, 2021
+- Fix potential crash when removing and recreating cloud layers
+- Check that cloud texture atlas files for CB and TCU layers are TGA files
+  prior to loading them
+- Fix fogging of stars in geocentric mode
+- Fix incorrect textures when certain cloud layer types were used together
+- Fix Atmosphere::ReloadCumulusTextures
+
+Version 6.001 March 14, 2021
+- Fix MacOS build errors
+- Prevent Atmosphere::Initialize from modifying the GL state
+- Fix fallback logic for systems that do not support OpenGL 4
+
+Version 6.000 March 13, 2021
+- Official release of new multi-threaded capabilities! See docs for the new
+  ThreadCameraStreamData class to learn how to use it, and the new multi-threaded
+  sample apps.
+- Fixed thread safety issues with Lens Flare
+- Single-batch / bindless rendering of cumulus clouds ported to OPENGL renderer. This
+  can render every cumulus layer in a single draw call, and double performance in some
+  cases!
+- Single-batch / bindless now enabled by default (see cumulus-draw-bindless-indirect)
+- Made lens flare effect more reliable. Note, this may come at a performance cost when
+  the sun is in view. If so, try disabling occlusion tests with lens-flare-disable-occlusion
+
+Version 5.108 March 9, 2021
+- Modified OSG multi-window example to use new multi-threaded API
+- Added null check within Atmosphere::IsInitialized()
+- Default tcsData now initialized within Atmosphere::PreInit(), which now requires
+  a rightHanded parameter as a result.
+- Fix thread safety issue within Atmosphere::GetShadowMap when moonShadows parameter
+  is false.
+
+Version 5.107 March 6, 2021
+- Fix bug that could leak state from SilverLining and potentially cause
+  a crash in some applications
+
+Version 5.106 February 25, 2021
+- Reduce memory usage
+- Ensure shaders are bound before setting uniforms (needed for fallback case
+  when UBO's and glProgramUniform are not available)
+- Fix thread safety issues with shadow maps and environment maps
+- Fix orientation of non-infinite geocentric cloud layers when multi-threaded
+- Added textures-are-shared config option to allow or prevent sharing of textures
+  across contexts
+- Fix thread safety issues with stratocumulus clouds
+
+Version 5.105 February 22, 2021
+- Fix thread safety issues in Atmosphere::IsInitialized()
+- Document that Atmosphere::Initialize() requires synchronization
+- Added stratus-fog-render-cutoff setting to prevent discontinuities at
+  stratus cloud bottom / scud boundary
+- Multi-threaded rendering capabilities ported to OPENGL renderer
+  (see docs for ThreadCameraStreamData class for details)
+
+Version 5.104 February 17, 2021
+- Fix thread safety issues in Renderer::PopAllState()
+- Refactoring for thread-safety in OPENGL renderer
+
+Version 5.103 February 16, 2021
+- Improve multi-view precipitation
+- Update OSG shadow sample to use new GetObjects() API
+- Performance improvements
+
+Version 5.102 February 9, 2021
+- Make ResourceLoader::SetRendererDLLDirPath more robust to use of trailing slashes and
+  forward / back slashes
+- Fix compile errors under gcc3
+- Performance improvements
+- Bug fixes in OPENGL renderer
+- Fixes for environment maps
+- Fixes for user shaders
+- Added AtmosphericConditions::HasCloudLayer()
+- Fixes for memory management when using new TCSData objects
+- Ability to render cumulus cloud layers in a single batch (OPENGL32CORE renderer only for now)
+  Enable the setting cumulus-draw-bindless-indirect to try it out!
+- Changed Atmosphere::GetObjects() to take in a SL_VECTOR destination parameter to allow
+  for thread safety
+
+Version 5.101 February 1, 2021
+- Added documentation for the ThreadCameraStream class and the OpenGLMultiThreadedSample
+  illustrating how to use SilverLining's new multi-threaded rendering capabilities for the
+  OPENGL32CORE renderer.
+- Further bug fixes related to multi-threaded rendering support
+
+Version 5.100 January 29, 2021
+- No longer assume stratocumulus layers are instantiated after the Renderer is initialized
+- Debug target of vc14 SilverLining project now creates Multi-threaded Debug target and not 
+  Multi-threaded Debug DLL
+- Debug and DebugDLL targets in vc14 now output into the production lib or resources directory 
+  and not into a separate Debug directory
+- Handles missing star-catalog-file config setting properly
+- Added ResourceLoader::SetRendererDLLDirPath and ResourceLoader::GetRendererDLLDirPath to allow
+  setting an explicit directory of your own for SilverLining's renderer DLL's on Windows.
+
+Version 5.099 January 28, 2021
+- Added stratocumulus-read-depth config setting
+- Make code compilable under C++17
+- Fix cumulonimbus lighting when changing time of day while lightning is firing
+- Fix bugs associated with lightning branch management
+
+Version 5.098 January 19, 2021
+- Continued internal refactoring for thread-safety
+
+Version 5.097 January 3, 2021
+- Continued internal refactoring for thread-safety
+
+Version 5.096 December 23, 2020
+- Continued internal refactoring for thread-safety
+- New star-catalog-file config setting to allow user-provided star data.
+
+Version 5.095 December 22, 2020
+- Fix IsInsideCloud API for all cloud layers
+- Update individual stratocumulus clouds properly
+- Continued internal refactoring for thread-safety
+- Removed some unnecessary internal locking
+- Fix bug with arrayed delete
+- Fix bug with sleet; unbind vertex/index buffer after rendering
+
+Version 5.094 December 4, 2020
+- Revert Index type back to int from short; needed for large stratus clouds.
+
+Version 5.093 December 2, 2020
+- Further cloud flicker fixes
+
+Version 5.092 December 2, 2020
+- Fix cloud flicker issue introduced in 5.090.
+
+Version 5.091 December 1, 2020
+- Fix changing layer position or base altitude of STRATOCUMULUS_PARTICLES cloud layers
+
+Version 5.090 November 29, 2020
+- Fix origin point of cumulus mediocris clouds
+- Halve the memory consumed by index buffers for cumulus clouds
+- Continued internal refactoring for thread-safety
+
+Version 5.089 November 21, 2020
+- UBO binding points are now read from the shader at runtime, instead of assuming it (OpenGL 3.2 renderer only)
+- Internal map of uniforms to UBO's will ignore non-SilverLining UBO's (OpenGL 3.2 renderer only)
+- Optimized MetaballTextureManager::GetWispTexture (was a hotspot)
+
+Version 5.088 November 18, 2020
+- Validate cloud model files have the expected extension before processing them.
+
+Version 5.087 November 16, 2020
+- Fix gaps in infinite stratocumulus layers
+- More visual tweaks for stratocumulus
+- Fix HDR mode with stratocumulus
+- Continued internal refactoring for thread-safety
+
+Version 5.086 November 11, 2020
+- Fix bug related to reloading user shaders introduced in previous version
+- Continued internal refactoring for thread-safety
+
+Version 5.085 November 7, 2020
+- CloudLayer::AddCloudAt() API regression resolved
+- Continued internal refactoring for thread-safety (the Renderer class is no longer a singleton)
+
+Version 5.084 November 1, 2020
+- Any #version or #extension directives found in user shaders with the OPENGL renderer
+  will be forced to be the first lines automatically
+- Fix regressions in the sky caused by optimizations in 5.083
+
+Version 5.083 October 19, 2020
+- Performance improvements
+- Continued internal refactoring for thread-safety
+
+Version 5.082 October 16, 2020
+- Fix cumulus cloud lighting in geocentric coordinate systems
+- Correct documentation for CloudLayer::SetThickness() and how it affects cumulonimbus
+  clouds.
+
+Version 5.081 October 15, 2020
+- Fix build errors on some Linux systems
+- Continued internal refactoring for thread-safety
+
+Version 5.080 October 12, 2020
+- Added stratocumulus-light-exponent config setting, to make stratocumulus clouds
+  darker under moonlight.
+- Reduced amount of noise applied to stratocumulus clouds
+- Further internal work for upcoming multi-threaded support
+
+Version 5.079 September 28, 2020
+- API changes:
+  -CloudLayerFactory::Create now takes an additional const reference to the 
+   Atmosphere indicating the atmosphere to which the underlining CloudLayer
+   belongs to. Consequently, a CloudLayer cannot belong in multiple atmospheres.
+   
+   This makes sense design wise, as well as notionally. It's also needed to make
+   ongoing changes to support multiple threads, multiple views.
+  -Consequently, CloudLayer constructor takes an additional const reference 
+   to the atmosphere it belongs to.
+  -The samples have been changed accordingly to account for the API changes above.
+- Fixed a bug in the initialization of Camera frustum. Functions to initialize
+  Frustum and Plane to 0 value.
+- Continued internal rearchitecture for future multi-threaded rendering support. 
+  In view of supporting this, some public methods in Atmosphere, 
+  AtmosphericConditions and CloudLayer now take a void* parameter 
+  that defaults to 0, and hence does not affect current API usage.
+  
+Version 5.078 September 26, 2020
+- Support CloudLayer::SetRoundEdges() on STRATOCUMULUS cloud type
+- Ability to name render textures (similar to cube map textures), OpenGL32 only
+- Fix crash in HDR mode
+- STRATOCUMULUS clouds are no longer streteched vertically to fill the specified
+  layer thickness. See updated documentation for CloudLayer::SetThickness() for
+  details.
+- Various visual and performance improvements to STRATOCUMULUS
+- STRATOCUMULUS now works on MacOS
+- Cloud layer serialization format has changed; be sure to re-save any cloud layers
+
+Version 5.077 August 22, 2020
+- Fix crash on AMD/ATI video cards
+- Increase performance of stratocumulus clouds
+- Prevent stratocumulus cloud layers from being "clipped" at their edges
+
+Version 5.076 August 18, 2020
+- Fix potential crash in billboard rendering
+
+Version 5.075 August 17, 2020
+- If the sl_* variables are used in user shaders, they *need not* be declared in the user 
+  shaders. 
+- User shaders now have #defines indicating which function in which shader is being 
+  referenced/overridden (SKY_SHADER, PARTICLE_SHADER, etc). Therefore, custom user 
+  shaders/modifications should have the corresponding #defines added/copied over 
+  from the template user shaders
+
+Version 5.074 August 16, 2020
+- Improved VAO management
+- Fix issues with FBO and render texture management for cube maps in OPENGL32CORE renderer
+- Fix use of user shaders with non-default file names
+
+Version 5.073 August 12, 2020
+- Fix precision issues with snow particles
+- Restore compatibility with drivers that only support OpenGL 3 (eg, MacOS)
+- Performance tuning regarding use of VAO's in OpenGL
+
+Version 5.072 July 15, 2020
+- UBO's now enabled in the OPENGL renderer (in addition to OPENGL32CORE)
+- Avoid map lookups for uniform names in OpenGL
+- GLSL shaders have all been merged into the GLSL15 shaders. Any user modifications to the glsl 
+  shaders will need to be moved over to glsl15. #ifdef OPENGL can be used for OpenGL 2.x specific 
+  code. This change does not affect the "user shader" files.
+
+Version 5.071 June 19, 2020
+- UBO's applied to additional shaders in OpenGL 3.2 renderer (OPENGL32CORE); results in measurable 
+  performance gains
+- UBO's enabled by default now in OpenGL 3.2 now.
+- Roll back billboard matrix changes in 5.070
+
+Version 5.070 June 1, 2020
+- Slight tweaks to billboard matrix
+- Add sort-clouds-by-layer, stratus-force-planar-sort, and
+  stratocumulus-force-planar-sort config options
+
+Version 5.069 April 30, 2020
+- Richer cloud lighting effects for cumulus congestus and stratocumulus-particles
+
+Version 5.068 April 27, 2020
+- Get use-ubo's option working with Visual Studio 2010, 2012
+- Make uniform location caching safer in OpenGL
+- Don't apply billboard fading with camera distance while rendering shadow maps
+
+Version 5.067 April 1, 2020
+- New "use-ubos" setting for OPENGL32CORE renderer; enables use of uniform buffer objects
+  for cloud billboards. Doesn't result in any performance gains so far, so it's off by default.
+- Precision fixes for sleet
+
+Version 5.066 February 20, 2020
+- Improved accuracy of STRATOCUMULUS clouds reaching specified coverage
+- Added alternative puff-alpha-small.tga texture for improved performance of stratocumulus_particles
+  on DirectX. Set the config setting stratocumulus-particles-texture-name to use it.
+- Added cumulus-voxel-size-variation setting to allow control over the random variation in
+  cloud puff sizes.
+- Precision fixes for rain
+- Added function GetPrecipitationShader(). Each precipitation type has its own
+  specialized shader. So, the type needs to be specified.
+- Original GetPrecipitation() function is now deprecated.
+
+Version 5.065 January 13, 2020
+- Added option precip-particles-use-staging-buffer (on by default; may improve performance
+  of precipitation in most applications.)
+
+Version 5.064 January 8, 2020
+- Performance improvements for rain, sleet, and snow in the OPENGL32CORE renderer - 
+  now twice as fast!
+- OpenGL32 Example moved to GLUT instead of GLUS framework
+- Fixed check for shader link errors in OPENGL_32 renderer
+- Fix shader compiler errors on some drivers in stratocumulus clouds
+
+Version 5.063 January 3, 2019
+- Added option: billboard-spin-enabled-override-disabled
+- Fix Atmosphere::GetCloudBounds() to include stratocumulus and stratocumulus_particles clouds
+
+Version 5.062 November 15, 2019
+- Fix positions of sun / moon / stars in left-handed geocentric coordinate systems
+- DirectX 10 support removed
+
+Version 5.061 October 26, 2019
+- Bring back the older API's for CloudLayer::HasPrecipitationAtPosition and
+  CloudLayer::IsInsideCloud that take x,y,z coordinates instead of a Camera
+  object. We will need to deprecate these in SilverLining 6, though.
+
+Version 5.060 October 23, 2019
+- Fix Atmosphere::DisableFarCulling() on cumulus clouds
+- Add precip-min-dt and precip-max-dt config settings.
+
+Version 5.059 October 16, 2019
+- Performance optimization for DirectX 11
+
+Version 5.058 September 26, 2019
+- Add stratus-coverage-exponent config setting to allow control of how stratus cloud
+  coverage works.
+
+Version 5.057 September 23, 2019
+- Fix tiling of stratus clouds when the stratus-scale-factor setting is set above 1.0
+
+Version 5.056 September 18, 2019
+- Fix curvature of infinite stratus clouds
+- Make curve-toward-ground-radius-scale setting affect stratus clouds
+
+Version 5.055 September 5, 2019
+- Fix AtmosphericConditions::SetFog() such that the fog color passed in is used to fog stratus clouds
+
+Version 5.054 August 27, 2019
+- Windows-only release
+- Change Effects11 library to be Visual Studio 2017-friendly
+
+Version 5.053 August 21, 2019
+- Avoid unnecessay glGetError() calls in OpenGL 3.2+ renderer
+- Remove Atmosphere::ShadowMapReset() and potential bug on rendering shadows on the first frame
+
+Version 5.052 August 13, 2019
+- Fix compatibility issue with OpenGL 3.2+ renderer and Intel HD graphics
+
+Version 5.051 July 11, 2019
+- Improve appearance of flying through cumulus clouds
+
+Version 5.050 July 8, 2019
+- Fix artifacts at edges of non-infinite stratus clouds in DX11
+
+Version 5.049 June 27, 2019
+- Fix GLInvalidOperation errors when enabling glare effects in OpenGL 32 core profile
+- Fix potential cloud orientation issues when using left-handed coordinate systems
+
+Version 5.048 June 17, 2019
+- Fix potential crash after calling CloudLayer::ClearClouds() on a stratus cloud layer.
+- Fix private documentation for full source SDK
+
+Version 5.047 June 4, 2019
+- Clarify in docs that GetSunPosition / GetMoonPosition / GetSunOrMoonPosition all assume
+  negative-Z is "North." Left-handed coordinate system users may need to negate the Z value
+  returned.
+- Add new config settings cumulonimbus-voxel-flattening and towering-cumulus-voxel-flattening
+- Add some random variation to cumulus congestus voxel heights
+
+Version 5.046 April 30, 2019
+- Cloud backdrops are deprecated and have now been removed
+- CloudLayer::HasPrecipitationAtPosition now takes a camera instead of x,y,z
+- CloudLayer::IsInsideCloud now takes a camera instead of x,y,z
+- Improve appearance of lightning in DirectX 11; fix potential culling issues with lightning
+
+Version 5.045 March 16, 2019
+- Fix velocity of precipitation when multiple cameras are used
+
+Version 5.044 March 8, 2019
+- Test for invalid pixel outputs in stratus shaders
+- Add warning to SilverLining.config to not set stratus-scud-thickness to 0
+- Added config setting 'sandstorm-fog-altitude-multiplier', which allows how sooner
+or later the sandstorm fogging kicks in, as you descend into it.
+- Protect against density > 1.0 in stratus clouds
+
+Version 5.043 February 7, 2019
+- Fix stratocumulus clouds in geocentric when specifying altitudes relative to center
+  of Earth
+- Fix case of rotating a stratocumulus layer without changing its position
+
+Version 5.042 January 30, 2019
+- Automatically reduce fog/haze on stars with altitude
+
+Version 5.041 January 22, 2019
+- Atmosphere::SetDepthRange() will not attempt to modify the near and far viewport
+  settings in DirectX if far < near (ie with reverse depth buffers.)
+- Clarified this behavior in the docs, as well as documenting that the clearDepth
+  parameter on Atmosphere::DrawSky() will clear the depth to 1.0 in DirectX.
+
+Version 5.040 December 18, 2018
+- Fix appearance of non-infinite stratus clouds viewed from the side
+  in geocentric mode.
+
+Version 5.039 December 17, 2018
+- Fix visibility effects within geocentric sandstorms
+- Fix appearance of non-infinite stratus cloud layers at the edges
+
+Version 5.038 December 11, 2018
+- Improve particle rotation effects with towering cumulus & cumulonimbus
+- Added config settings for stratocumulus-particles-distance-fade-length and 
+  stratocumulus-particles-distance-fade-min to allow adjustment of fading out
+  stratocumulus particles if you get too close to them (to hide particle effects)
+
+Version 5.037 December 4, 2018
+- Further visual improvements to cumulus textures and lighting
+- Further prevent cumulus cloud particle rotation
+
+Version 5.036 November 30, 2018
+- Fix lighting on cumulonimbus and towering cumulus clouds
+
+Version 5.035 November 29, 2018
+- New cumulus-billboards-per-cloud setting (on by default) prevents individual puffs within
+  a cumulus or stratocumulus-particles cloud from rotating independently from each other
+- Reduce billboard rotation when looking straight up or down
+- Visual improvements to cumulus clouds
+- Prevent blocking waiting for lens flare occlusion tests
+- Added cumulus-congestus-ambient-scattering-hi-res setting to allow independent adjustment
+  of hi-res cumulus cloud brightness
+- Cloud layer serialization format changed; any saved cloud layers will need to be re-saved.
+
+Version 5.034 November 6, 2018
+- Add cumulus-voxel-flattening config setting.
+- Fix line shader (used in lightning)
+
+Version 5.033 October 28, 2018
+- Fix potential crash / sorting issues with non-infinite stratocumulus and stratus cloud layers.
+
+Version 5.032 October 16, 2018
+- Fix fading of stratocumulus_particles cloud layers when specified via CloudLayer::SetEnabled().
+
+Version 5.031 October 11, 2018
+- Fix orientation of cloud billboard particles in renderers other than Atmosphere::OPENGL
+- Make lens flare effect work better with reverse depth buffers
+
+Version 5.030 October 10, 2018
+- Continued internal rearchitecture for future multi-threaded rendering support
+- API changes:
+  -Atmosphere::DrawObjects() takes an additional parameter for specifying whether rendering
+   is to be done in geocentric mode (mirroring Atmosphere::DrawSky(). The default value is false.
+  -Atmosphere::GetEnvironmentMap() takes an additional parameter for specifying whether it is
+   the geocentric mode we are rendering/updating with. The default value is false.
+  -Atmosphere::UpdateSkyAndClouds() takes an additional parameter for specifying whether updating
+   is to be done in geocentric mode. The default value is false.
+  
+Version 5.029 October 5, 2018
+- Make precipitation work with reverse depth buffers if *-use-depth-buffer settings are on "yes"
+
+Version 5.028 September 25, 2018
+- Expose the clearDepth parameter in Atmosphere::DrawSky() and the Atmosphere::SetDepthRange()
+  function to the sample C# wrapper
+
+Version 5.027 September 23, 2018
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.026 September 20, 2018
+- Imposter support has been removed. Consequently, these options are no longer valid/used:
+  -disable-imposters
+  -imposter-texture-dimension
+  -max-imposter-updates-per-frame
+  -imposter-slop-value
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.025 September 8, 2018
+- cumulus-lighting-quick-and-dirty option has been removed
+- cumulus-lighting-quick-and-dirty-attenuation option has been renamed to
+  cumulus-lighting-attenuation
+- cumulus-lighting-quick-and-dirty-attenuation-hi-res option has been renamed to
+  cumulus-lighting-attenuation-hi-res
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.024 September 6, 2018
+- Fix snow when using multiple views on a single Atmosphere instance
+- Fix density multiplier on cumulus cloud layers
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.023 August 27, 2018
+- Fix build issues on Ubuntu 18
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.022 August 13, 2018
+- Doubled the default setting of stratocumulus-max-size to 100,000, now that modern GPU's can handle it.
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.021 July 17, 2018
+- Ensure changes to AtmosphericConditions::SetVisibility() affects cloud culling immediately.
+
+Version 5.020 June 16, 2018
+- Improve precision of shadow maps
+- Fix shadow maps on stratocumulus clouds when passing wholeLayers=false into
+  Atmosphere::GetShadowMap
+
+Version 5.019 May 25, 2018
+- Fix potential hang on STRATOCUMULUS_PARTICLES on the first frame
+- Added config setting "sort-by-screen-depth", which allows you to sort clouds 
+  based on distance from the camera instead of by screen depth. This can result
+  in better behavior when dealing with large, non-infinite cloud layers and in
+  better consistency across mutiple cameras, but at the expense of "popping" artifacts
+  resulting from the sort order changing as the camera moves.
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.018 May 15, 2018
+- Fixed some minor memory leaks at shutdown
+- Fixed sorting of STRATOCUMULUS_PARTICLES cloud layers that are not infinite
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.017 May 2, 2018
+- Fix clipping of non-infinite stratus cloud layers
+- Fix shadows on infinite STRATOCUMULUS cloud layers
+- Remove outdated Ogre3D samples
+- Continued internal rearchitecture for future multi-threaded rendering support
+
+Version 5.016 April 24, 2018
+- Fix Version.h header file
+- Start of internal rearchitecture to use Camera objects instead of global camera matrices
+
+Version 5.015 April 16, 2018
+- Expand cloud layer bounds to account for cumulus cloud wrapping (fixes artifacts at edges of shadow maps)
+- Improve shadow map resolution
+- More precise cloud curvature on infinite cumulus cloud layers in geocentric mode
+
+Version 5.014 April 11, 2018
+- Fix compile errors in Atmosphere.glsl15
+- Fix memory leak when destroying a STRATOCUMULUS_PARTICLES cloud layer.
+- enforce-strict-weak-ordering = yes may be added into SilverLining.config (or SilverLining.override)
+  in the unlikely event that you encounter crashes inside the comp() function inside Atmosphere.cpp
+- Draw virga relative to the virga's center position to protect against precision issues
+- Virga rendering is more efficient
+- Added Atmosphere::GetLineShader() to expose the shader used for lightning in some renderers.
+
+Version 5.013 April 3, 2018
+- Ensure cloud growth is only applied to CUMULUS_CONGESTUS cloud types in CloudLayer::SetAnimationEffects().
+- Make C# wrapper 64-bit safe.
+
+Version 5.012 March 28, 2018
+- Speed up computation of sky colors
+- Fix documentation of parameters in the overrideStratocumulus user shader function.
+- Protect against crash if a STRATOCUMULUS_PARTICLES cloud layer is created under 10,000 meters in 
+  size with wrapping and wind enabled.
+- Fix result of Atmosphere::GetObjectPosition() on STRATOCUMULUS_PARTICLES cloud layers if
+  you are not in a flat, Y-up coordinate system.
+
+Version 5.011 March 8, 2018
+- Allow SetDensityMultiplier() to work on non-infinite cloud layers
+- Fix some memory leaks at shutdown
+- Address compiler errors on Debian 9
+
+Version 5.010 February 20, 2018
+- Add Atmosphere::PreInit() method to enable creation of CloudLayer objects prior to 
+  calling Atmosphere::Initialize() and having a graphics context in place. Note you
+  still need an initialized Atmosphere and an active context in order to call
+  CloudLayer::SeedClouds(); this only allows you to instantiate the CloudLayer 
+  objects with CloudLayerFactory::Create() at an earlier point in your engine.
+
+Version 5.009 February 19, 2018
+- Fix incorrect lens flare textures on Linux
+- C# sample updated to use Visual Studio 2017. Pre-built DLL's are now 64-bit.
+- Fix appearance of cumulus clouds (non-hi-res) when lazy-voxel-creation is set to "no"
+
+Version 5.008 February 2, 2018
+- Windows-only release
+- Updated C# sample against latest SDK version
+
+Version 5.007 January 28, 2018
+- Return NULL from CloudLayerFactory::Create() if the Atmosphere has not yet been initialized.
+- Increase default alpha setting for STRATUS clouds
+- Fix anomalies on very thick STRATUS clouds with 100% coverage
+
+Version 5.006 December 14, 2017
+- Flip depth function when reverse Z is on in DirectX.
+- Add fogFade parameter to overrideBillboardFog function in Billboard.glsl and UserFunctions.glsl
+  for consistency with OpenGL 3.2 shaders. Be sure to update your user functions to include thise
+  new parameter!
+
+Version 5.005 November 21, 2017
+- Add cumulonimbus-illuminate-from-lightning config setting.
+- Don't pollute the alpha channel in OpenGL 3.2 mode
+- Fix bug that required CloudLayer::SetLightningDischargeMode() to be called after SeedClouds()
+- Add fogFade parameter in OpenGL 3.2 user shaders' overrideBillboardFog. Be sure to update your own
+  UserFunctions.glsl15 file accordingly if you are using it.
+- Fog lightning bolts based on their center position, not their top
+
+Version 5.004 October 14, 2017
+- Fix cloud layer bounds on first frame
+- Fix always-apply-state setting when a non-static renderer is used
+
+Version 5.003 October 10, 2017
+- Add "always-apply-state" config setting to disable lazy setting of culling, blending, and fog states
+  (can fix state leakage issues when managing your own drawing.)
+- Fix OpenGL resource leaks from virga textures and user shader objects.
+
+Version 5.002 September 1, 2017
+- Improvements to the CloudEditor application
+- Fix GCC 6 compatibility
+- Fix voxel sorting in geocentric systems
+
+Version 5.001 August 22, 2017
+- Ensure clouds are not fogged or hazed in the shadow pass
+- Improve performance of storm clouds further
+
+Version 5.0 August 9, 2017
+- All-new cumulonimbus and towering cumulus clouds! New models, better lighting, and better performance.
+- The cloud layer file format has changed - be sure to recreate any saved cloud layers you have.
+- Cumulonimbus clouds are now scaled based on the requested thickness (height), not width, of the layer.
+- Ensure Atmosphere::GetShadowMap() uses latest projection & modelview matrices.
+- Cloud backdrops are now disabled by default (via use-cloud-backdrops setting in SilverLining.config)
+  They cause stutters and are no longer worth it on modern hardware.
+- Cumulonimbus clouds now expand their culling bounds to extend to the ground.
+- Increased size of stratocumulus_particles voxels to ensure they overlap better.
+
+Version 4.083 June 30, 2017
+- Non-const version of Atmosphere::GetConditions() now updates the internal "current atmosphere"
+- Work around NVidia / CentOS driver bug with atan
+- Cloud layers now save and restore their alpha value. This means the cloud layer file format has changed,
+  so any saved cloud layers will need to be recreated.
+
+Version 4.082 June 8, 2017
+- Fix potential stalls with cumulus clouds in OpenGL
+- Integrate lightning with user shaders in OpenGL 3.2 renderer
+
+Version 4.081 May 18, 2017
+- Fix divide by zero error in CloudBackdropManager
+- Fix Atmosphere::GetSunOrMoonColor()
+
+Version 4.080 May 12, 2017
+- Change CloudLayer::Intersect to treat cloud puffs as spheres instead of billboards
+
+Version 4.079 April 14, 2017
+- Ensure all client state is pushed and popped in OpenGL 2
+
+Version 4.078 March 15, 2017
+- Tweaked cumulus congestus hi-res texture
+- Change default cloud layer alpha to 0.8
+- Added shadow-sun-height-cutoff config setting
+- Added shadowFactor parameter to Atmosphere::GetShadowMap()
+- Get glares working again (still off by default)
+- Improve accuracy of atmospheric limb effect
+
+Version 4.077 February 14, 2017
+- Added cumulus-minimum-voxel-size-factor to enforce minimum # of voxels relative to cloud size
+- Flatten stratocumulus particles for a more "stretched out" look. Adjustible via stratocumulus-voxel-flattening 
+- Add overcastBlend parameter on Atmosphere::DrawSky()
+- Fix cloud shadows on STRATOCUMULUS_PARTICLES cloud layers
+- Fix appearance of infinite STRATOCUMULUS_PARTICLES layers with rounded edges
+- Added cumulus-minimum-spin-height setting to help appearance of small CUMULUS_CONGESTUS_HI_RES clouds.
+- Brightened up cumulus clouds
+- Cube / environment maps under DirectX are now generated with texture faces flipped, in accordance
+  with DirectX conventions. If you want to preserve how it worked before, set the new config setting
+  flip-dx-cube-map-faces to "no".
+
+Version 4.076 January 26, 2017
+- Fix potential issues with backface culling state in DirectX
+- Improve cloud layer sorting of infinite / non-infinte layers
+- lens-flare-disable-occlusion also disables framebuffer read-back now
+- Improve behavior when crepuscular-rays-always-on is "yes", and make it the new default
+- Fix potential crash at shudown in OpenGL 3.2 renderer
+- Added stratus-write-depth-density-test for a specific customer
+
+Version 4.075 December 18, 2016
+- Make Atmosphere::ForceLightingRecompute() affect STRATOCUMULUS_PARTICLES clouds.
+- Tweaked cloud puff textures
+- Fix texture corruption when using cumulonimbus clouds
+
+Version 4.074 December 5, 2016
+- Fix edge cases when sorting cloud layers
+- Improved STRATOCUMULUS_PARTICLES performance
+- Improve orientation of hi-res cloud particles
+- Fix STRATOCUMULUS_PARTICLES culling
+- Atmosphere::DrawSky may be called with drawStars on but drawSky off
+- Seeding the random number generator must now by done via SilverLining::RandomNumberGenerator::Seed()
+  (you can get the random number generator instance with Atmosphere::GetRandomNumberGenerator()). Don't
+  use srand() to sync your channels any longer!
+- New default random number generator for Windows with larger range of values.
+- Fix precipitation if drawn more than once per frame
+- Smooth precipitation streak lengths over time to account for apps with unstable framerates
+
+Version 4.073 November 11, 2016
+- Ensure environment maps don't mess up the billboard matrix for cloud particles.
+- Push/pop state in Atmosphere::DrawBackdrops()
+- Make cloud seeding safer when using multiple Atmosphere objects
+- Fix crash on MacOS
+
+Version 4.072 November 3, 2016
+- Remove usage of ifstream that conflicts with OpenSceneGraph
+
+Version 4.071 November 2, 2016
+- More lighting from lightning fixes
+
+Version 4.070 November 1, 2016
+- Improve sorting of stratocumulus_particles cloud quads
+- Fix lighting from lightning when environment maps are used
+
+Version 4.069 October 27, 2016
+- Fix usage of OpenGL 3.2+ vertex array objects to restore compatibility
+  with multiple contexts with shared lists
+
+Version 4.068 October 25, 2016
+- New enable-renderer-object-names SilverLining.config setting for enabling use
+  of glObjectLabel (helps with NSight debugging)
+
+Version 4.067 October 18, 2016
+- Fix cloud backdrops with CUMULUS_CONGESTUS_HI_RES
+- Better matching of STRATOCUMULUS_PARTICLES and CUMULUS_CONGESTUS lighting
+- Improved cloud layer sorting
+- Improved CUMULUS_CONGESTUS_HI_RES and STRATOCUMULUS_PARTICLES textures
+- Don't leak device context when shutting down in DX11
+
+Version 4.066 October 4, 2016
+- Roll back use of texture compression on clouds under OpenGL 3.2. It caused artifacts on some systems.
+- Sort localized (non-infinite) cloud layers taking their position into account
+- Fix lightning on OpenGL 3.2 core profile
+
+Version 4.065 September 27, 2016
+- Lightning apperance tuning
+- Higher-resolution CUMULUS_CONGESTUS_HI_RES textures
+- Compress cloud textures
+- Maintain separate offscreen render textures for each GL context
+
+Version 4.064 September 24, 2016
+- Fix precipitation across multiple Atmosphere objects on different contexts
+
+Version 4.063 September 23, 2016
+- Infinite cirrus and cirrocumulus cloud layers now move with the camera with SetFadeTowardEdges is true.
+  This behavior may be disabled if desired with the new cirrus-animate setting in SilverLining.config.
+- Fixes SetFadeTowardEdges() on cirrus and cirrocumulus cloud layers.
+- Fix lightning shader in OpenGL 3.2
+- Added AtmosphericConditions::EnablePrecipitation()
+- New textures for experimental STRATOCUMULUS_PARTICLES cloud type
+
+Version 4.062 September 17, 2016
+- Force sky box to maximum depth value when clearDepth is set to false in Atmosphere::DrawSky()
+- EXPERIMENTAL release of new STRATOCUMULUS_PARTICLES cloud type. Let us know at support@sundog-soft.com
+  if you try it out and encounter any problems.
+
+Version 4.061 September 13, 2016
+- Fix bug in cloud backdrops that could result in backdrops being updated unnecessarily
+- Fix stratocumulus cloud layer position returned via Atmosphere::GetObjectPosition()
+- Fix moon brightness when forcing a moon horizon angle via Atmosphere::ForceSunAndMoonHorizon()
+- Fix off-by-one moon texture issue when forcing a moon phase via Atmosphere::ForceMoonPhase()
+
+Version 4.060 August 24, 2016
+- Allow negative time movement
+
+Version 4.059 August 13, 2016
+- Added config settings to let OpenGL users specify their own filenames for user shaders:
+  user-vert-shader-file-opengl user-frag-shader-file-opengl
+  user-vert-shader-file-opengl32 user-frag-shader-file-opengl32
+- Ensure GetEnvironmentMap() doesn't affect SilverLining's concept of the current FOV (and horizon color)
+- Added moon-brightness-hdr setting
+
+Version 4.058 August 6, 2016
+- Unused cloud puff voxels no longer consume GPU memory - this saves about 50%
+  of SilverLining's VRAM usage! If you see any new anomalies in cumulus clouds,
+  you can disable this change by setting lazy-voxel-creation = no in the
+  resources/silverlining.config file.
+- Various performance optimizations
+- Tweaked lighting of towering cumulus clouds
+
+Version 4.057 July 20, 2016
+- Fix reference leaks on the render target in DX11
+
+Version 4.056 July 12, 2016
+- Update to Visual Studio 2015 Update 3
+- Fix lightning discharge when enabling/disabling CB clouds
+
+Version 4.055 July 1, 2016
+- Fix potential NaN pixel in DirectX stratus clouds
+
+Version 4.054 June 24, 2016
+- Fix usage of depth buffer reading when clearDepth is false in Atmosphere::DrawSky()
+- Don't update real star and planet positions unless time has changed significantly
+- Fix initial case of lightning firing
+
+Version 4.053 May 25, 2016
+- Added optional lens-flare-always-on config option to force lens flare to
+  draw even if the sun is off-screen.
+- Avoid GL error in OpenGL 3.2 renderer at shutdown
+- Fix stars in DX11
+
+Version 4.052 May 18, 2016
+- Make sure Atmosphere::GetShadowMap() cleans up after itself no matter what.
+
+Version 4.051 May 9, 2016
+- Fix minimum precipitation particle size in projections that have high skew if
+  precipitation-no-skew is set to "no"
+- OpenGL 3.2 renderer now honors "SILVERLINING_ENABLE_DEBUG" environment variable
+- OpenGL 3.2 renderer now properly report shader linker errors
+
+Version 4.050 April 23, 2016
+- Added z-is-on-prime-meridian for users with geocentric coordinate systems with
+  Y up and Z east.
+- Added CloudLayer::SetRoundEdges()
+- Don't allow SetCloudWrapping(true) on cumulonimbus cloud layers.
+- Prevent banding in geocentric cumulus cloud layers when the camera moves large amounts.
+
+Version 4.049 April 8, 2016
+- Fix potential texture wrapping issue with infinite stratus clouds
+
+Version 4.048 April 5, 2016
+- Fix curvature of stratus clouds when SetCurveTowardGround() is true.
+- Protect atmospheric limb from out of bounds color values.
+- Fix inaccuracies in Atmosphere::GetObjectDistance()
+- Fix potential math overflow in LocalTime
+- Don't statically initialize collection objects, to ensure custom Allocators work with them
+
+Version 4.047 March 23, 2016
+- Fix stratus cloud altitude jumps on tile boundaries when cloud is both infinite and curved
+
+Version 4.046 March 3, 2016
+- Added avoid-opengl-stalls config setting.
+
+Version 4.045 February 23, 2016
+- Various performance optimizations
+
+Version 4.044 February 12, 2016
+- Make rain transparency independent of framerate
+
+Version 4.043 January 28, 2016
+- Re-evaluate moon-brightness-scale setting at runtime, and not just on the first frame.
+- Added Atmosphere::GetMoonPhase()
+- Added separate config settings for sun and moon transmission and scattered light scaling
+  when HDR mode is enabled
+
+Version 4.042 January 18, 2016
+- More support for reverse depth buffers in OpenGL
+- Fix leaked FrameBufferManager in OpenGL when deleting / recreating the Atmosphere
+- Built Visual Studio 2015 libraries against VS 2015 Update 1
+
+Version 4.041 January 14, 2016
+- Modify default resource loader to handle UNC paths OK
+- Remove skew on precipitation projection matrices to prevent anomalies on skewed channels
+  (see new precipitation-no-skew SilverLining.config setting)
+
+Version 4.040 January 12, 2016
+- Add rain-write-depth, snow-write-depth, and sleet-write-depth config options to allow
+  writing of precipitation particles to the depth buffer.
+- Change sun texture to have alpha of 1
+- Add Atmosphere::GetAtmosphericLimbShader() method so you can set uniforms on it when using
+  user shader functions.
+
+Version 4.039 January 7, 2016
+- Update builds to Visual Studio 2012 Update 5
+- Fix virga positioning in geocentric coordinates
+- Smooth out horizon colors returned near dawn/dusk
+
+Version 4.038 January 4, 2016
+- Added horizonOffsetAngle parameter to Atmosphere::DrawSky() to allow real-time adjustment
+  of the skybox's horizon line. This is in addition to the y-offset config setting, so for
+  precise adjustments you may want to set y-offset to 0 in SilverLining.config and use this
+  new parameter instead.
+
+Version 4.037 January 1, 2016
+- Changed default setting of cumulus-spread-out-fog to "no" - although it offers a big
+  speedup, it can result in distracting discontinuous cloud color changes. Consider
+  setting disable-per-cloud-fog instead if you need more performance.
+- Ensure moon light is recomputed is the phase is forced to change without changing
+  the moon position or time
+- Ensure changes to the overcast state affects moonlight immediately
+- Cache uniform locations in OpenGL 3.2 renderer
+
+Version 4.036 December 17, 2015
+- Fix culling issues on cumulus mediocris clouds
+
+Version 4.035 December 16, 2015
+- Add CumulusCloud::GetVoxels() method for Adacel
+- Significant performance enhancements for cumulus clouds (20% faster in our tests!)
+- Fix memory leak with render-to-texture textures when deleting the Atmosphere
+
+Version 4.034 December 5, 2015
+- Fix wind speed on non-infinite, non-wrapping cloud layers
+
+Version 4.033 December 4, 2015
+- Use VBO's for lightning in OpenGL & DirectX 11
+
+Version 4.032 November 25, 2015
+- Correct usage of node & cull masks in OSG multi-windows example
+- Fix ground-albedo-hosek config setting
+- Fix crash when creating cumulus clouds with very large world unit scales
+- Fix AtmosphericConditions::SetPresetConditions() when used with non-standard unit scales
+
+Version 4.031 November 19, 2015
+- Added drawLightning flag to Atmosphere::DrawObjects()
+- Fix potential crash if virga is disabled
+- Fix odd filesystem issue on some Linux flavors
+
+Version 4.030 November 17, 2015
+- Work around NVidia Linux driver bug that leaks buffer memory
+- Tuning of stratus appearance
+
+Version 4.029 November 6, 2015
+- Tone down ambient light at sunset / sunrise 
+- Fix crash when going into stratus clouds if stratus-deck-width or stratus-deck-height 
+  have been modified to be too small.
+- Add 64-bit support for C# OpenGL Sample
+- Fix hole in stratus texture
+
+Version 4.028 October 20, 2015
+- DX 11.1 performance tuning
+- Fix lightning in OpenGL 3.2 renderer
+
+Version 4.027 October 17, 2015
+- Add Version.h to public headers (and system to automatically keep it up to date)
+- Fix orientation of virga on DX11
+- Experimental support of new DIRECTX11_1 renderer (no D3DX or d3dcompile dependencies)
+- Don't obtain any ARB or EXT interfaces with OpenGL 3.2 renderer
+- Fix bug in OpenGL 3.2 stratus shaders
+- Add fog density parameter to overrideSkyColor in UserFunctions.glsl
+
+Version 4.026 October 6, 2015
+- Fix direction of precipitation blown by wind
+
+Version 4.025 October 5, 2015
+- Make OpenGL 3.2 renderer compatible with NSight
+- Introduce CloudLayer::Intersect() method, allowing for ray / cloud intersection
+  tests on cumulus cloud layers.
+- Improve lighting on cumulus cloud layers with a forced color.
+
+Version 4.024 September 5, 2015
+- Accurately simulate the orientation of the moon
+
+Version 4.023 September 3, 2015
+- Don't clamp cloud puff colors when HDR mode is on.
+- Recompute sunlight when overcast blending changes.
+- Prevent moon from rotating with camera pitch.
+
+Version 4.022 August 25, 2015
+- Reduce resolution of stratus clouds to improve performance.
+- Further reduce stratus resolution when coverage >= 1.0, as it's not
+  needed in that case.
+- Enforce clamped optical thickness on stratus clouds
+
+Version 4.022 August 21, 2015
+- Fix lighting on stratus clouds in non-Y-up coordinate sytems.
+
+Version 4.021 August 20, 2015
+- Improve in-cloud fog effects for stratus
+- No crepuscular rays when under overcast skies.
+- Enable depth reads for lightning.
+- Make infinite stratus clouds larger and with more consistent edges.
+- Handle case of multiple cameras with overcast conditions better.
+- Enforce max ambient occlusion on stratus
+- Discard stratus fragments beyond visible distance
+- Handle stratus with coverage > 1.0
+- Increase size of infinite stratus layers
+- Tweak lighting of stratus
+- Use "alpha correct" blending in OpenGL
+- Don't draw crepuscular rays when sky is 100% covered
+- Enable depth reads on lightning 
+
+Version 4.020 August 15, 2015
+- Fix artifacts in stratus layers with coverage < 1.0 viewed from above.
+- Added drawBackdrops optional parameter to Atmosphere::DrawObjects().
+- Fix overridden cloud layer colors from leaking into other cloud layers.
+
+Version 4.019 August 6, 2015
+- Fix filtering of stars by magnitude.
+
+Version 4.018 August 5, 2015
+- Add drawSunAndMoon parameter to Atmosphere::GetEnvironmentMap() if you want to
+  omit the sun and moon from the env map reflections.
+- Fix stratus clouds in geocentric coordinate systems (broke in 4.017)
+
+Version 4.017 July 29, 2015
+- Support for Visual Studio 2015 (VC14) added
+- Updated Visual Studio 2013 builds to use Update 5
+- Added daylight-moon-dimming config setting to dim the moon during daylight hours
+- Fix stratus cloud shadows when viewed from below.
+
+Version 4.016 July 22, 2015
+- Fix cumulonimbus clouds in C# example
+- Added eyePosition to parameters in overrideBillboardColor user function for GLSL
+- Removed lightning-auto-discharge SilverLining.config setting in favor of the new
+  CloudLayer::SetLightningDischargeMode() method. This allows runtime selection of 
+  automatic or manual lightning, as well as optional explicit control over when
+  lightning starts and stops.
+
+Version 4.015 July 4, 2015
+- Make lightning-auto-discharge, lightning-discharge-ms, and lightning-max-discharge-period
+  adjustible at runtime
+- Fix shader compile errors on some drivers
+
+Version 4.014 July 3, 2015
+- Fix lightning alpha problems
+- Make lightning bolts thinner with distance
+
+Version 4.013 June 27, 2015
+- Make motion of infinite stratus clouds more consistent
+
+Version 4.012 June 20, 2015
+- Speed up stratus shaders
+
+Version 4.011 June 17, 2015
+- Serialize the cloud density multiplier when saving cloud layers.
+- Make sure infinite stratus clouds loop smoothly.
+- Added stratus-flat-tops config option if you want 2D stratus clouds.
+- Fade edges of stratus per-fragment instead of per-vertex.
+
+Version 4.010 June 11, 2015
+- Delete stratus shader when stratus cloud is deleted
+- Don't write to depth buffer for stratus clouds when viewed from below.
+- Add backfaceCullClockwise parameter to Atmosphere::DrawObjects(), which can 
+  be useful for properly rendering clouds into flipped reflection textures
+- Improve uniformity of precipitation particle locations.
+- Protect precip from stray state
+- Improve apearance of non-infinite stratus clouds with 100% density
+
+Version 4.009 June 6, 2015
+- Cull clouds that are completely faded out from SetDensityMultiplier().
+- Soften edges of stratus clouds.
+
+Version 4.008 June 2, 2015
+- Don't attempt to clear texture binding on too-high texture units for AMD
+
+Version 4.007 May 29, 2015
+- Don't use GL_TEXTURE_RECTANGLE_NV any longer - it triggers errors on AMD
+- Specify base & max level for generated env map texture
+- Better attempt to clean out prior bindless graphics state prior to rendering
+
+Version 4.006 May 26, 2015
+- Force "nice" star points under OpenGL
+- Added modelPos parameter to overrideBillboardColor in UserFunctions.glsl and
+  UserFunctions.glsl15. If you are maintaining your own user functions be sure to 
+  update the function prototype accordingly.
+- Don't draw lightning into environment maps unless environment-maps-have-lightning is
+  set to "yes"
+
+Version 4.005 May 6, 2015
+- Increase evaluation demo time to 15 minutes per run.
+- Address precision issues on some GPU's with stratus clouds.
+- Fix potential bad shading on virga and lightning.
+
+Version 4.004 April 28, 2015
+- Interoperate better with applications that manipulate the depth range (ie, if you're using
+  reverse floating point depth buffers with OpenGL)
+- Added SilverLining.config settings for opengl-near-clip-plane, opengl-far-clip-plane,
+  directx-near-clip-plane, and directx-far-clip-plane. These can be used to tell SilverLining
+  you are using an unusual projection matrix that ranges the projected Z values from something
+  other than [-1,1] for OpenGL or [0,1] for DirectX.
+- Add Atmosphere::SetDepthRange() / Atmosphere::GetDepthRange() to avoid stall from glGet-ing
+  the depth range.
+- New overridePosition() function added to UserFunctions.glsl - if you have your own user functions
+  file, be sure to update it accordingly.
+- Add Atmosphere::SetOutputScale() / Atmosphere::GetOutputScale() to scale all final color output
+  by some value.
+
+Version 4.003 April 22, 2015
+- Fix DirectX9 device loss handling
+- Add overridePosition() function into user shaders, to allow modification of final gl_Position values
+
+Version 4.002 April 17, 2015
+- Don't call UpdateSkyAndClouds in OSG examples; there is no valid GL context
+  from the OSG update thread.
+- Make Atmosphere::ForceLightingUpdate() affect stratocumulus clouds
+
+Version 4.001 April 15, 2015
+- Toned down fogbow a bit on stratus
+- Added stratus-extinction-factor config setting to soften stratus edges
+- Optimized stratus shaders
+- Fix sun/moon position in left-handed flat coordinate systems
+- Tweak appearance of moon
+- Disable moon glow by default
+
+Version 4.0 April 2, 2015
+- All-new stratus clouds! Featuring 3D structure, and per-fragment Mie scattering.
+- Enable sun glow in geocentric mode
+- Prevent resource leak at shutdown in DX9 when using cloud backdrops
+- Removed overrideStratusColor function in UserFunctions.glsl. Use overrideStratusLighting
+  in UserFunctions-frag.glsl instead.
+
+Version 3.043 February 26, 2015
+- Make shadow-map-dimension changeable at runtime using Atmosphere::SetConfigOption
+- Fix star-point-size config setting (it was disconnected in 3.039 by mistake.)
+- Fix environment maps for new cameras that are geocentric
+
+version 3.042 February 25, 2015
+- Added writeFragmentData hook into UserFunctions-frag.glsl15 shader (for OpenGL 3.2 users)
+- Make the following SilverLining.config options changeable at runtime using Atmosphere::SetConfigOption:
+  sun-width-degrees moon-width-degrees rain-streak-width-multiplier sleet-streak-width-multiplier
+  snowflake-size-multiplier snow-rotate-particles
+- Make snow appear more dense
+
+Version 3.041 February 20, 2015
+- Fix random number generation on Linux platforms where RAND_MAX is huge
+- Added "doLighting" parameter on CloudLayer::OverrideCloudColor() so you
+  can disable time of day lighting on clouds if desired.
+
+Version 3.040 February 12, 2015
+- Added lens-flare-use-pbo config option. This can speed up framerates considerably
+  when the sun is in view, if you are using OpenGL and rendering to the framebuffer
+  (not to a texture). It is "no" by default, but OpenGL users should see if "yes"
+  works for their application - it can make a big difference when it does.
+- Ran an auto-formatter on all cpp and shader files, to clean up appearance of code
+  on different editors.
+
+Version 3.039 February 6, 2015
+- Prefixed all shader uniforms with sl_ - if you are using user shaders that
+  use any built-in SilverLining uniforms, you may need to modify your shaders.
+- Added sandstorm-smooth-horizon-blend config option; set to "no" to always
+  use the sandstorm dust color for fog color inside a sandstorm, instead of
+  blending from the horizon color.
+- Fix restoration of cloud layer thickness on saved cumulus cloud layers
+
+Version 3.038 January 29, 2015
+- Added drawClouds parameter to Atmosphere::GetEnvironmentMap().
+- Added environment-map-never-draw-clouds option to silverlining.config
+- Add missing user function hooks for GLSL 1.5 billboard and cirrus shaders
+- Fix visibility bug with sandstorms
+- Fix precipitation wind in geocentric coordinates when using wind altitude ranges
+
+Version 3.037 January 14, 2015
+- Fix curved cumulus layers with altitude 0
+- Fix shader error when using OpenGL 3.2 on NVidia Quadra cards
+
+Version 3.036 January 2, 2015
+- Fix atmospheric limb in OpenGL 3.2
+- Fix crepuscular rays and lens flare when near clip distance is < 1.0
+
+Version 3.035 December 24, 2014
+- Add Atmosphere::EnableSunOcclusion() and GetSunOcclusionEnabled(). Call 
+  EnableSunOcclusion(false) if you will never use the Atmosphere::GetSunOcclusion() method
+  to regain some performance when the sun is in view.
+- Fix star positions in geocentric y-north systems.
+- Fix D3D9 device loss handling when looking at sun.
+
+Version 3.034 December 20, 2014
+- Add billboard-fog-color-boost config setting, to force cumulus clouds to take on more of
+  the fog color.
+- Another fix for multiple context handling.
+
+Version 3.033 December 6, 2014
+- Overhauled ephemeris model; should fix remaining issues in geocentric systems
+
+Version 3.032 December 4, 2014
+- Fix cloud lighting when restoring saved hi-res cumulus congestus clouds.
+
+Version 3.031 November 29, 2014
+- Destroy lightning and virga resources if a cumulonimbus cloud is seeded more than once.
+- Prevent crash if a cumulonimbus cloud with no thickness is created
+- Prevent crash if initialization failed and you proceed to use the Atmosphere anyhow.
+- Fix computation of average horizon color in non-standard basis (ie geocentric)
+- Fix sun position in left-handed coordinate systems (revert change from 3.026)
+- Avoid use of non-thread-safe _setlocale() in Windows
+- Add flip-ephemeris-z to config file (use this if the sign of the z coordinate of the
+  sun and moon seem backward relative to your conventions.)
+
+Version 3.030 November 21, 2014
+- Fix bugs related to shader management when multiple Atmosphere objects are created and
+  destroyed at runtime.
+
+Version 3.029 November 13, 2014
+- Add camera parameter to Atmosphere::GetEnvironmentMap() to support separate env maps
+  per camera
+- Make wholeLayers parameter on Atmosphere::GetShadowMap() true by default, as it avoids
+  a lot of confusing edge cases.
+- Fix geocentric cloud shadows when camera moves over large distances.
+- Visual Studio 2013 libraries now built with Visual Studio 2013 Update 4
+
+Version 3.028 November 7, 2014
+- Better cirrocumulus texture
+- Add Atmosphere::ClearObjects()
+- Reduce softness of sandstorm particles
+- Fixes for OpenGL 3.2+
+
+Version 3.027 October 31, 2014
+- Add new SANDSTORM cloud type - see documentation and sample code for examples of use.
+- CloudLayer::OverrideCloudLighting() will now apply time of day lighting to the color specified,
+  and also affect the ambient color used when drawing cumulus clouds.
+
+Version 3.026 October 17, 2014
+- Fix position of sun/moon billboard when in Y-up geocentric coordinates
+
+Version 3.025 October 14, 2014
+- Set "current" atmosphere in response to calls to Atmosphere::GetConditions() 
+  (fixes some cases where multiple windows with different Atmospheres could
+  cause problems.)
+- Skip computation of snowflake minimum size when snow-minimum-size is 0
+  (provides workaround for unusual projection matrices created by Mersive)
+- Fix orientation of restored cloud layers if Z is "up"
+
+Version 3.024 October 11, 2014
+- Add Ogre 1.9 sample
+
+Version 3.023 October 10, 2014
+- Tune stratocumulus lighting & shadows
+- Add overrideParticleColor to UserFunctions-frag.glsl
+- Add Atmosphere::GetPrecipitationShader()
+- Fix clipping at top of stratocumulus clouds
+- Fix shadows from infinite stratocumulus cloud layers
+
+Version 3.022 October 6, 2014
+- Further reduce cumulus cloud "popping"
+- Add new cloud-never-allow-intersection config setting to eliminate popping entirely
+  at expense of coverage if necessary
+- Fix uninitialized fog values in Renderer.cpp
+
+Version 3.021 October 3, 2014
+- Add new ForceSunAndMoonHorizon methods for forcing moon / sun to a given altitude
+  and azimuth.
+- Add separate ClearForcedMoonPhase() to undo forced phase (ClearForcedSunAndMoon
+  will no longer clear a forced moon phase as well.)
+- No longer include -norenderer libraries; nobody was using them and they just bloated
+  the installer. If you need renderer-less libs just contact support@sundog-soft.com.
+- Reserve precipitation particle buffer memory all at once.
+- Add new curve-toward-ground-radius-scale setting.
+
+Version 3.020 September 17, 2014
+- Automatically darken cumulus clouds with density (controlled via the new
+  cumulus-darken-with-density and cumulus-density-darkening config settings.)
+- Smoother cumulus cloud lighting
+
+Version 3.019 September 12, 2014
+- Update osgEarth sample.
+- Don't move cloud layers that are inactive.
+- Ensure precipitation is not processed on inactive cloud layers.
+
+Version 3.018 September 5, 2014
+- Add rain-velocity-factor config setting.
+- Add precipitation-fog-monochrome setting.
+- Make apply-fog-from-cloud-precipitation true by default again.
+- Account for fading cloud layers when setting precipitation fog.
+- Fix issues with precipitation fog with multiple cloud layers.
+
+Version 3.017 August 30, 2014
+- Fix rain / snow / sleet application of minimum pixel width settings
+- Fix precipitation fading with infinite cloud layers
+- apply-fog-from-cloud-precipitation off by default
+
+Version 3.016 August 29, 2014
+- Fix issue with geocentric, wrapped, non-infinite cumulus cloud layers
+- No longer flip the Z axis in left-handed coordinate systems when computing 
+  sun / moon / stars positions. If you need to do this for some reason, add
+  flip-ephemeris-z = yes into your resources/silverlining.config file.
+- Fix fogging of stars due to haze in DirectX.
+
+Version 3.015 August 26, 2014
+- Fix potential crash at shutdown with DX9
+
+Version 3.014 August 23, 2014
+- Fix crespuscular rays and lens flare visibility in DirectX
+- Fade out precipitation as you approach the edge of a cloud
+- More aggressively restore state when rendering lightning
+- Add apply-fog-from-cloud-precipitation setting
+- Make samples a little more visually interesting
+
+Version 3.013 August 16, 2014
+- Add camera parameter to Atmosphere::DrawSky() and Atmosphere::DrawObjects() to support precipitation
+  across multiple views using the same Atmosphere.
+- Brighten appearance of the moon in the sky via the new moon-brightness config setting.
+- Fix memory leak in TGALoader
+- Fix cloud culling when alternating between two views with different fog
+- Don't spin cloud puffs when rendering shadow maps
+
+Version 3.012 August 6, 2014
+- Fix position of sun / moon / stars etc. in left-handed coordinate systems
+- If environment variable SILVERLINING_ENABLE_DEBUG is defined, OpenGL errors will be output to the console.
+- Fix lightning if time goes backwards somehow
+- Don't fade clouds toward edges of layer when rendering shadow map, as it's ambiguous what point they should fade from.
+- Roll back change of modifying Atmosphere's camera position when rendering shadows
+- Allow Atmosphere::SetInfraRedMode() to be called at runtime
+
+Version 3.011 July 24, 2014
+- Make sure lightning doesn't enable culling when drawn in DirectX9
+- Don't cull clouds in disabled cloud layers
+- Don't count disabled cloud layers in Atmosphere::GetCloudBounds
+- Fix fogging of stars in z-up coordinate systems
+
+Version 3.010 July 18, 2014
+- Fix lightning bolts in OpenGL 3.2 core renderer and DirectX9
+- Add option to Atmosphere::GetShadowMap() for whether you want shadows cast by the moon as well as the sun
+- Fade out the fog inside stratus clouds as the stratus layer is faded in and out.
+- Fade out stratus edges more completely if SetFadeTowardEdges(true) is on.
+- Add maxShadowObjectDistance parameter to Atmosphere::GetShadowMap().
+- Explicitly set pixel unpack parameters when loading textures on OpenGL.
+- Fix fading of cirrus and cirrocumulus clouds in DirectX
+
+Version 3.009 July 10, 2014
+- Higher resolution cloud textures for CUMULUS_CONGESTUS_HI_RES
+- Darken CUMULUS_CONGESTUS_HI_RES clouds to improve lighting
+- Store textures as compressed in OpenGL / Windows
+- More robust handling of user shaders with multiple windows
+- Fix cloud puff billboarding when generating shadow maps
+- Shadow maps only generated from sunlight now (not moonlight) and fade as sun sets
+- If wholeLayers parameter is true on Atmosphere::GetShadowMap(), the shadow map 
+  will no longer include the entire frustum bounds (to improve resolution with large
+  far clips.)
+- Shadows on infinite stratus clouds will extend appropriately far.
+- Make wrapping of infinite stratus / stratocumulus layers in shadows consistent with other layers.
+- Fix cloud culling with multiple Atmospheres.
+- Fix lens flare edges
+- Allow CUMULUS_CONGESTUS_HI_RES to render into backdrops
+
+Version 3.008 June 30, 2014
+- Fix crepuscular rays
+- Fix issue with billboard matrix when lens flare occlusion is disabled via config
+- Fix lens flare in z-up coordinate systems
+
+Version 3.007 June 29, 2014
+- Use ANSI versions of Win32 calls for better Unicode support.
+- Tune sky color to better match reality
+- Use correct ground albedo setting with Preetham sky model.
+- Fix crash if you have more than one cirrus or cirrocumulus layer, and don't delete them all together.
+
+Version 3.006 June 7, 2014
+- Fix stratus clouds with OPENGL32CORE renderer
+- Make hi-res cumulus texture a power of 2
+- Reduce compiler warnings with higher warning levels
+
+Version 3.005 June 2, 2014
+- Speed up lens flare effect
+- Fix cloud culling across multiple Atmospheres
+
+Version 3.004 May 29, 2014
+- Various performance improvements (reduce state changes)
+- Fix use of geocentric = true with drawSky = false in Atmosphere::DrawSky()
+- Fix Atmosphere::GetObjects() when Atmosphere::DrawObjects(false) is used.
+- Ensure lens flare doesn't appear behind the camera or below the horizon.
+- Add hosek-wilkie-radiance-scale config setting for HDR tuning with new sky model.
+- Fix sort order of stratus clouds vs. cumulus clouds.
+- Fix precision of Atmosphere::GetFogEnabled() when inside a geocentric stratus cloud.
+
+Version 3.003 May 22, 2014
+- Fix save/restore on hi-res cumulus clouds
+
+Version 3.002 May 20, 2014
+- Further cosmetic improvements (big ones, really) to CUMULUS_CONGESTUS_HI_RES
+
+Version 3.001 May 19, 2014
+- Use a better hi-res cloud texture
+- Include lens flare resources in Linux distribution
+
+Version 3.0 May 10, 2014
+- New TOWERING_CUMULUS and CUMULUS_CONGESTUS_HI_RES cloud types
+- Added CloudLayer::AddCloudAt() interface to allow positioning of individual clouds within a cloud layer. See the 
+  new "Positioning Individual Clouds Within a Cloud Layer" section of the documentation.
+- Make monochrome ambient light the new default. Set force-monochrome-ambient = no in 
+  Resources/SilverLining.config if you prefer blue-tinted ambient light.
+- Enforce a minimum distance between cloud centers, to address popping artifacts from re-sorting as the view changes
+- Further tweaking of cumulus cloud shading
+- Replace use of atof() and sscanf internally with a locale-independent method
+- Update the OpenSceneGraph multi-windows example to use a CompositeViewer and a better technique.
+- Fix crepuscular rays appearing at sun antipode in DirectX
+- If a resources/SilverLining.override file is present, its config settings will override those in SilverLining.config.
+- Replace OSG CompositeViewer example with OSG MultiWindows example (which still uses CompositeViewer,
+  but with separate windows & contexts.)
+- Make stratus clouds honor lighting invalidation events.
+- Add Atmosphere::ReloadCumulusTextures() (allows run-time switching of cloud atlas textures in the new hi-res cumulus type.)
+- Protect against high winds distorting cloud shapes too much
+- Improve appearance of infinite stratus clouds in geocentric mode
+
+Version 2.123 April 16, 2014
+- Fix ambient light calculation in HDR mode
+- Add stratus-deck-light-scale config setting to scale the stratus lighting
+
+Version 2.122 April 10, 2014
+- Make stars fade out with increasing light pollution. Adjust effect with star-maximum-light-pollution
+  setting.
+- Add lens-flare-disable-occlusion option to SilverLining.config. Increases performance a good deal
+  when the sun is in view, but at the expense of taking sun occlusion into account when rendering
+  lens flare.
+- Tweak cloud lighting (make cumulus congestus less contrast-y)
+- Add twilight-scale config setting to adjust twilight lighting
+- Add force-monochrome-ambient config option
+- More robust transparent object sorting (may address very rare crash on MacOS)
+- Add new floatingPoint parameter on Atmosphere::GetEnvironmentMap() to create a 16-bit floating point cube map
+- Fix change in fog color when drawing environment map with global precipitation on
+
+Version 2.121 March 31, 2014
+- Add new overrideSkyFragColor to shader user functions, to allow filtering of final sky color.
+- Add writeFragmentData to shader user functions, to allow writing to multiple render targets.
+- Split out user functions into .glsl (for OpenGL 2.0) and .glsl15 (for OpenGL 3.2+) files.
+- Added CloudLayer::OverrideCloudColor() / ClearCloudColorOverride() / ClearGetOverriddenCloudColor() 
+  to allow forcing cloud directional lighting to a given color on a per-layer basis.
+
+Version 2.120 March 26, 2014
+- Fix GL error set under Linux when using environment maps
+
+Version 2.119 March 26, 2014
+- Fix cloud culling when environment maps and Atmosphere::CullObjects() are being used together.
+
+Version 2.118 March 25, 2014
+- Add Atmosphere::ForceMoonPhase() to force a given moon phase regardless of date
+- Fix environment maps when Atmosphere::SetViewport() is not being used.
+
+Version 2.117 March 14, 2014
+- Fix environment maps when used in conjunction with Atmosphere::SetViewport()
+
+Version 2.116 March 11, 2014
+- Reduce glGet calls in OpenGL to prevent stalls
+- Added Atmosphere::SetViewport() to allow explicit passing of viewport 
+  (this allows us to avoid calling glGet to retrieve it each frame.)
+- Modified OSG examples to call SetCameraMatrix and SetProjectionMatrix each frame.
+- Fix potential DX11 crash when binding the sky shader
+
+Version 2.115 March 5, 2014
+- Fix fading on cirrocumulus clouds
+- Don't apply visibility to shadow map rendering
+
+Version 2.114 February 27, 2014
+- Fix shadows from planar clouds with fade toward edges enabled.
+
+Version 2.113 February 21, 2014
+- Fix clipping of shadow map texture (especially with stratus & stratocumulus shadows.)
+
+Version 2.112 February 19, 2014
+- Fix stratocumulus on DirectX with new NVidia drivers
+
+Version 2.111 February 16, 2014
+- Fix fading of wrapped clouds
+
+Version 2.110 February 12, 2014
+- Remove GLU dependencies under MacOS (as GLU is deprecated in MacOS 10.9.) 
+- Tweak lighting of cumulonimbus clouds.
+- Fix Atmosphere::DrawObject() method of drawing individual clouds.
+- Add additional hooks for shader user function overrides.
+- Fix crash when sorting clouds under some conditions on Mac / Linux
+
+Version 2.109 February 4, 2014
+- Make snow particle rotation on by default.
+- Add vector of user shaders into Atmosphere::ReloadShaders() call.
+- Cull out cumulus clouds that are almost entirely faded out.
+- Fix forcing of moon phase with Atmosphere::ForceSunAndMoon
+- Protect against null pointers in final sorting of blended objects
+- Prevent gaps in infinite cumulus cloud layers.
+
+Version 2.108 January 24, 2014
+- Fix LocalTime::GetJulianDate()
+- Add Atmosphere::ReloadShaders() to recompile and relink OpenGL shader programs at runtime
+
+Version 2.107 January 9, 2013
+- Add environment-map-enable-stars config option for rendering stars into environment maps
+- Make lightning strikes more infrequent.
+- Overwrite existing files when CloudLayer::Save() is called.
+- Fix positioning of upper plane of stratus layer
+
+Version 2.106 December 20, 2013
+- Fix Atmosphere::GetActivePlanarCLoudShaders()
+
+Version 2.105 December 17, 2013 (Linux / Mac only release)
+- Fix compilation under MacOS 10.9 Mavericks
+
+Version 2.104 December 12, 2013
+- Include Windows 8.1 DirectX shader compiler DLL
+- Fade out lightning with distance in low visibility
+- Update to Visual Studio 2012 Update 4
+
+Version 2.103 December 9, 2013
+- Fix adjustment of non-global cumulus clouds for Earth curvature
+- Speed up seeding of cumulus cloud layers
+
+Version 2.102 December 1, 2013
+- Fix depth range when clearDepth is false in Atmosphere::DrawSky()
+- Fix rendering of sky on first frame
+
+version 2.101 November 16, 2013
+- Visual Studio 2013 (Desktop) support added.
+
+Version 2.100 November 5, 2013
+- Fix computation of in-cloud fog on very large geocentric stratus layers with altitudes specified 
+  relative to earth core
+
+Version 2.99 October 29, 2013
+- Add methods for extending our shaders in the Atmosphere class: GetActivePlanarCloudShaders,
+  GetBillboardShader, GetSkyShader, GetStarShader. New Atmosphere::Initialize() variant takes a vector of
+  user-provided shader objects linked into all OpenGL shader programs, to let you include your own shader 
+  functions in our shaders.
+- Added UserFunctions.glsl and UserFunctions-frag.glsl, exposing points for overriding SilverLining's shading.
+  These files are in the resources/shaders folder.
+- Added Atmosphere::ForceSunAndMoon() and Atmosphere::ClearForcedSunAndMoon() to allow explicit positioning of
+  the sun & moon in ecliptic coordinates, as well as the phase of the moon.
+
+Version 2.98 October 16, 2013
+- Add OpenSceneGraph shadow example
+- Reduce tone mapping brightness a bit
+- Make diffuse and ambient overcast attenuation separately configurable
+- Various OpenGL 3.2+ fixes
+
+Version 2.97 October 10, 2103
+- Fix culling frustum for shadow maps
+
+Version 2.96 October 7, 2013
+- Fix shadow maps when Y is not up
+
+Version 2.95 September 28, 2013
+- Change wind direction in WindVolume to represent direction wind is coming from, not the
+  direction it is blowing toward.
+- Don't reset cloud positions to camera position when calling CloudLayer::SetBaseAltitude() 
+  with a value from the center of the Earth; just update their heights.
+- Fix calculation of whether you are inside a localized, geocentric stratus cloud.
+
+Version 2.94 September 24, 2013
+- Fix positioning of localized geocentric cloud layers when using SetBaseAltitude()
+- Fix error in stars.glsl
+- Fix orientation of distant localized stratus cloud layers
+- Fix North/South movement of wind-blown clouds
+
+Version 2.93 September 18, 2013
+- Fix fogging of backdrop clouds when inside a stratus layer.
+- Include OpenSceneGraph example with multiple windows
+
+Version 2.92 September 13, 2013
+- Fix positioning of localized geocentric cloud layers
+- Never allow stratus cloud layers to be transparent
+- Ensure other clouds are fogged when inside a stratus cloud
+
+Version 2.91 September 6, 2013
+- Fix crepuscular rays when rendering to FBO
+
+Version 2.9 August 27, 2013
+- Added new CloudLayer::SetCurveTowardGround(). This can be used to force cloud layers to curve down toward ground
+  level at their edges, giving the illusion of stretching to the horizon when they really don't.
+- Fix star fogging.
+- Apply sunset boost config settings to sea level luminance values.
+
+Version 2.87 August 17, 2013
+- Fix cloud lighting in z-up configurations
+- No longer require cloud layer altitudes to be specified relative to the center of the Earth in geocentric mode
+- Automatically adjust cloud layer altitudes to account for the ellipsoidal nature of the Earth in geocentric mode
+- Double the number of precipitation particle starting locations
+- Fix stratus clouds in DX11
+- Prevent negative light colors in HDR
+- Fog stratus clouds by fading them out, to be consistent with other cloud layers.
+- Improve lighting on cirrus and cirrocumulus clouds
+
+Version 2.86 August 7, 2013
+- Clear any existing clouds when seeding a cloud layer; allows re-seeding of existing layers.
+- Fade out stratocumulus clouds with fog, to make them consistent with other cloud types.
+- Fix positioning of crepuscular rays effect when in geocentric coords.
+- Add isothermal effects to Hosek-Wilkie sky model (sky darkens with altitude.)
+
+Version 2.85 July 23, 2013
+- Push / pop state surrounding calls to Atmosphere::GetEnvironmentMap().
+- Fix pulling in of near clip plane with precipitation effects.
+
+Version 2.84 July 14, 2013
+- Fix direction of sun/moonlight in geocentric mode when calling GetSunOrMoonPostionGeographic 
+  or GetSunOrMoonPositionEcliptic
+
+Version 2.83 July 2, 2013
+- Fix edge case that could cause black skies with Hosek-Wilkie in certain times & locations.
+
+Version 2.82 June 27, 2013
+- Don't fog the spaces in between broken stratus clouds.
+- Protect against negative logarithms in luminance mapper.
+- Fix stratus clouds in OpenGL 3.2
+- Fix rand() call in StratocumulusCloudLayer
+- Update to Visual Studio 2012 Update 3
+
+Version 2.81 May 16, 2013
+- Fix cirrocumulus clouds in OpenGL
+
+Version 2.8 May 15, 2013
+- New Hosek-Wilke sky model (see Atmosphere::SetSkyModel())
+- Save & restore bound FBO when calling Atmosphere::GetEnvironmentMap()
+- Fix discontinuity in appearance of stars at sunset
+- Switch to CIE XYZ -> RGB transform
+
+Version 2.77 May 2, 2013
+- Cache shaders and uniforms in OpenGL
+- Add AtmosphericConditions::SetPresetConditions() method for simplified cloud layer setup.
+
+Version 2.76 March 30, 2013
+- Disable cloud layer culling by default (cull at the cloud level instead); it seemed to cause trouble in geocentric.
+- Update osgRecipes sample code
+- Flesh out the osgEarth sample more
+- Fix crepuscular rays visibility calculation under DirectX
+- Make lightning immune to fog
+
+Version 2.75 March 18, 2013
+- Fix minimum precipitation particle size enforcement
+
+Version 2.74 February 22, 2013
+- Fix flipped y-axis faces of cube map generated by Atmosphere::GetEnvironmentMap()
+
+Version 2.73 February 9, 2013
+- Fix issue with cloud backdrops' view frustum being off
+
+Version 2.72 February 6, 2013
+- Improve tone mapping on the moon
+- Added CloudLayer::SetDensityMultiplier() to support runtime changes of cumulus cloud layer density
+- Added support for dongle-based licenses
+- Stratus clouds will blend in overcast conditions for coverage values < 1.0. See new stratus-overcast-threshold config setting.
+- Add cloud-light-change-angle setting to adjust how often clouds get relit with continuous time of day
+- Don't use a static frustum object, to fix issues with culling with multiple viewports.
+- Fix link issue in OpenGL 3.2 renderer
+- Add facesToRender parameter to Atmosphere::GetEnvironmentMap()
+
+Version 2.71 January 29, 2013
+- Fix calling Atmosphere::DrawObjects with (false, true) for precipitation only
+- Fix lens flares in OpenGL 2.x
+- Reduced default rain streak brightness
+- Avoid computing atmospheric transmittance twice at low altitudes
+- Fix compatibility problem with crepuscular rays on Intel graphics
+
+Version 2.7 January 26, 2013
+- Added crepuscular rays ("god rays") - see new parameter on Atmosphere::DrawObjects()
+- New shadow map support - see Atmosphere::GetShadowMap()
+- New environment cube map support - See Atmosphere::GetEnvironmentMap()
+- Enabled cloud backdrops with DirectX 9 - 11 renderers
+- Fix sorting issues that led to ocassional "popping" of clouds when moving the camera
+- Fix real-time cloud growth using SetCloudAnimationEffects under NVidia with bindless graphics
+- New Ogre sample code based on a standalone app
+- Clean up C# samples and include binary, signed DLL's
+- Store fog properties per Atmosphere object instead of relying on static state
+- Never access the current camera position as a static object (fixes issues with multiple views 
+  with different camera positions)
+
+Version 2.65 January 8, 2013
+- Fix memory leak when using IDirect3DDevice9Ex
+- Try our best to push & pop any active shader programs in OpenGL
+- Fix precipitation effects when using sheared projection matrices
+- Honor the clearDepth flag in Atmosphere::DrawSky() even when drawSky is false.
+- Caculate lighting at the camera level and at sea level, for proper lighting of clouds when the camera
+  is in space.
+
+Version 2.64 December 12, 2012
+- Use different algorithm for computing billboard matrices that works better with highly sheared
+  projection matrices. Disable it using the new billboard-use-ndc config setting if it causes trouble.
+- Apply star-magnitude-adjustment to planets as well as stars.
+
+Version 2.63 December 11, 2012
+- Explicitly control rendering of sun and moon via new drawSunAndMoon parameter on Atmosphere::DrawSky().
+  The sun, moon, and stars are no longer automatically disabled when AtmosphericConditions::SetFog() is called.
+
+Version 2.62 November 20, 2012
+- Include osgRecipes OpenSceneGraph integration
+- Fix precipitation when frame delta time is 0
+- Never use fixed function for stratus (fixes MacOS rendering of localized stratus.)
+
+Version 2.61 November 12, 2012
+- Fix lightning placement when Y is not the up vector
+- Explicitly enable depth reads on cumulus drawing
+
+Version 2.60 November 6, 2012
+- Fix depth buffer usage with cumulus clouds
+- Correct documentation on SetThickness() with cumulonimbus clouds
+- Fix culling of cumulonimbus clouds
+- Don't allow setting IsInfinite on cumulonimbus clouds
+- Further refinements for cloud layer sorting
+- Don't allow virga to write to the depth buffer
+- Improve sorting of lightning
+
+Version 2.59 November 1, 2012
+- Improve handling of high (>90%) coverage values for cumulus cloud types.
+- Ensure Ephemeris is initialized when default time & location are used.
+- Improve handling of DX9 device loss / reset when using multiple atmospheres.
+- Prevent leakage of GL errors into main app.
+- Added Atmosphere::SetSunAlpha() and Atmosphere::SetMoonAlpha() to allow fading of the sun and moon.
+
+Version 2.58 October 17, 2012
+- Test for uninitialized Atmospheres being passed in to CloudLayer::SeedClouds(). SeedClouds() now returns a bool
+  indicating success.
+- Improve test for cumulus clouds being in the imposter backdrop.
+
+Version 2.57 October 8, 2012
+- Fix uninitialized voxel states (could lead to cube-shaped clouds in release builds)
+- Fix precipitation with OpenGL 3.2
+
+Version 2.56 October 5, 2012
+- Fix depth write state when drawing cumulus clouds after stratus clouds
+- Fix compressed TGA texture loading in DX10
+- Clear out any stray shaders in DX10
+
+Version 2.55 October 4, 2012
+- Fix reference counting on the Configuration object
+- Track deletion of DX9 shaders by context instead of by device.
+- Get Atmosphere::DisableFarCulling() working with cloud backdrops.
+
+Version 2.54 September 28, 2012
+- Added stratus-handle-broken-visibility setting
+- Added stratus-scale-factor setting
+- Removed GL calls from Atmosphere::CullObjects
+
+Version 2.53 September 6, 2012
+- Removes the unused variable initialVaporProbability from StratocumulusCloudLayer.cpp
+- Fixes a computing error in the tone-mapped skylight color
+- Adds an method to Atmosphere to get the Zenith color.
+- Adds a useDepthBuffer flag to the SetClipPlanes method
+- Lightning works in HDR mode. See new lightning-hdr-boost config setting.
+- Increase default brightness of rain streaks
+
+Version 2.52 August 29, 2012
+- Improve cloud sorting algorithm
+
+Version 2.51 August 28, 2012
+- Fix reference counting on the Configuration object
+- Fix initialization of memory allocator
+- Fix skybox bounding volume in OSG sample
+
+Version 2.5 August 22, 2012
+- Split out draw, update, and culling operations (optionally.) See new Atmosphere::CullObjects()
+  and Atmosphere::UpdateSkyAndClouds() methods - these let you perform updates and culling from
+  outside the main rendering thread. OpenSceneGraph sample modified to take advantage of this.
+- Add Visual Studio 2012 support.
+- Protect against active occlusion queries when Atmosphere::DrawObjects() is called.
+- Removed projection matrix callback from OpenSceneGraph sample; instead proper bounds are provided
+  for the clouds via the new Atmosphere::GetCloudBounds() method.
+- Set new default value of cirrus-fog-visibility to 0.00001 to prevent overly aggressive fogging
+  inside cirrus and cirrocumulus clouds
+- Enhanced docs for ECEF / geocentric systems
+- Include fragment shaders for all OpenGL 2.0 shaders. If you need to render to specific
+  gl_FragData elements instead of just gl_FragColor, you can edit these at least.
+- Support RLE compression on TGA resources, and RLE compress our resources
+- Cumulonimbus improvements: Don't render them into backdrops; better positioning of virga;
+  virga animation effects; improved virga texture; virga fades out as camera approaches
+- Explicitly clear out stray texture states in Ogre sample and DX9 renderer code.
+
+Version 2.44 August 2, 2012
+- Print message to debug log or console when evaluation time limit is reached
+- Improve lighting of cumulus congestus clouds when quick and dirty lighting is disabled
+- Added XNA Game Framework 4.0 example in the C# sample folder.
+- Fixed crash at shutdown in Ogre sample when using DX9
+- Properly handle shadow passes in Ogre sample, and set fade toward edges on cloud layers in it.
+- Fix black rectangles under DX9 with cloud backdrops
+- Fix lighting direction in Ogre samples
+
+Version 2.43 June 26 2012
+- Don't clamp haze color values to 1.0
+- Fix missing logic in cumulus mediocris code
+- Improved thread safety of OSG sample
+- Ogre 1.7 - 1.8 sample explicitly clears out fragment shaders left on by prior objects
+
+Version 2.42 June 3 2012
+- Don't curve large cloud layers with the curvature of the Earth, when you're not
+  in a geocentric system and not using an infinite cloud layer centered over the camera.
+- Update the cloud backdrop if the enabled state or mix of cloud layers changes.
+- Update the cloud backdrop if the cloud layer position changes substantially.
+- Fix computation of when distant clouds switch into the backdrop.
+
+Version 2.41 June 1 2012
+- Fix display of non-infinite large planar clouds in the distance
+
+Version 2.40 May 31 2012
+- Get OpenGL precipitation working properly on a wider variety of systems
+- Compute minimum particle size for precipitation more accurately
+
+Version 2.39 May 27 2012
+- Handle proper luminance of sun and moon discs when HDR is enabled
+
+Version 2.38 May 20 2012
+- Fix discontinuity in the sky just prior to sunset
+- Fix shadow maps with infinite clouds
+- Fix deletion of config entries
+- Update mailing list link in installer
+
+Version 2.37 April 30 2012
+- Fix CMakeLists.txt for OpenSceneGraph Example to be Linux-friendly
+- Add starlight-scale config setting to control how dark a moonless night is
+- Improve lighting on stratus clouds
+- Backdrop / impostors now supported in DX9
+
+Version 2.36 March 22 2012
+- New backdrop / impostor support - enables very large cloud areas. See new backdrop config settings.
+- Culling at the cloud layer level added
+- Fix crash when SILVERLINING_NO_VBO environment variable is set
+- Don't load subdirectories under Linux when scanning cloud files
+- Substantial performance improvements relative to 2.35
+
+Version 2.35 March 13 2012
+- Added CloudLayer::SetCloudAnimationEffects() method, controlling growth and convection of clouds at runtime
+- Properly handle haze when rendering stars
+- Reduce framerate hiccups when the clouds are moving
+- Ensure selection of cumulonimbus cloud models are consistent across channels
+- Remove all instances of calling rand() directly instead of RandomNumberGenerator
+- Process lightning effects even when offscreen, to ensure synchronization across channels
+- Fix warning messages in OpenGL 3.2 debug
+- Initial release of C# support - see the C# sample which includes a native DLL and C# wrapper, together with
+  an example C# application.
+
+Version 2.34 February 26 2012
+- Cumulus cloud layers about 10% faster; reduced CPU load
+- Added config settings rain-use-depth-buffer, snow-use-depth-buffer, sleet-use-depth-buffer. If your near clip
+  plane is close enough to the camera, enable these to enable depth tests against your scene with precipitation
+  particles.
+- Added wet-snow-velocity and dry-snow-velocity config settings, allowing you to adjust how fast snow particles
+  fall.
+- Protect against calls to the random number generator for ranges where start > end.
+- Bug fixes in stratocumulus clouds, especially when serializing / deserializing
+
+Version 2.33 January 13 2012
+- Check for inability to get a graphics context, and return an error from Atmosphere::Initialize() in this case.
+
+Version 2.32 December 28 2011
+- Fix crash if initialized outside of a valid GL context
+- Change depth function to less than or equal in OpenGL
+- Preserve cloud altitudes on infinite cumulus cloud layers in geocentric mode when location changes
+
+Version 2.31 December 10 2011
+- Fix culling errors on cumulus clouds, especially when wind-sheared.
+- Reverts change to not do occlusion tests when lens flare disabled.
+
+Version 2.30 November 25 2011
+- Substantial visual and performance improvements to GPU ray-casted stratocumulus clouds
+- Atmosphere::EnableLensFlare will now prevent occlusion tests when called with false. This
+  can be used for offscreen render passes and to improve performance in general.
+- Explicitly declares byte packing and calling conventions in public API's to prevent
+  incompatible project settings
+
+Version 2.21 September 12 2011
+- If you're exactly on the edge of a stratus layer, consider yourself inside it WRT fog
+- Stratus, cirrus, and cirrocumulus clouds now adjust their orientation with the camera's in geocentric systems,
+  instead of baking the orientation in at initialization time.
+- Fix OpenGL 3.2 warning when rendering stars
+- Updates light and fog internal colors immediately when Atmosphere::UpdateEphemeris is called
+- Stratus clouds now take directional light into account as well as ambient
+- Cirrus clouds use direction of diffuse light
+- Increased voxel size for cumulus congestus to 300; improves performance quite a bit and still looks good.
+- Make atmosphere from space shaders compatible with Intel HD graphics
+
+Version 2.20 September 1 2011
+- Modify SceniX 7.0 sample to sort clouds into the transparency bucket
+- Include PDB files for VC10 to avoid linker warnings when building debug projects
+- Fix DX11 warning when running on DX10 class hardware
+
+Version 2.19 August 5 2011
+- Added SceniX 7.0 sample
+- Fix Intel GPU compatibility with latest drivers
+
+Version 2.18 July 21 2011
+- Updated OpenSceneGraph samples to work with OSG 3.0 and to fix computation of clip planes
+  when the atmosphere from space is enabled.
+
+Version 2.17 July 17 2011
+- Don't create offscreen render targets when quick and dirty lighting is on
+
+Version 2.16 July 7 2011
+- Fixed include path in release target of Ogre 1.7 sample project
+- Removed stray deprecated calls in OpenGL 3.2 renderer
+- No longer require non-pure devices and lockable backbuffers in DX9
+- Now compatible with Direct3DDevice9Ex devices
+- Fix atmosphere from space rendering on OpenGL 3.2
+
+Version 2.15 May 1 2011
+- Updated Ogre sample code to work with Ogre 1.7 and leaner device reset handling
+
+Version 2.14 April 23 2011
+- Eliminate driver warnings when running in DX11 debug mode
+- Don't display the license warning dialog box more than once
+
+Version 2.13 April 9 2011
+- Added Atmosphere::D3D9DeviceLost and Atmosphere::D3D9DeviceReset methods. No longer necessary
+  to serialize, destroy, and recreate the Atmosphere in response to device resets now; call
+  these instead.
+- Visual Studio 2010 libraries built against Service Pack 1
+
+Version 2.12 March 12 2011
+- Renamed Atmosphere::BeginFrame to Atmosphere::DrawSky
+- Renamed Atmosphere::EndFrame to Atmosphere::DrawObjects
+- Fix bug with stratus clouds when small custom world units are set
+- Added parameter to Atmosphere::DrawSky to control clearing of depth buffer
+  (this allows you to call it at the end of your scene to reduce fill rate)
+- Changed default setting of ground-albedo to make horizon less pink
+- Added optional enableDepthTest parameter to Atmosphere::DrawObjects for use in
+  situations where you don't have a meaningful depth buffer
+- Fix bug with default skybox size if custom world units are set
+- Protect against leaky state in DX11 and DX10
+- Sped up cloud layer seeding performance
+- Fixed issue with re-created Atmosphere leading to bad extensions pointer in OpenGL
+- Fix precipitation with custom world units
+- Fog cirrus / cirrocumulus clouds properly in precipitation
+- Fix stratocumulus with custom world units
+- Custom world units now serialized with the Atmosphere class
+- Fix issue where changing from wet to dry snow at runtime (or vice versa) didn't 
+  get picked up
+
+Version 2.11 January 30 2011
+- Fix error where LocalTime's hour gets decremented if DST is on and AddSeconds is called
+- Fix orientation of cumulus clouds when basis vectors change
+- Fix handling of resource loader and random number generator when recreating atmosphere
+- Update to June 2010 DirectX SDK
+- RandomNumberGenerators passed into Atmosphere are no longer static, and are specific to
+  the Atmosphere object in question.
+
+Version 2.1 December 31 2010
+- Fixed memory leaks at shutdown from stratocumulus clouds and configuration
+- Improved sorting code for cloud layers
+- Tightened up bounding volumes on cumulus clouds
+- Individual component clouds of stratocumulus layers are now available via 
+  StratocumulusCloudLayer::GetClouds() (although rendering is still done at 
+  the cloud layer level)
+- Fixed cloud dimensions exposed via Cloud::GetSize() on non-cumulus cloud types
+- Incremented cloud layer file format version; be sure to re-save your cloud layers
+  if updating and using serialization
+
+Version 2.09 December 8 2010
+- Performance gains for stratocumulus clouds (up to 4X faster on some systems)
+- Fixed lighting of stratocumulus cloud volumes when inside the cloud
+- Fixed memory leaks at shutdown from static objects
+
+Version 2.08 November 23 2010
+- Fix bug where precipitation causes lens flares to disappear
+- Small performance tweaks
+
+Version 2.07 November 21 2010
+- Added explicit wind methods on CloudLayer and for precipitation, so you can have
+  additive wind effects on specific cloud layers and on precipitation in 
+  addition to global wind set via AtmosphericConditions::SetWind. See
+  AtmosphericConditions::SetPrecipitationWind and CloudLayer::SetWind.
+- Added sample code for Carmenta Engine 5.0 (visit www.carmenta.com)
+- Don't delete custom RandomNumberGenerators passed in to the Atmosphere.
+- Updated time zone names.
+- Fixed discontinuity when entering / leaving stratocumulus cloud bounding volume
+- Fixed fog on stratocumulus under DirectX
+- Precipitation on cloud layers is now triggered if the camera is inside the cloud as well
+  as underneath it
+- Fix near clipping plane on precipitation effects
+
+Version 2.06 October 31 2010
+- Make fade falloffs configurable for cloud layers with SetFadeTowardEdges on. 
+  Default is less aggressive for cirrus now.
+- Fix problem with cirrus fade-ins / fade-outs with SetFadeTowardEdges on.
+- Made precipitation particles more evenly distributed about the camera.
+- Added optional nearClip and farClip parameters to CloudLayer::SetPrecipitation 
+  and AtmosphericConditions::SetPrecipitation, useful for simulators with screens 
+  distant from the eyepoint.
+- Fix precipitation under infinite stratocumulus clouds
+- Added rain/sleet/snow-minimum-pixels config setting to enforce minimum projected
+  screen size of precipitation particles.
+- Fix culling against rain and sleet particles to eliminate rainless borders
+- Don't delete custom ResourceLoaders passed in to Atmosphere::SetResourceLoader.
+- Precipitation is a bit more efficient now
+- Enabled RTTI in VC7 and VC6 libraries
+
+Version 2.05 October 24 2010
+- Fix CloudLayer::Save() and CloudLayer::Restore() to write binary files
+- Added CloudLayer::ForceLightning() and lightning-auto-discharge config setting
+- Fix motion of infinite stratocumulus clouds in round-earth applications
+- More tweaking of stratocumulus performance and appearance - sampling artifacts reduced
+- Stratus, cirrus and cirrocumulus clouds now honor CloudLayer::SetFadeTowardEdges()
+
+Version 2.04 October 19 2010
+- Increase opacity of stratocumulus clouds, and reduce sampling artifacts
+
+Version 2.03 October 18 2010
+- Fixed positioning of non-infinite stratocumulus cloud layers in round-earth applications
+
+Version 2.02 October 17 2010
+- New, simpler, faster lighting model for stratocumulus clouds
+- Infinite stratocumulus clouds won't blow away with wind
+- Fixed Atmosphere::ReloadConfigFile
+- Removed duplicate config entry for raindrop-terminal-velocity
+- Fixed direction of stratocumulus cloud motion from wind to match other cloud types
+- Added CloudLayer::IsRenderable(), which takes cloud fading into account. CloudLayer::GetEnabled will now
+  return immediately whatever was  passed in via CloudLayer::SetEnabled() without taking fading time into account.
+- If a cloud layer is enabled / disabled while a fade is in progress, avoid a discontinuity in the fading.
+
+Version 2.01 October 12 2010
+- Added CloudLayer::GetClouds method
+- Increased sampling rate and noise amplitude, and ambient light terms on stratocumulus clouds
+
+Version 2.0 October 10 2010
+- New Stratocumulus clouds - rendered with GPU ray-casting!
+- Clamp fade values in billboard shader
+- Fix math in placing status / cirrus vertices
+- Rewrote Configuration class to be more efficient and not fragment memory
+- Fix orientation of infinite stratus / cirrus / cirrocumulus decks when moving across large distances in 
+  round-Earth systems
+- Better memory allocation overriding capabilities. See the new Allocator class in MemAlloc.h. STL containers,
+  new/delete, malloc/free are all intercepted in non-global manners.
+- Added Atmosphere::SetWorldUnits() to support coordinate systems that are not based on meters.
+- Added sample code for SceniX and Carmenta engines
+- Fix VC10 dynamic linking issues
+- Fix cumulus cloud lighting when Y isn't up
+- Fix bug with stratus / cirrus / cirrocumulus clouds interfering with precipitation in some conditions
+- Added cmake files for OpenSceneGraph 2.x example
+- Updated to Feb '10 DirectX SDK and Windows SDK 7.1
+
+Version 1.971 June 9 2010
+- Fix resource leak with lens flares on DX9 with non-lockable backbuffers.
+- Added new config settings average-horizon-color-fov and average-horizon-color-num-samples
+- Dramatically reduced memory footprint
+
+Version 1.97 June 8 2010
+- Fixed texture edges in non-infinite stratus clouds
+- Removed duplicate cloud-relight-budget config setting
+- Added optional zenithAngleOffset parameter to the Sky::SkyColorAt method. This allows you to slightly adjust the 
+  color appearance of Cumulus clouds (positive value makes clouds more bluish).
+- Individual wind volumes may now be deleted via AtmosphericConditions::RemoveWindVolume
+- Atmosphere height and rendering of the atmosphere from space may now be modified at runtime
+- Remove stale reference to Atmosphere in Billboard when deleted
+- Fixed getMilliseconds on Linux and Mac
+- Cumulus clouds are now placed with the curvature of the Earth in mind (unless you set cumulus-round-earth to no)
+- Added CloudLayer::SetCloudWrapping() and CloudLayer::SetFadeTowardEdges() to prevent localized cloud layers from blowing
+  away, and preventing any visible popping as the clouds wrap around the edges of the layer.
+- Build machines now running Windows 7, Ubuntu 10.04, and Mac OS 10.6.3
+- Fixed shading on cumulus clouds loaded from VRML files
+- Added OpenGL 3.2 core context renderer
+- Cumulus clouds now fade with distance (set by AtmosphericConditions::SetVisibility())
+- Added more random noise to cloud puffs
+- Improved Ogre3D sample code
+- Made Linux version less dependant on the version of mesa installed under Ubuntu
+- Fixes to compile under 64-bit Linux
+- CirroCumulus clouds now honor cirrus-round-earth
+
+Version 1.963 April 16 2010
+- Added Visual Studio 2010 support
+
+Version 1.962 April 12 2010
+- Fix fog on stratus cloud decks for DirectX and ATI+GLSL
+- Fix stratus decks with density < 1.0 on DirectX 9
+- Removed dependency on Cg altogether; we stopped using it for DirectX some time ago. OpenGL will now just fall back to
+  the fixed function pipeline if GLSL isn't supported on the system, which is rare these days.
+- Removed dependency on GLUT for the OpenGL renderer, although we still use GLUT for the OpenGL sample project.
+- In order to remove GLUT, we removed the Atmosphere::DisplayFramerate method. You can still call Atmosphere::GetFramerate
+  and display it on your own.
+- In short, there are no longer any third-party DLL dependencies for SilverLining!
+
+Version 1.961 April 1 2010
+- Tweaked shaders to work better on older Shader Model 2.0 cards
+
+Version 1.96 March 28 2010
+- Removed all _INFINITE cloud layer types and NIMBOSTRATUS in favor of exposing CloudLayer::SetIsInfinite() on all cloud layers. Cloud layers
+  are not infinite by default; call SetIsInfinite() to make a cloud layer camera-centered. NIMBOSTRATUS layers should be replaced
+  with STRATUS layers with SetIsInfinite(true)
+- Abstracts away memory management with the SL_NEW, SL_DELETE, SL_MALLOC, and SL_FREE macros defined in SilverLiningTypes.h.
+- Exposes new ResourceLoader class, to let you override our texture / shader / data file loading with your own resource management scheme.  
+- Fixed uninitialized shader for lens flare in non DX9 renderers
+- Removes hard-coded clamp of 20.0 for precipitation intensity
+- Fixed some warnings under g++
+- Properly handles failure to do pixel read-back in lens flare occlusion tests
+- Fixed bug with the first lens flare drawn being corrupt on some systems
+
+Version 1.953 March 21 2010
+- Check for changes to sun-luminance-scale and moon-luminance-scale each frame
+- Fix DX9 warning and color on lightning effects
+- Fix resource leak from cumulus clouds loaded from vrml files (ie, cumulonimbus)
+- Updated DX9 sample to illustrate handling of a lost device using Atmosphere::Serialize and Unserialize
+- Ran beautifier on the source code to ensure consistent tabs / line endings
+
+Version 1.952 March 14 2010
+- Fix bug in rain where billboarding of the particles was off
+- Update to Feb 2010 build of Cg 2.2
+- No longer uses fixed function pipeline in DirectX9 at all (eliminates errors in debug version of DX9 due to use of 128 bit color)
+- Reinstate support for shader model 2.0 in DirectX9
+- Properly handle failure of Cg programs to compile (again on SM2.0 cards)
+- Added Serialize / Unserialize methods to Atmosphere, so you can completely capture the state and restore it.
+This is quite useful when you need to delete and recreate an Atmosphere when handling a device reset on DX9.
+- Project fixes for VC6
+
+Version 1.951 February 18 2010
+- Updated Ogre3D sample to play nice with compositors
+- Disable GL_SAMPLE_ALPHA_TO_COVERAGE before we render (also improves Ogre3D compatibility)
+- Fix bug where the billboard matrix is incorrect after EndFrame() if you're managing your own cloud drawing,
+  and using a non-default coordinate system.
+
+Version 1.95 February 7 2010
+- Linked DX9 and DX10 renderers against the August 2009 DirectX SDK (instead of March 08)
+- Reinstated support for VC6 and VC7 by popular demand
+- Fixed virga effect under cumulonimbus (if you set cumulonimbus-rain-texture to rain.tga)
+- Cumulonimbus cloud layer size now properly honored
+- Added new lens flare effect - see Atmosphere::EnableLensFlare() and the lens flare section in the 
+  config file for options
+- Added new occlusion query against the sun - see Atmosphere::GetSunOcclusion()
+- Added new optional parameter to Atmosphere::BeginFrame - drawStars lets you disable star rendering.
+  This can be useful for passes that render environment maps; stars can lead to unwanted bright spots
+  in them.
+- New HDR support - completely disables tone mapping and gamma correction, and writes raw luminance values
+  in kCd/m2 to your floating point framebuffer. HDR may be toggled at runtime now. See Atmosphere::EnableHDR()
+- Fixed incompatibility with new ATI DirectX11-class HD cards
+- Cg now uses the latest shader profile found on the system (relevant to OpenGL only)
+- Sped up vertex operations on DirectX9
+- Fixed texture coordinate issues on DirectX
+- Simplified the billboard shader
+- CloudLayer::SetBaseAltitude() may now be called at runtime to reposition an existing cloud layer
+- Added CloudLayer::IsInsideCloud() to provide collision detection with a cloud layer's cloud
+- Fix bounding volume on clouds generated from .wrl files
+- OpenGL renderer now uses GLSL shaders instead of Cg if GLSL is supported on the system.
+- DirectX shaders now require Shader Model 3 support.
+- Fixed bug where multiple cloud layers could clear each other's sky fog when you're inside one
+- Added cull-interior-voxels config setting. This will cull cloud voxels that are completely surrounded by
+  other voxels, giving a small performance boost.
+- Cumulus cloud fog color is now computed per cloud, for better blending into the sky
+- The up vector in effect when CloudLayer::SetLayerPosition() is called is now stored with the cloud layer. So,
+  cirrus, cirrocumulus, and stratus clouds won't change orientation as Atmosphere::SetUpVector() is changed unless
+  you explicitly call SetLayerPosition(). (Infinite cloud layers are always oriented relative to the current up
+  vector for the frame still, since they are relative to the camera position.)
+- Added pitchDegrees parameter to Atmosphere::GetHorizonColor() so you can sample the color a little above the
+  actual horizon if you want to.
+- Stratus, cirrus, and cirrocumulus cloud layers now curve downward with distance with the curvature of the Earth.
+  You can disable this with stratus-round-earth and cirrus-round-earth if you need to.
+- Renamed "-static" versions of the libraries to "-norenderer" to reduce confusion.
+
+Version 1.94 January 10 2010
+- Refactored to make integration with rendering engines not directly supported easier. See new section in docs on
+  integrating with custom renderers for more info. Basically you can treat the core of SilverLining as a platform
+  agnostic numerical engine that calls back into your own renderer now.
+- Fix problem with sun/moon glow being too bright near the horizon
+- Fix anomaly with billboard rendering when view vector approaches the world up vector
+- Properly fog cirrus and cirrocumulus clouds when AtmosphericConditions::SetFog() is used
+- Fix fog on cirrus and cirrocumulus in DX10 and DX11
+- Added config setting scatter-moon-color to let you disable color on the moon
+- Fix fog on cumulus clouds
+  
+Version 1.93 December 26 2009
+- Cleaned up resources folder
+- Tweaked cumulus cloud lighting further
+- Added CloudLayer::GetAlpha to allow setting explicit translucency on any cloud layer. You can use this to
+  give the clouds a softer appearance that blends into the sky more.
+- Cirrus and cirrocumulus cloud layers now honor the "thickness" setting, and will generate fog when inside
+  them.
+
+Version 1.92 December 22 2009
+- Fix sun and moon placement with non-default up and right vectors in non-geocentric mode
+- Added "drawPrecipitation" parameter to Atmosphere::EndFrame() to provide workaround for 
+  multiple viewports per frame
+
+Version 1.91 December 15 2009
+- Added a new STRATUS cloud layer type. STRATUS is similar to NIMBOSTRATUS, but does not extend infinitely to the horizon.
+  The position, length, and width of STRATUS clouds will be honored, enabling you to place low clouds off in the distance with
+  distinct edges.
+- Added a vertex shader for stratus and nimbostratus clouds, to give them some dimension on their upper planes.
+- IR sensor simluation support - see Atmosphere::SetInfraRedMode()
+- Performance improvement (stopped using std::bitset in our Voxel class and stopped using std::map in Configuration)
+- Fixed divide by zero bug in cloud lighting calculation
+- Added Atmosphere::DisableFarCulling() to not cull clouds against the far clip plane. You can use this in conjuction
+  with depth clamping to keep your far clip plane close and still render distant clouds.
+- Brightened horizon a bit, brightened moon illumination a bit.
+- Fixed bug where sun / moon disappear sometimes when viewed from outer space
+- Imposters work again (if you set disable-imposters to "no" and use OpenGL or DX9)
+- Fixed bug where clouds were black from very high altitudes (due to fogging gone awry)
+- Reworked the math behind the rendering of the atmospheric limb
+- Fixed coordinate frame when rendering sun, moon, and stars in geocentric mode if you have a Y-North geocentric system.
+  See the new geocentric-z-is-north config setting if this applies to you.
+- Interpolates skylight to black as you leave the atmosphere instead of suffering a discontinuity at the edge of the
+  atmosphere.
+- Updated fog handling in sample code to account for being outside of the atmosphere.
+- Increased number of stars rendered at night
+- Density of 0 now supported in SetHaze()
+- Fixed performance and appearance of cumulonimbus clouds (vrml files were not installed)
+
+Version 1.9 November 12 2009
+- DirectX 11 Support!
+- Fixed bug with twilight luminances and simulated ozone amount
+- Numerous tweaks and fixes to sky and light colors (they're a LOT better now.)
+- Updated to October 2009 build of Cg 2.2
+- Built against Windows 7 SDK and August 09 DirectX SDK
+- Added config setting "disable-tone-mapping". May be changed at runtime - disables all tone-mapping effects.
+- Added air-mass-model, spectrum-red-shift, and air-mass-multiplier config settings to allow further tweaking of sky colors.
+  These may also be set at runtime.
+- "Quick and dirty" cumulus lighting mode now enabled by default. It's faster and looks smoother, but this means shadow
+  maps won't be generated unless you turn off cumulus-lighting-quick-and-dirty.
+- The "complex" sky shader, which computes both the sun and moon light simultaneously, is now the default.
+- Added config settings "twilight-chromaticity-x" and "twilight-chromaticity-y" for adjusting the sky's twilight color.
+- Added config settings "sunset-X-boost", "sunset-Y-boost", "sunset-Z-boost", and "sunset-boost-exponent." These allow tweaking
+  of the scattered sunlight color as the sun approaches the horizon. 
+- Removed the perceptual monochromatic blue shift effect at twilight.
+- Increased the ambient term on cloud voxels
+- Fixed geometry of atmospheric limb
+- Fixed bug with cumulonimbus cloud voxels remaining lit from lightning
+- Fixed "brightness" config setting to be more effective
+- Made moonlit skies darker
+- sun-luminance-scale and moon-luminance-scale now affect scattered as well as direct light
+- Better preservation of color in cloud lighting
+- Added atmosphere-ozone-mass and atmosphere-water-vapor-mass config settings
+- Added small randomness to metaball colors to improve cloud depth (see metaball-color-randomness)
+- Exposed individual Perez function coefficient scale factors to config
+- Fix problem in DX9 device resets where shaders weren't released
+- Added glow effects to the sun and moon
+  
+Version 1.818 September 3 2009
+- Better input validation
+- Fix bug in OSG sample code's near/far clip adjustment
+- Make source compatible with gcc 4.4
+- Precipitation performance enhancements.
+- Updated license agreement for full source version to not include reverse engineering
+  restrictions.
+
+Version 1.817 August 18 2009
+- Fix ATI compatibility issues
+
+Version 1.816 August 15 2009
+- OpenSceneGraph 1.0 example code provided (in addition to the 2.x example)
+- Updated license agreement
+
+Version 1.815 July 16 2009
+- Re-enable DX9 shaders
+- Switch to compiled HTML docs
+- Set SILVERLINING_PATH env variable immediately when installer finishes.
+- render-offscreen back to "no" by default.
+
+Version 1.814 July 14 2009
+- Fix crash related to RandomNumberGenerator if all atmospheres are deleted and then one is recreated
+- Render the lighting pass offscreen by default, for better DX9 compatibility.
+
+Version 1.813 July 12 2009
+- Added HDR sky shader for DirectX
+- Added new configurations to the SilverLining project (full source users only) to statically link in the
+DirectX or OpenGL renderers (makes console porting easier.)
+- Made source code more platform-independent.
+
+Version 1.812 July 9 2009
+- Reduced billboard vertex buffer chunk size from 20000 to 10000 vertices for system compatibility
+- Fix problem when the modelview and proj. matrices change between beginframe() and endframe()
+- DirectX9 renderer no longer uses NVidia's Cg - it uses HLSL directly. DirectX applications no
+  longer need to link against Cg and redistribute it (this makes XBox porting easier.)
+
+Version 1.811 June 24 2009
+- Made OpenSceneGraph sample code Linux-friendly, provided makefile, force to display in window
+- Added HDR (floating point color) support for licensed users with full source. 
+  Uncomment the preprocessor definition FLOATING_POINT_COLOR in VertexBuffer.h,
+  rebuild the libs and DLLs, and the sky will render in HDR space.
+
+Version 1.81
+- Mac OSX 10.5 support! Makefiles will build under MacOS or Linux now.
+Continue to use the Visual Studio project files for Windows.
+- Fix bug in billboard shader with uninitialized value (seemed to affect ATI
+cards mostly)
+- Intel compiler compatibility
+- Reduce calls to configuration
+- Speed up initialization by streamlining billboard creation
+- Abstracted away the random number generator. You may provide your own by subclassing
+RandomNumberGenerator and passing in an instance of your implementation to 
+Atmosphere::SetRandomNumberGenerator()
+
+Version 1.801 June 2 2009
+- Reset vertex buffer format on entry to SilverLining with bindless graphics.
+- Always calculate the framerate, since the app might display it on its own.
+
+Version 1.8 June 1 2009
+- "Infinite" cumulus cloud layers - see new CUMULUS_CONGESTUS_INFINITE and CUMULUS_MEDIOCRIS_INFINITE cloud
+layer types in CloudLayerFactory. These layers stay centered at the camera position, with individual clouds
+wrapping across the layer. No more disappearing clouds as the wind blows them away, or as the camera moves.
+- Uses OpenGL Bindless Graphics on systems that support it (NVidia 185 driver + G80 hardware.) 20% faster
+by our tests.
+- Linux support. Code compiles and links without warnings on GNU C++; static library, OpenGL sample, and 
+makefiles provided. Tested on Fedora Core 10.
+
+Version 1.7 May 18 2009
+- DirectX 10 support! DX10 version does not depend on NVidia's Cg any longer, and uses HLSL directly.
+- Takes explicit modelview and projection matrices from the application now; see 
+  Atmosphere::SetCameraMatrix() and Atmosphere::SetProjectionMatrix()
+- GCC portability bugs addressed
+- Added geocentric and ecliptic versions of Atmosphere::GetSunOrMoonPosition
+- Updated to CG 2.2
+- Apply visibility effects from global precipitation set on AtmosphericConditions
+- Cleaned up project files in full source distribution
+- Fixed LocalTime::AddSeconds()
+- Added cloud-relight-budget config setting to spread out relighting in response to time of day changes.
+
+
+Version 1.610 December 13 2008
+- Reduced memory fragmentation
+- Reduced and made configurable how the moon lights up the sky at night
+- Made config lookups more efficient
+- Fix resource leak in DirectX with render-offscreen enabled
+
+Version 1.609 November 27 2008
+- Protect against duplicate Cg context ID's in renderer shutdown.
+
+Version 1.608 November 26 2008
+- Don't reload the DLL when creating a new atmosphere.
+- Fix DirectX resource leaks when releasing multiple atmospheres.
+- Maintain seperate Cg contexts per Atmosphere object.
+
+Version 1.607 November 25 2008
+- Further DirectX / multiple device fixes.
+
+Version 1.606 November 24 2008
+- Allow DirectX version to work with multiple devices (one device per Atmosphere object)
+- Fix precipitation manager shutdown with multiple atmospheres
+
+Version 1.605 November 8 2008
+- Added CloudLayer::GetPrecipitation() method
+- Precipitation is now saved and restored with cloud layers.
+
+Version 1.604 November 5 2008
+- Disable fixed-function fog when billboard shader is in effect. (Fixes cumulus clouds when viewed from within
+  a stratus cloud in DirectX)
+
+Version 1.603 October 28 2008
+- LocalTime::SetFromEpochSeconds now assumes GMT time zone, no need to set local time zone with it anymore.
+- Fix broken stratus clouds in DirectX
+
+Version 1.602 October 25 2008
+- Update to final release of Cg 2.1
+- Properly handle off-center / skewed / sheared projection matrices when rendering precipitation
+
+Version 1.601 October 13 2008
+- Release precipitation resources when Atmosphere is destroyed (allows D3D9 to be reset successfully)
+- Honor the default-turbidity setting when Atmosphere::Initialize is called.
+- Make sky shaders compatible with HLSL
+- Change blending mode for glares
+- Fix GetSunOrMoonPosition to return light source with greatest transmitted luminance
+- Add Atmosphere::GetGamma() and Atmosphere::SetGamma() to allow runtime adjustment
+
+Version 1.6 September 28 2008
+- Add third parameter to Atmosphere::BeginFrame() to allow apps to change the size of the skybox dynamically
+  (useful for apps that modify the near and far clip planes dynamically)
+- Fix scale of projected depth in left-handed OpenGL or right-handed DirectX.
+- Tweak how large cloud layers are sorted relative to each other
+- Don't make cumulus clouds disappear as soon as you enter a stratus deck
+- Fix floating point accuracy issues in GetDistance methods of flat cloud layers
+- Added Atmosphere::GetConfigValueDouble and Atmosphere::GetConfigValueString
+- Remove clouds from list of scene objects as soon as they are deleted.
+- Change up and right vectors passed into Atmosphere to take doubles instead of floats
+- Add AtmosphericConditions::SetFog(), ClearFog(), and GetFog() to explicitly fog clouds to a given color and density
+- Clear all vertex array client states before using vertex arrays
+- Improved OpenSceneGraph sample code
+- Fix transition as you leave the atmosphere with very high altitudes
+- Add gamma correction to the skybox colors and light colors (you can adjust with the sky-box-gamma config setting,
+  and influence how dark the sky colors are by doing so. The default of 1.8 is quite realistic.)
+
+Version 1.514 August 17 2008
+- Fix anomalies in cloud billboards when looking up at around 45 degrees
+- Fix cloud flicker in Ogre3D using DirectX
+- Tweak Ogre3D sample code to display warning dialog before entering full screen mode,
+  and specify the time zone to match the location.
+
+Version 1.513 August 10 2008
+- Fix DLL path for debug builds
+- Update to Cg 2.1 beta (fixes flicker in sky that was happening on some systems)
+- Color the sun disc as it nears the horizon (see new scatter-sun-color config setting)
+- Don't draw the sun when it's below the horizon by default (see new draw-sun-below-horizon config setting)
+- Added troubleshooting tips to the documentation
+
+Version 1.512 August 1 2008
+- Fix streak lengths for sleet when camera is moving.
+- Fix spelling on lightning-max-discharge-period config setting.
+
+Version 1.511 July 30 2008
+- Don't ask for high quality smooth lines for lightning, too much of a performance hit on some
+  systems.
+- Pre-compute lighting effects from lightning to speed up runtime performance.
+- Added section in documentation on using Silverlining in geocentric / ECEF systems.
+- Add table of contents to main page of docs.
+- Changed OSG example to point to a win32 Program Files path instead of win64 in 
+  Atmosphere::Initialize call.
+- Force clouds to recompute lighting upon a CloudLayer::SetEnabled call, regardless of time 
+  lapse update settings.
+- If a thunderhead's base altitude is more than the radius of the Earth, assume we are 
+  in an ECEF system and don't render lightning bolts to the center of the Earth...
+
+Version 1.51 July 23 2008
+- Added sleet
+- Added support for mixed precipitation (call CloudLayer::SetPrecipitation multiple times for different 
+  precip types, or set it to NONE to clear them)
+- Added AtmosphericConditions::SetPrecipitation method, for global precipitation effects that don't require
+  use of CloudLayers.
+- Don't use Cg profiles newer than VP40 or FP40; our billboard shader doesn't seem to work properly with the
+  new profiles in Cg 2.0.
+  
+Version 1.502 July 13 2008
+- Added fade in / fade out effects to CloudLayers; see new fadeTimeMS parameter in CloudLayer::SetEnabled()
+- Properly factor in night sky luminance (including light pollution) into tone-mapping
+- Don't draw stars when it's overcast.
+- Fix undefined V-coordinate texture wrapping mode in DirectX
+- Lightning strikes now honor the MillisecondTimer instead of using system time directly
+- Add Ogre3D sample code
+
+Version 1.501 June 27 2008
+- Added AtmosphericConditions::SetLightPollution() to add extra ambient light to nighttime scenes
+- Fixed range of snow to 1.0 to 30.0 mm/hr instead of 1.0 to 3.0 (we mixed up cm and mm... blush)
+- Fix bug where cloud colors were undefined if a certain register got overwritten by the application
+- Added config option to prevent rain streaks from elongating with camera motion
+
+Version 1.5 June 22 2008
+- Fix sky color on skybox verts below the horizon
+- Smoother fog transitions through stratus clouds
+- Added precipitation (rain and snow) support to CloudLayers
+- Fix bogus assert in CumulusCloud.cpp
+- Fix various gcc portability issues
+- Make cirrus lighting consistent with cirrocumulus lighting
+- Updated to May 2008 Cg build
+- Updated to March 2008 DirectX SDK
+- Added 64-bit DLL's and LIB's (see new win32 and x64 subdirectories now)
+- No longer supporting Visual Studio 6 and 2007 (see docs on how to obtain version 1.094)
+- Improved cumulus cloud appearance
+- Hand-modeled Cumulonimbus clouds added
+- Demo time limit increased to 5 minutes
+- Fixed sun/moon billboarding in geocentric mode
+- Added OpenSceneGraph sample code
+- Added Atmosphere::SetConfigOption method
+
+Version 1.094 March 30 2008
+- Explicitly sets the client active texture unit to zero prior to rendering 
+  (fixes lots of compatibility problems)
+- Added Visual C++ 2008 (VC9) support
+- Added support for manually generated cloud models (contact us for details)
+- Built VC8 binaries with SP1
+- Remove ATL dependency in DirectX9 DLL, so you can build sources with VC++ Express Edition.
+- Disabled 2D text drawing (framerate display) in DirectX9. D3DXFont::DrawText was crashing
+  on some systems, despite having valid parameters.
+- Add +- 10% randomness in individual cloud puff sizes
+
+Version 1.093 March 23 2008
+- Added star-magnitude-adjustment config setting to allow tweaking of star brightness
+- Smoothed transition from atmosphere-from-space to ground
+- Enable glare on the sun when outside of the atmosphere
+- Fix bug where cloud layer altitude and thickness were not properly saved / restored
+- Fix reversed wind direction on stratus decks
+- Added "quick and dirty" cloud lighting option in config file, useful for time lapse sequences.
+- Fix star orientation in geocentric mode
+- Updated to Cg 2.0 (Jan 08 build)
+- Add statically linked DirectX9 renderer build option
+- Fix bug where north/south axis was flipped for astronomical object positions in sky
+- No longer messes with near and far clip when drawing the sky box, this led to inconsistencies.
+- Stars, sun, and moon drawn honoring the skybox size config setting.
+
+Version 1.092 January 13 2008
+- Draw the bottom face of the skybox (for space-based viewpoints)
+- Fix bug that affected performance on cumulus clouds
+- Always draws the sun (for space-based viewpoints)
+- Sets near and far clip planes to ensure drawing of the sky box
+- Reduced memory footprint
+- Realistically darken the sky as the altitude (as specified in the Location of the
+  AtmosphericConditions) increases. Go up into space and watch the stars come out!
+- Simulated sun and moon light color is affected by altitude (scattering reduces with
+  altitude.)
+- Fix bug where sun and moon light directions were not transformed into the specified
+  coordinate frame as set by Atmosphere::SetUpVector and SetRightVector.
+- Exposed geographic and equatorial coordinates for the sun and moon.
+- Added geocentric coordinate rendering mode for astronomical objects (see new optional paramater
+  on Atmosphere::EndFrame() )
+- Fixed bug where going backwards in time using a MillisecondTimer would cause clouds to
+  completely disappear.
+- CloudLayer::SetLayerPosition may now be called at runtime to reset a layer's position and/or
+  wind drift.
+- Added simulated atmospheric limb for space-based viewpoints. (see enable-atomsphere-from-space
+  config setting)
+
+Version 1.091 October 27 2007
+- Set vertex array buffer to 0 when unsetting it (fixes OpenSceneGraph compatibility problems)
+- Fix crash on systems without array buffer support on OpenGL
+
+Version 1.090 June 23 2007
+- Fix bug in positioning of cumulus congestus clouds
+- Properly initialize textures to null for stratus and cirrus clouds
+
+Version 1.089 April 8 2007
+- Return error codes from Atmosphere::Initialize instead of just a boolean success.
+- Push and pop the GL client state surrounding BeginFrame and EndFrame calls automatically.
+- Release DirectX resources associated with offscreen render targets.
+- Distribute VC6, 7, and 8 builds of renderer DLL's under VC6, VC7, and VC8 subdirectories of
+the Resources directory. Libraries automatically link in correct builds at runtime.
+- Fix Visual C++ 6 sample project files.
+
+Version 1.088 February 24 2007
+- Fix DirectX object leak when using offscreen rendering for lighting pass
+- Fix resource folders not relative to the working directory in OpenGL version
+- Added support for custom millisecond timers (see AtmosphericConditions::SetMillisecondTimer)
+- Added support for continuous time of day updating (see AtmosphericConditions::EnableTimePassage)
+
+Version 1.087 February 11 2007
+- Allow devices with unlockable back buffers and multisampling if render-offscreen is enabled in 
+  SilverLining.config.
+- Documentation corrections.
+
+Version 1.086 February 3 2007
+- Disable sun glare effects by default (causes perf issues on some Dell Inspiron laptops)
+- Disable imposters by default (causes jerkiness on PCI NVidia cards)
+- Limit number of imposter and cloud sorting updates per frame to smooth framerates
+- Fix sun disc drawing before sunrise
+
+Version 1.085 January 28 2007
+- Reduce ambient term in cumulus clouds to improve appearance.
+- Save and restore state in DirectX
+- Fix missing ground texture in DirectX sample app
+
+Version 1.084 January 22 2007
+- Added ability to save and restore cloud decks, to offer a way to speed up
+  cumulus cloud layer creation and reproduce exact cloud layers without any
+  randomness.
+- Reduced memory requirements
+- Install both VC7 and VC8 project files
+- Use VC8 runtime DLL's in DLL library targets instead of VC7
+- Protect against an incompatibility with older ATI drivers in OpenGL mode.
+- Fixed resource leaks under DirectX
+- Check bounds of reads and writes from the framebuffer to avoid D3D errors
+- Fix crash in DirectX associated with lightning firing
+- Change sample apps to use static runtimes
+- Fix DirectX sample app to not leak memory on shutdown
+
+Version 1.083 November 4 2006
+- Update DirectX sample code to wrap Initialize with beginscene/endscene and fix DirectX exception
+- Enable re-creation of a deleted Atmosphere object without errors
+
+Version 1.082 October 18 2006
+- Added moon-luminance-scale config setting
+- Star glare effects disabled by default for performance (set disable-star-glare=no to get them back)
+- Fix wind shear on cumulus congestus and cumulonimbus clouds
+- Improved lighting on cirrus clouds
+- Improved tone-mapping on moonlit nights
+- Improved luminance model in twilight (fixes bright clouds after sunset)
+- Reduced memory consumption.
+- Switch to a newer air mass model.
+
+Version 1.081 October 10 2006
+- Switch to the CIE color model.
+
+Version 1.08 October 8 2006
+- Improvements in cloud lighting from better modeling of atmospheric optical depth and zenith luminance.
+- Improved day/night transitions.
+- Fix and tweak glare effects for Directx and OpenGL with ATI extensions.
+- Decreased default lightning frequency and lightning branches.
+- Added Atmosphere::ReloadConfigFile() method.
+- Fix discrepancy between average horizon color, tone mapping, and simple sky shader.
+- Fix determination of relevant dominant light source for simplified sky shader.
+- Fix bug tracking blend mode state
+- Updated to use Cg version 1.5
+- Added lightning notification object (see the new LightningListener class)
+- Fix tone-mapping when pitch black
+- Fix bug where new cumulonimbus clouds would fire all lightning bolts at once on their first frame.
+- Switch from CIE color model to CCIR Rec. 709 video standard
+- Improved star rendering
+- Added cirrocumulus clouds and a second cirrus texture.
+- Reduced height of cumulus congestus clouds and decreased voxel size. Tweaked physical parameters.
+- Tweaked lightning effects, fixed lightning under DirectX.
+- Improved lighting of stratus and cirrus decks.
+
+Version 1.072 September 4 2006
+- Clear out texture stage states prior to rendering in DirectX9, fix texture stage enable / disable code.
+- Fix bug in setting point rendering state to default in DirectX9, which fixes stars on ATI X1xxx cards.
+- Improved appearance of stars at night.
+- Tweak billboard matrix with non-default up vectors.
+- Fix fog density in DirectX.
+
+Version 1.071 August 29 2006
+-Re-enable depth buffer writes when rendering to texture for imposters in DirectX9.
+
+Version 1.07 August 28 2006
+- Automatically set default render states within Atmosphere::BeginFrame() and Atmosphere::EndFrame(), and restore original settings
+when exiting these methods. Also clears any previously set fragment or vertex shaders.
+- Eliminate unnecessary clear of depth buffer in DirectX version.
+- Added Atmosphere::SetUpVector() and Atmosphere::SetRightVector() to allow for cases where "up" is not the positive Y axis.
+- Modified documentation to indicate that "pure" DirectX devices are not supported.
+- Added methods to allow the application to manage its own cloud drawing: Atmosphere::GetObjects(), Atmosphere::GetObjectDistance(),
+and Atmosphere::DrawObject().
+- preserve-back-buffer config setting now defaults to "no".
+
+Version 1.06 August 6 2006
+- Depth and color buffers won't be touched by Atmosphere::BeginFrame(false), if preserve-back-buffer = yes is specified in the SilverLining.config file
+- Eliminate unnecessary depth buffer clear
+- Protect from crashes due to calling Atmosphere methods in incorrect order
+- Fix bug in moonlight calculation
+- Store all epoch seconds in unsigned longs
+- Fixes for clean builds under VC8
+
+Version 1.051 August 1 2006
+- Added MSVC8 libraries
+
+Version 1.05 July 31 2006
+- Add ambient skylight to lighting of cirrus and stratus clouds
+- Add MSVC 6 libraries and projects
+- Change samples to use multithreaded DLL runtime libraries for MSVC8 compatibility 
+
+Version 1.04 July 19 2006
+
+- Code cleanup and documentation for full-source licensees
+- Remove limit of simulated refracted solar angle of -9 degrees (we simulate twilight below that point)
+- Add SetHaze() and GetHaze() methods to Atmosphere, to support blending toward a specified horizon 
+  color in the sky box.
+- Fix precision bug on horizon color with NVidia hardware.
+
+Version 1.031 July 2 2006
+
+- More accurate sky color at horizon
+
+Version 1.03 June 26 2006
+
+- Fog color returned from Atmosphere class is premultiplied with the sun/moon color now
+- Enabled fog effects on cirrus decks
+- Volumetric fog effects on sky dome added
+
+Version 1.02 June 22 2006
+
+- Added Atmosphere::GetHorizonColor() method that doesn't require yawDegrees to be explicitly passed in.
+- Protected from divide-by-zeros in GetHorizonColor()
+- Simplify star vertex shader to fit within 128 instructions
+- Model twilight correctly (better day/night transitions)
+- Added GetSunColor(), GetMoonColor(), GetSunPosition(), and GetMoonPosition() methods to the Atmosphere
+  class for customers who wish to model two independent light sources.
+- Fix cloud colors at dusk / dawn on DirectX
+- Fix bug with texture wrapping vs. clamping in DirectX
+- Don't fog the sun and moon polygons
+- Fix bug where imposter-slop-value config setting wasn't honored.
+
+Version 1.01 June 8 2006
+
+- Tweaked billboarding algorithms to better handle roll
+- Fixed billboard rotation for case where vertex shaders aren't supported
+- Eliminated memory leaks on application shutdown
+- Added additional library builds for every runtime library
+- Fixed anomolies with wide fields of view

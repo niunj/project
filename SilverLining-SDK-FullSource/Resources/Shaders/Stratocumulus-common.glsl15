@@ -1,0 +1,47 @@
+//Stratocumulus-common.glsl15
+#define STRATOCUMULUS_SHADER
+
+#ifdef USE_UBO
+#define UNIFORM_DECL_PREFIX
+#else
+#define UNIFORM_DECL_PREFIX uniform
+#endif
+
+#if defined(USE_UBO)
+#if defined(UBO_USE_SET_BINDING)
+#if defined(STRATOCUMULUS_UBO_IS_SSBO)
+layout(set = 0, binding = 0, std430) readonly buffer sl_ShaderParameters_UBO {
+#else
+layout(set = 0, binding = 0, std140) uniform sl_ShaderParameters_UBO {
+#endif
+#else
+layout(std140) uniform sl_ShaderParameters_UBO {
+#endif
+#endif
+    // These are used in vertex shader
+    UNIFORM_DECL_PREFIX mat4 sl_projectionMatrix;
+
+    // These are used in fragment shader
+    UNIFORM_DECL_PREFIX vec4 sl_lightColor;
+    UNIFORM_DECL_PREFIX vec4 sl_lightObjectDirAndConstTerm;
+    UNIFORM_DECL_PREFIX vec4 sl_lightTexCoords;
+    UNIFORM_DECL_PREFIX vec4 sl_viewSampleDimensions;
+    UNIFORM_DECL_PREFIX vec4 sl_lightSampleDimensions;
+    UNIFORM_DECL_PREFIX vec4 sl_voxelDimensions;
+    UNIFORM_DECL_PREFIX vec4 sl_lightWorldDirAndExtinction;
+    UNIFORM_DECL_PREFIX vec4 sl_cameraTexCoords;
+    UNIFORM_DECL_PREFIX vec4 sl_skyLightColor;
+    UNIFORM_DECL_PREFIX vec4 sl_originTexCoords;
+    UNIFORM_DECL_PREFIX vec4 sl_fadeFlag;
+    UNIFORM_DECL_PREFIX vec4 sl_fogColorAndDensity;
+    UNIFORM_DECL_PREFIX vec4 sl_multipleScatteringTerm;
+    UNIFORM_DECL_PREFIX vec4 sl_noiseOffset;
+    UNIFORM_DECL_PREFIX vec4 sl_extinctionCoefficient;
+    UNIFORM_DECL_PREFIX vec4 sl_jitter;
+    UNIFORM_DECL_PREFIX vec4 sl_unitScale;
+    UNIFORM_DECL_PREFIX vec4 sl_outputScale;
+    UNIFORM_DECL_PREFIX vec4 sl_roundCenter;
+
+#if defined(USE_UBO)
+};
+#endif

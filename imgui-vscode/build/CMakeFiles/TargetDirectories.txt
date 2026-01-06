@@ -1,0 +1,3 @@
+C:/Users/56333/Desktop/显示界面/build/CMakeFiles/main.dir
+C:/Users/56333/Desktop/显示界面/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/56333/Desktop/显示界面/build/CMakeFiles/ZERO_CHECK.dir

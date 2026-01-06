@@ -1,0 +1,28 @@
+cmake_minimum_required (VERSION 2.6)
+
+project(sample_multi)
+
+
+set(CMAKE_MODULE_PATH "${sample_multi_SOURCE_DIR}/CMakeModules;${CMAKE_MODULE_PATH}")
+set(SILVERLINING_DIR $ENV{SILVERLINING_PATH} PATH)
+
+FIND_PACKAGE(OpenThreads)
+FIND_PACKAGE(osg)
+FIND_PACKAGE(osgDB)
+FIND_PACKAGE(osgUtil)
+FIND_PACKAGE(osgGA)
+FIND_PACKAGE(osgViewer)
+
+find_package(OpenGL REQUIRED)
+find_package(SilverLining REQUIRED)
+
+INCLUDE_DIRECTORIES(${OPENTHREADS_INCLUDE_DIR} ${OSG_INCLUDE_DIR} ${SILVERLINING_INCLUDE_DIR})
+
+LINK_DIRECTORIES(${OSG_LIB_DIR})
+
+file(GLOB cpp_files *.cpp src/*.cpp)
+file(GLOB h_files *.h src/*.h)
+
+add_executable(sample_multi ${cpp_files} ${h_files} )
+
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${OSG_LIBRARIES} ${OSGVIEWER_LIBRARIES} ${OSGUTIL_LIBRARIES} ${OSGDB_LIBRARIES} ${OSGGA_LIBRARIES} ${OPENTHREADS_LIBRARIES} debug ${SILVERLINING_LIBRARY_DEBUG} optimized ${SILVERLINING_LIBRARY_RELEASE})

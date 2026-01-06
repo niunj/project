@@ -1,0 +1,4 @@
+<map id="SilverLining::Camera" name="SilverLining::Camera">
+<area shape="rect" id="node1" title="A Camera describes a given view, along with its associated view, projection, and viewport." alt="" coords="17,80,175,107"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_mem_object.html" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="5,5,187,32"/>
+</map>

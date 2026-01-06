@@ -1,0 +1,4 @@
+<map id="SilverLining::Color" name="SilverLining::Color">
+<area shape="rect" id="node1" title="A RGBA color, where each component is represented as a float from 0&#45;1." alt="" coords="26,80,166,107"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_mem_object.html" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="5,5,187,32"/>
+</map>

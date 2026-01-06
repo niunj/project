@@ -1,0 +1,22 @@
+#if OPENGL
+
+#elif SLVULKAN
+layout(location = 0) in vec4 vertColor;
+#else
+in vec4 vertColor;
+#endif
+
+void overrideSkyFragColor(inout vec4 finalColor);
+void writeFragmentData(in vec4 finalColor);
+
+void main()
+{
+#if OPENGL
+    vec4 finalColor = gl_Color;
+#else
+    vec4 finalColor = vertColor;
+#endif
+    overrideSkyFragColor(finalColor);
+    finalColor.xyz *= sl_outputScale.xyz;
+    writeFragmentData(finalColor);
+}

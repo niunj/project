@@ -1,0 +1,6 @@
+<map id="/home/fkane/sl/trunk/Public Headers/CloudTypes.h" name="/home/fkane/sl/trunk/Public Headers/CloudTypes.h">
+<area shape="rect" id="node1" title="Defines the enumerated values of cloud layer types that may be passed to CloudLayerFactory::Create." alt="" coords="138,5,351,47"/>
+<area shape="rect" id="node2" href="$_cloud_layer_8h.html" title="Methods for configuration and initializing cloud decks." alt="" coords="10,95,221,136"/>
+<area shape="rect" id="node4" href="$_cloud_layer_factory_8h.html" title="Instantiates specific types of CloudLayer objects." alt="" coords="245,95,503,136"/>
+<area shape="rect" id="node3" href="$_cloud_layer_tcs_user_data_8h.html" title="A class for describing and managing data/rendering in a particular thread and associated camera,..." alt="" coords="5,184,225,240"/>
+</map>

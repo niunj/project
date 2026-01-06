@@ -1,0 +1,4 @@
+<map id="SilverLining::Location" name="SilverLining::Location">
+<area shape="rect" id="node1" title="An object representing a geographic location." alt="" coords="15,80,177,107"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_mem_object.html" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="5,5,187,32"/>
+</map>

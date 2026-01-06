@@ -1,0 +1,66 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "frag"
+        }
+    ],
+    "types" : {
+        "_15" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_lightPositionOnScreen",
+                    "type" : "vec4",
+                    "offset" : 0
+                },
+                {
+                    "name" : "sl_parameters",
+                    "type" : "vec4",
+                    "offset" : 16
+                },
+                {
+                    "name" : "sl_lightColor",
+                    "type" : "vec4",
+                    "offset" : 32
+                },
+                {
+                    "name" : "sl_outputScale",
+                    "type" : "vec4",
+                    "offset" : 48
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertTexcoord",
+            "location" : 0
+        }
+    ],
+    "outputs" : [
+        {
+            "type" : "vec4",
+            "name" : "outFragColor",
+            "location" : 0
+        }
+    ],
+    "textures" : [
+        {
+            "type" : "sampler2D",
+            "name" : "sl_tex2D",
+            "set" : 1,
+            "binding" : 0
+        }
+    ],
+    "ubos" : [
+        {
+            "type" : "_15",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 64,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

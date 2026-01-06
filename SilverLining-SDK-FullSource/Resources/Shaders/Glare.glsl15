@@ -1,0 +1,25 @@
+
+#if OPENGL
+#else
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+out vec3 vertTexcoord;
+#endif
+
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+#if OPENGL
+    gl_Position = overridePosition(sl_modelViewProj * gl_Vertex);
+    gl_TexCoord[0] = gl_MultiTexCoord0;
+    gl_FrontColor = gl_Color;
+#else
+    gl_Position = overridePosition(sl_modelViewProj * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+    vertTexcoord = texcoord;
+    vertColor = color;
+#endif
+}

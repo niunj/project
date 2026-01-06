@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [],
+      "stopAtEntry": false,
+      "externalConsole": true,
+      "cwd": "c:/Users/56333/Desktop/显示界面",
+      "program": "c:/Users/56333/Desktop/显示界面/build/Debug/outDebug",
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "visualizerFile": "c:\\Users\\56333\\AppData\\Roaming\\Trae CN\\User\\workspaceStorage\\c17fa2962f9500ad23df66915a18eeda\\tonka3000.qtvsctools\\qt.natvis.xml"
+    }
+  ]
+}

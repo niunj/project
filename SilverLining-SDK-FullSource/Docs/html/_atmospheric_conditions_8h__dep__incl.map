@@ -1,0 +1,7 @@
+<map id="/home/fkane/sl/trunk/Public Headers/AtmosphericConditions.h" name="/home/fkane/sl/trunk/Public Headers/AtmosphericConditions.h">
+<area shape="rect" id="node1" title="Configures the time, location, atmosphere, and cloud cover." alt="" coords="140,5,349,61"/>
+<area shape="rect" id="node2" href="$_atmosphere_8h.html" title="The main interface to SilverLining." alt="" coords="135,109,354,151"/>
+<area shape="rect" id="node3" href="$_cloud_layer_8h.html" title="Methods for configuration and initializing cloud decks." alt="" coords="10,199,221,240"/>
+<area shape="rect" id="node5" href="$_cloud_layer_factory_8h.html" title="Instantiates specific types of CloudLayer objects." alt="" coords="245,199,503,240"/>
+<area shape="rect" id="node4" href="$_cloud_layer_tcs_user_data_8h.html" title="A class for describing and managing data/rendering in a particular thread and associated camera,..." alt="" coords="5,288,225,344"/>
+</map>

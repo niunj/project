@@ -1,0 +1,4 @@
+<map id="SilverLining::LocalTime" name="SilverLining::LocalTime">
+<area shape="rect" id="node1" title="A class to represent the simulated local time, time zone, and daylight savings time observation." alt="" coords="9,80,183,107"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_mem_object.html" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="5,5,187,32"/>
+</map>

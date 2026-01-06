@@ -1,0 +1,3 @@
+<map id="SilverLining::Allocator" name="SilverLining::Allocator">
+<area shape="rect" id="node1" title="You may extend the Allocator class to hook your own memory management scheme into SilverLining." alt="" coords="5,5,169,32"/>
+</map>

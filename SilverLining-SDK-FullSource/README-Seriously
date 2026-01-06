@@ -1,0 +1,51 @@
+SilverLining for Linux and MacOS: Getting Started
+
+This SDK includes complete source code; you'll need to build the 
+SilverLining libraries for your system using it.
+
+BUILDING FOR OPENGL:
+
+First, ensure you have the necessary dependencies installed:
+
+* GL
+* GLU
+* glut or freeglut (needed for the sample application)
+
+Next, just run:
+
+make
+
+from the top level of the SilverLining-SDK-FullSource directory you extracted.
+This will build SilverLining's libraries into the lib/linux or lib/macos
+directory, depending on your system.
+
+To make sure everything worked, cd into the SampleCode/OpenGLExample directory,
+and run make there as well. Run the resulting OpenGLExample binary, and a
+procedural sky with clouds should appear. If instead you see a bunch of GL
+related errors, try updating your graphics drivers.
+
+BUILDING FOR VULKAN:
+
+First, ensure you have the Vulkan SDK installed, as well
+as recent video drivers. See https://vulkan.lunarg.com/sdk/home#linux
+
+Next, just run:
+
+make vulkan
+
+from the top level of the SilverLining-SDK-FullSource directory you extracted.
+This will build SilverLining's libraries into the lib/linux directory.
+
+To make sure everything worked, cd into the SampleCode/VulkanExample directory,
+and run make there as well. You may need to install the GLFW3, Xxf86vm, Xrandr,
+and/or Xi development packages for this to build successfully. (On Ubuntu,
+this would be done with 
+sudo apt install libglfw3-dev libxxf86vm-dev libxi-dev libxrandr-dev 
+for example)
+
+MOVING ON:
+
+You'll find documentation in the Docs directory, as well as on our website
+at http://www.sundog-soft.com/
+
+If you run into any trouble, please drop us a note at support@sundog-soft.com.

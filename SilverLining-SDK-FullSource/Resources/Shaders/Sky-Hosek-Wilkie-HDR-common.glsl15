@@ -1,0 +1,58 @@
+//Sky-Hosek-Wilkie-HDR-common.glsl15
+#define SKY_SHADER
+
+#ifdef USE_UBO
+#define UNIFORM_DECL_PREFIX
+#else
+#define UNIFORM_DECL_PREFIX uniform
+#endif
+
+#if defined(USE_UBO)
+#if defined(UBO_USE_SET_BINDING)
+#if defined(SKY_UBO_IS_SSBO)
+layout(set = 0, binding = 0, std430) readonly buffer sl_ShaderParameters_UBO {
+#else
+layout(set = 0, binding = 0, std140) uniform sl_ShaderParameters_UBO {
+#endif
+#else
+layout(std140) uniform sl_ShaderParameters_UBO {
+#endif
+#endif
+    // These are used in vertex shader
+    UNIFORM_DECL_PREFIX mat4 sl_modelView;
+    UNIFORM_DECL_PREFIX mat4 sl_modelViewProj;
+    UNIFORM_DECL_PREFIX mat4 sl_XYZtoRGB;
+    UNIFORM_DECL_PREFIX vec4 sl_xPerezABC;
+    UNIFORM_DECL_PREFIX vec4 sl_xPerezDE;
+    UNIFORM_DECL_PREFIX vec4 sl_yPerezABC;
+    UNIFORM_DECL_PREFIX vec4 sl_yPerezDE;
+    UNIFORM_DECL_PREFIX vec4 sl_YPerezABC;
+    UNIFORM_DECL_PREFIX vec4 sl_YPerezDE;
+    UNIFORM_DECL_PREFIX vec4 sl_sunPerez;
+    UNIFORM_DECL_PREFIX vec4 sl_zenithPerez;
+    UNIFORM_DECL_PREFIX vec4 sl_sunPos;
+    UNIFORM_DECL_PREFIX vec4 sl_luminanceScales;
+    UNIFORM_DECL_PREFIX vec4 sl_overcast;
+    UNIFORM_DECL_PREFIX vec4 sl_fog;
+
+    UNIFORM_DECL_PREFIX vec4 sl_HosekRadiances;
+    UNIFORM_DECL_PREFIX vec4 sl_XHosekABC;
+    UNIFORM_DECL_PREFIX vec4 sl_XHosekDEF;
+    UNIFORM_DECL_PREFIX vec4 sl_XHosekGHI;
+    UNIFORM_DECL_PREFIX vec4 sl_YHosekABC;
+    UNIFORM_DECL_PREFIX vec4 sl_YHosekDEF;
+    UNIFORM_DECL_PREFIX vec4 sl_YHosekGHI;
+    UNIFORM_DECL_PREFIX vec4 sl_ZHosekABC;
+    UNIFORM_DECL_PREFIX vec4 sl_ZHosekDEF;
+    UNIFORM_DECL_PREFIX vec4 sl_ZHosekGHI;
+
+#if SLVULKAN
+    UNIFORM_DECL_PREFIX vec4 sl_forceDepth;
+#endif
+
+    // These are used in fragment shader
+    UNIFORM_DECL_PREFIX vec4 sl_outputScale;
+
+#if defined(USE_UBO)
+};
+#endif

@@ -1,0 +1,24 @@
+
+uniform sampler2D sl_tex2D;
+
+#if OPENGL
+#else
+in vec4 vertColor;
+in vec3 vertTexcoord;
+#endif
+
+void writeFragmentData(in vec4 finalColor);
+
+void main()
+{
+#if OPENGL
+    vec4 texel = texture2D(sl_tex2D, gl_TexCoord[0].st);
+    texel.xyz *= sl_outputScale.xyz;
+    writeFragmentData(texel * gl_Color);
+#else
+    vec4 texel = texture(sl_tex2D, vertTexcoord.st);
+    vec4 finalColor = texel * vertColor;
+    finalColor.xyz *= sl_outputScale.xyz;
+    writeFragmentData(finalColor);
+#endif
+}

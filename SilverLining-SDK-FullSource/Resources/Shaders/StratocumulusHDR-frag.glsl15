@@ -1,0 +1,327 @@
+// Copyright 2010-2020 Sundog Software, LLC. All rights reserved worldwide.
+
+// The following parameters may be adjusted to tweak appearance:
+
+// Maximum number of slices to render through the cloud volume.
+// Increase this to reduce sampling artifacts. Decrease it
+// to increase performance. You want this to be as low as you can
+// go without seeing visible slices in the clouds.
+#define MAX_SAMPLES 100
+#define MAX_SAMPLES_F 100.0
+
+// The rate at which detail is added to the clouds with distance
+// from the camera. This is needed to counteract sampling artifacts
+// from high frequency detail near the camera.
+#define DETAIL_FALLOFF 2.0
+
+// Uncomment to enable Reinhard tone mapping (don't mess with this)
+//#define TONE_MAP
+
+// The frequency of the noise used to add detail
+#define NOISE_FREQUENCY 2500.0
+
+// Enable or disable gamma correction
+#define GAMMA_CORRECTION
+
+// Gamma value (higher = brighter)
+#define GAMMA 2.2
+
+// Exposure (higher = brighter; multiplies final color values)
+#define EXPOSURE 1.0
+
+// Opacity boost (higher = more opaque)
+#define OPACITY 1.05
+
+// Opacity threshold at which we do early ray termination
+// (Increasing this can help eliminate weird effects around
+// cloud edges, but at the cost of performance)
+#define OPACITY_THRESHOLD 0.95
+
+// Epsilon value at which we discard the fragment
+// Probably don't want to mess with this
+#define EPSILON 0.001
+
+// Whether to disable tone mapping and gamma correction
+// Definitely do not touch this
+#define HDR
+
+// Defines how bright highlights from the sun can get.
+// Higher = brighter highlights
+#define MAX_PHASE 5.0
+
+// The boost to ambient light as you reach the top of a cloud layer
+// Higher = brighter cloud tops
+#define AMBIENT_TOP_BOOST 1.9
+
+// Boosts fog / visiblity effects on the cloud.
+#define FOG_BOOST 4.5
+
+#if OPENGL
+varying float eyeDepth;
+#else
+#if SLVULKAN
+layout(location = 0) in vec4 vertColor;
+layout(location = 1) in vec4 vertTexCoord;
+layout(location = 2) in float eyeDepth;
+#else
+in vec4 vertColor;
+in vec3 vertTexCoord;
+in float eyeDepth;
+#endif
+#endif
+
+#if SLVULKAN
+layout(set = 1, binding = 0) uniform sampler3D sl_tex3D;
+layout(set = 1, binding = 1) uniform sampler3D sl_tex3D2;
+#else
+uniform sampler3D sl_tex3D;
+uniform sampler3D sl_tex3D2;
+#endif
+
+void overrideStratocumulus(in vec4 color, in vec4 lightColor, inout vec4 finalColor);
+void writeFragmentData(in vec4 finalColor);
+
+void getVolumeIntersection(in vec3 pos, in vec3 dir, out float tNear, out float tFar)
+{
+    // Avoid divide by zero (this isn't as expensive as it looks)
+#define EPSILON2 0.00001
+    if (dir.x < EPSILON2 && dir.x > -EPSILON2) dir.x = EPSILON2;
+    if (dir.y < EPSILON2 && dir.y > -EPSILON2) dir.y = EPSILON2;
+    if (dir.z < EPSILON2 && dir.z > -EPSILON2) dir.z = EPSILON2;
+
+    // Intersect the ray with each plane of the box
+    vec3 invDir = 1.0 / dir;
+    vec3 tBottom = -pos * invDir;
+    vec3 tTop = (1.0 - pos) * invDir;
+
+    // Find min and max intersections along each axis
+    vec3 tMin = min(tTop, tBottom);
+    vec3 tMax = max(tTop, tBottom);
+
+    // Find largest min and smallest max
+    vec2 t0 = max(tMin.xx, tMin.yz);
+    tNear = max(t0.x, t0.y);
+    t0 = min(tMax.xx, tMax.yz);
+    tFar = min(t0.x, t0.y);
+
+    // Clamp negative intersections to 0
+    tNear = max(0.0, tNear);
+    tFar = max(0.0, tFar);
+}
+
+float henyeyGreenstein(in float cosa, in float g)
+{
+    float g2 = g * g;
+
+    return (1.0 - g2) / pow((1.0 + g2 - 2.0 * g * cosa), 1.5);
+}
+
+float phaseFunction(in float cosa)
+{
+    // Rayleigh function
+    //return 0.75 * (1.0 + cosa * cosa);
+
+    // Double HG:
+    return clamp(mix(henyeyGreenstein(cosa, 0.85), henyeyGreenstein(cosa, -0.45), 0.5), 1.0, MAX_PHASE * (1.0-sl_lightTexCoords.y));
+
+    // Single HG:
+    //return clamp(henyeyGreenstein(cosa, 0.875), 1.0, MAX_PHASE);
+
+    //return 1.0;
+}
+
+void toneMap(inout vec4 c)
+{
+    c *= vec4(EXPOSURE, EXPOSURE, EXPOSURE, OPACITY);
+
+    // Simplified Reinhard tone mapping operator
+#ifdef TONE_MAP
+    c.xyz = (c.xyz / (c.xyz + 1.0));
+#endif
+
+#ifdef GAMMA_CORRECTION
+    const float gamma = 1.0 / GAMMA;
+    c = pow(c, vec4(gamma, gamma, gamma, gamma));
+#endif
+
+#ifndef HDR
+    c = clamp(c, 0.0, 1.0);
+#endif
+}
+
+float computeFade(in vec3 posWithinVolume)
+{
+    if (sl_fadeFlag.x > 0.0) {
+        float distFromCenter = length(posWithinVolume.xz - vec2(0.5, 0.5)) * 2.0;
+        return 1.0 - exp(-1.0 * sl_fadeFlag.z * distFromCenter * distFromCenter * distFromCenter);
+    } else {
+        return 0.0;
+    }
+}
+
+vec2 getCloudDensity(in vec3 texCoord, in float t)
+{
+    vec3 perturb = vec3(0.0,0.0,0.0);
+    vec3 uvw = ((texCoord + sl_noiseOffset.xyz) / sl_viewSampleDimensions.xyz) / (NOISE_FREQUENCY * sl_unitScale.x);
+
+#if OPENGL
+    vec3 rng = texture3D(sl_tex3D2, 2.0 * uvw).xyz;
+#else
+    vec3 rng = texture(sl_tex3D2, 2.0 * uvw).xyz;
+#endif
+
+    perturb += rng - 0.5;
+
+    vec3 tc = texCoord + perturb * sl_jitter.xyz * t;
+
+    float fade = 1.0;
+    if (sl_roundCenter.z < 2.0) {
+        vec3 center = vec3(sl_roundCenter.x, 0.0, sl_roundCenter.y);
+        float radius2 = sl_roundCenter.z;
+        vec3 d = center - vec3(tc.x, tc.y * 0.3, tc.z);
+        float d2 = dot(d,d);
+        if (d2 > radius2) {
+            return vec2(0,0);
+        }
+        fade = 1.0 - d2/radius2;
+    }
+
+#if OPENGL
+    vec2 csample = texture3D(sl_tex3D, tc.xzy ).xw;
+#else
+    vec2 csample = texture(sl_tex3D, tc.xzy ).xw;
+#endif
+
+    csample.x *= fade;
+    return csample;
+}
+
+float map2(float value, float outMax)
+{
+    return 1.0 + (outMax - 1.0) * value;
+}
+
+
+//float PHI = 1.61803398874989484820459;
+//float seed = 12345.6789;
+//float rand(vec3 xyz){
+//       return fract(tan(length(xyz*PHI - xyz)*seed)*xyz.x);
+//}
+
+float rand(vec3 co)
+{
+    return fract(sin(dot(co,vec3(12.9898,78.233,23.123))) * 43758.5453);
+}
+
+void computeFog(inout vec4 c, in float depth)
+{
+    float fogExponent = sl_fogColorAndDensity.w * depth * FOG_BOOST;
+    float f = exp(-(fogExponent * fogExponent));
+    f = clamp(f, 0.0, 1.0);
+    //c.xyz = mix(sl_fogColorAndDensity.xyz, c.xyz, f);
+    c *= f;
+}
+
+void main()
+{
+#if OPENGL
+    vec3 texCoord = gl_TexCoord[0].xyz;
+#else
+    vec3 texCoord = vertTexCoord.xyz;
+#endif
+
+    vec3 view = texCoord - sl_cameraTexCoords.xyz;
+    vec3 viewDir = normalize(view);
+
+    // Find the intersections of the volume with the viewing ray
+    float tminView, tmaxView;
+    getVolumeIntersection(sl_cameraTexCoords.xyz,viewDir, tminView, tmaxView);
+
+    float tRange = tmaxView - tminView;
+
+    vec3 vv = sl_voxelDimensions.xyz;
+    vv = vv * viewDir;
+    float intersectionSize = length(tRange * vv);
+    float sampleSize = length(sl_voxelDimensions / MAX_SAMPLES_F);
+    float opticalDepth = sl_extinctionCoefficient.x * sampleSize;
+    float correctedOpacity = 1.0 - exp(-opticalDepth);
+
+    float constTerm = sl_lightObjectDirAndConstTerm.w;
+
+    vec4 fragColor = vec4(0.0, 0.0, 0.0, 0.0);
+
+    float viewInc = tRange / MAX_SAMPLES_F;
+
+    vec3 ambientTerm = (sl_skyLightColor.xyz + sl_multipleScatteringTerm.xyz);
+
+    float t = tminView;
+
+    float cosa = dot(normalize( vv ), sl_lightTexCoords.xyz);
+    float phase = phaseFunction(cosa);
+
+    vec3 scattering = sl_lightColor.xyz * constTerm;
+
+    vec3 origin = sl_cameraTexCoords.xyz + sl_originTexCoords.xyz;
+
+    float jitterRange = 0.3;// * (250.0 / sampleSize);
+    float jitterStart = 1.0 - (jitterRange * 0.5);
+
+    for (int sampleNum = 0; sampleNum < MAX_SAMPLES; sampleNum++) {
+        vec3 sampleTexCoords = viewDir * t + origin;
+
+        if (t < 1.0) {
+            t += viewInc * (jitterStart + (rand(sampleTexCoords.xyz) * jitterRange)); // randomness to combat banding
+        } else {
+            t += viewInc;
+        }
+
+        vec2 sampleDensity = getCloudDensity(sampleTexCoords, 1.0 - exp(-DETAIL_FALLOFF * t));
+        float texel = sampleDensity.x;
+        if (texel < EPSILON) continue;
+
+        // apply lighting
+        vec4 fragSample;
+
+        fragSample.xyz = scattering * vec3( sampleDensity.y ) * phase + ambientTerm * map2(sampleTexCoords.y, AMBIENT_TOP_BOOST);
+
+        fragSample.w = correctedOpacity;
+
+        // apply fog
+        float depth;
+        if (tminView > 0.0) { // outside
+            depth = eyeDepth + ((t - tminView) / tRange) * intersectionSize;
+            float fade = computeFade(sampleTexCoords - sl_originTexCoords.xyz);
+            fragSample *= (1.0 - fade);
+        } else { // inside
+            depth = (t / tmaxView) * eyeDepth;
+        }
+        computeFog(fragSample, depth);
+
+        // apply texture
+        fragSample *= texel;
+
+        // Under operator for compositing:
+        fragColor = (1.0 - fragColor.w) * fragSample + fragColor;
+
+        // Early ray termination!
+        if (fragColor.w > OPACITY_THRESHOLD) {
+            fragColor.w = 1.0;
+            break;
+        }
+
+    }
+
+    toneMap(fragColor);
+
+#if OPENGL
+    vec4 finalColor = fragColor * gl_Color;
+    overrideStratocumulus(fragColor, gl_Color, finalColor);
+#else
+    vec4 finalColor = fragColor * vertColor;
+    overrideStratocumulus(fragColor, vertColor, finalColor);
+#endif
+
+    finalColor.xyz *= sl_outputScale.xyz;
+
+    writeFragmentData(finalColor);
+}

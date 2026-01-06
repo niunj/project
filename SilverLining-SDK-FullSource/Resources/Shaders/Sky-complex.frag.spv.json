@@ -1,0 +1,141 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "frag"
+        }
+    ],
+    "types" : {
+        "_25" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_modelView",
+                    "type" : "mat4",
+                    "offset" : 0,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_modelViewProj",
+                    "type" : "mat4",
+                    "offset" : 64,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_XYZtoRGB",
+                    "type" : "mat4",
+                    "offset" : 128,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_xPerezABC",
+                    "type" : "vec4",
+                    "offset" : 192
+                },
+                {
+                    "name" : "sl_xPerezDE",
+                    "type" : "vec4",
+                    "offset" : 208
+                },
+                {
+                    "name" : "sl_yPerezABC",
+                    "type" : "vec4",
+                    "offset" : 224
+                },
+                {
+                    "name" : "sl_yPerezDE",
+                    "type" : "vec4",
+                    "offset" : 240
+                },
+                {
+                    "name" : "sl_YPerezABC",
+                    "type" : "vec4",
+                    "offset" : 256
+                },
+                {
+                    "name" : "sl_YPerezDE",
+                    "type" : "vec4",
+                    "offset" : 272
+                },
+                {
+                    "name" : "sl_sunPerez",
+                    "type" : "vec4",
+                    "offset" : 288
+                },
+                {
+                    "name" : "sl_zenithPerez",
+                    "type" : "vec4",
+                    "offset" : 304
+                },
+                {
+                    "name" : "sl_sunPos",
+                    "type" : "vec4",
+                    "offset" : 320
+                },
+                {
+                    "name" : "sl_moonPerez",
+                    "type" : "vec4",
+                    "offset" : 336
+                },
+                {
+                    "name" : "sl_zenithMoonPerez",
+                    "type" : "vec4",
+                    "offset" : 352
+                },
+                {
+                    "name" : "sl_moonPos",
+                    "type" : "vec4",
+                    "offset" : 368
+                },
+                {
+                    "name" : "sl_luminanceScales",
+                    "type" : "vec4",
+                    "offset" : 384
+                },
+                {
+                    "name" : "sl_kAndLdmax",
+                    "type" : "vec4",
+                    "offset" : 400
+                },
+                {
+                    "name" : "sl_overcast",
+                    "type" : "vec4",
+                    "offset" : 416
+                },
+                {
+                    "name" : "sl_fog",
+                    "type" : "vec4",
+                    "offset" : 432
+                },
+                {
+                    "name" : "sl_outputScale",
+                    "type" : "vec4",
+                    "offset" : 448
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertColor",
+            "location" : 0
+        }
+    ],
+    "outputs" : [
+        {
+            "type" : "vec4",
+            "name" : "outFragColor",
+            "location" : 0
+        }
+    ],
+    "ssbos" : [
+        {
+            "type" : "_25",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 464,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

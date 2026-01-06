@@ -1,0 +1,23 @@
+
+uniform sampler2D sl_tex2D;
+
+#if OPENGL
+#else
+in vec4 vertColor;
+in vec3 vertTexcoord;
+#endif
+
+void writeFragmentData(in vec4 finalColor);
+
+void main()
+{
+    vec4 finalColor;
+#if OPENGL
+    finalColor.rgb = sl_intensity.xyz * vec3(texture2D(sl_tex2D, gl_TexCoord[0].xy)) * gl_Color.rgb;
+    finalColor.a = 1.0;
+#else
+    finalColor.rgb = sl_intensity.xyz * vec3(texture2D(sl_tex2D, vertTexcoord.xy)) * vertColor.rgb;
+    finalColor.a = 1.0;
+#endif
+    writeFragmentData(finalColor);
+}

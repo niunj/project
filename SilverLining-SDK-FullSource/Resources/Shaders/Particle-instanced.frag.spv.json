@@ -1,0 +1,91 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "frag"
+        }
+    ],
+    "types" : {
+        "_56" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_proj",
+                    "type" : "mat4",
+                    "offset" : 0,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_cameraModelView",
+                    "type" : "mat4",
+                    "offset" : 64,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_rotateTranslate",
+                    "type" : "mat4",
+                    "offset" : 128,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_scale",
+                    "type" : "mat4",
+                    "offset" : 192,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_outputScale",
+                    "type" : "vec4",
+                    "offset" : 256
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "int",
+            "name" : "textureIndex",
+            "location" : 2
+        },
+        {
+            "type" : "vec3",
+            "name" : "vertTexcoord",
+            "location" : 1
+        },
+        {
+            "type" : "vec4",
+            "name" : "vertColor",
+            "location" : 0
+        }
+    ],
+    "outputs" : [
+        {
+            "type" : "vec4",
+            "name" : "outFragColor",
+            "location" : 0
+        }
+    ],
+    "textures" : [
+        {
+            "type" : "sampler2D",
+            "name" : "tex",
+            "array" : [
+                50
+            ],
+            "array_size_is_literal" : [
+                true
+            ],
+            "set" : 1,
+            "binding" : 0
+        }
+    ],
+    "ssbos" : [
+        {
+            "type" : "_56",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 272,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

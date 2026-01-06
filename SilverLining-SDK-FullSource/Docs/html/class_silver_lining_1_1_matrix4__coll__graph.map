@@ -1,0 +1,4 @@
+<map id="SilverLining::Matrix4" name="SilverLining::Matrix4">
+<area shape="rect" id="node1" title="An implementation of a 4x4 matrix and some simple operations on it." alt="" coords="18,80,174,107"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_mem_object.html" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="5,5,187,32"/>
+</map>

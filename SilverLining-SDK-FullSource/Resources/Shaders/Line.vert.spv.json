@@ -1,0 +1,75 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "vert"
+        }
+    ],
+    "types" : {
+        "_19" : {
+            "name" : "gl_PerVertex",
+            "members" : [
+                {
+                    "name" : "gl_Position",
+                    "type" : "vec4"
+                },
+                {
+                    "name" : "gl_PointSize",
+                    "type" : "float"
+                },
+                {
+                    "name" : "gl_ClipDistance",
+                    "type" : "float",
+                    "array" : [
+                        1
+                    ],
+                    "array_size_is_literal" : [
+                        true
+                    ]
+                },
+                {
+                    "name" : "gl_CullDistance",
+                    "type" : "float",
+                    "array" : [
+                        1
+                    ],
+                    "array_size_is_literal" : [
+                        true
+                    ]
+                }
+            ]
+        },
+        "_25" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_modelViewProj",
+                    "type" : "mat4",
+                    "offset" : 0,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_colorConstant",
+                    "type" : "vec4",
+                    "offset" : 64
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertex",
+            "location" : 0
+        }
+    ],
+    "ubos" : [
+        {
+            "type" : "_25",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 80,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

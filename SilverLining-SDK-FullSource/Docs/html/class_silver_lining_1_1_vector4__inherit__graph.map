@@ -1,0 +1,4 @@
+<map id="SilverLining::Vector4" name="SilverLining::Vector4">
+<area shape="rect" id="node1" title="A simple double&#45;precision 4D vector class with no operations defined." alt="" coords="19,80,173,107"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_mem_object.html" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="5,5,187,32"/>
+</map>

@@ -1,0 +1,23 @@
+<map id="SilverLining::MemObject" name="SilverLining::MemObject">
+<area shape="rect" id="node1" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="5,493,187,520"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_atmosphere.html" title="This class is the main interface to SilverLining." alt="" coords="243,5,429,32"/>
+<area shape="rect" id="node3" href="$class_silver_lining_1_1_atmospheric_conditions.html" title="A class to set the current simulation conditions for the sky." alt="" coords="242,57,430,98"/>
+<area shape="rect" id="node4" href="$class_silver_lining_1_1_camera.html" title="A Camera describes a given view, along with its associated view, projection, and viewport." alt="" coords="257,123,415,149"/>
+<area shape="rect" id="node5" href="$class_silver_lining_1_1_cloud_layer.html" title="A collection of clouds of uniform classification organized into a &quot;deck&quot; of similar altitudes." alt="" coords="247,173,425,200"/>
+<area shape="rect" id="node6" href="$class_silver_lining_1_1_cloud_layer_factory.html" title="A class factory for CloudLayer objects." alt="" coords="247,225,425,266"/>
+<area shape="rect" id="node7" href="$class_silver_lining_1_1_color.html" title="A RGBA color, where each component is represented as a float from 0&#45;1." alt="" coords="266,291,406,317"/>
+<area shape="rect" id="node8" href="$class_silver_lining_1_1_frustum.html" title="A simple class that just collects six planes together and calls it a frustum." alt="" coords="257,341,415,368"/>
+<area shape="rect" id="node9" href="$class_silver_lining_1_1_local_time.html" title="A class to represent the simulated local time, time zone, and daylight savings time observation." alt="" coords="249,392,423,419"/>
+<area shape="rect" id="node10" href="$class_silver_lining_1_1_location.html" title="An object representing a geographic location." alt="" coords="255,443,417,469"/>
+<area shape="rect" id="node11" href="$class_silver_lining_1_1_matrix3.html" title="A simple 3x3 matrix class and its operations." alt="" coords="258,493,414,520"/>
+<area shape="rect" id="node12" href="$class_silver_lining_1_1_matrix4.html" title="An implementation of a 4x4 matrix and some simple operations on it." alt="" coords="258,544,414,571"/>
+<area shape="rect" id="node13" href="$class_silver_lining_1_1_plane.html" title="A geometric plane, modelled as a normal vector and a distance to the plane." alt="" coords="265,595,407,621"/>
+<area shape="rect" id="node14" href="$class_silver_lining_1_1_tcs_user_data.html" title="abstract user data interface associated with the ThreadCameraStreamData" alt="" coords="243,645,429,672"/>
+<area shape="rect" id="node16" href="$class_silver_lining_1_1_thread_camera_stream_data.html" title="This class is the main interface to thread safe rendering with SilverLining." alt="" coords="235,697,437,738"/>
+<area shape="rect" id="node17" href="$class_silver_lining_1_1_vector3.html" title="A 3D double&#45;precision Vector class and its operations." alt="" coords="259,763,413,789"/>
+<area shape="rect" id="node18" href="$class_silver_lining_1_1_vector3f.html" title="A 3D single&#45;precision vector class, and its operations." alt="" coords="256,813,416,840"/>
+<area shape="rect" id="node19" href="$class_silver_lining_1_1_vector4.html" title="A simple double&#45;precision 4D vector class with no operations defined." alt="" coords="259,864,413,891"/>
+<area shape="rect" id="node20" href="$class_silver_lining_1_1_vertex.html" title="A single vertex containing a position, RGBA color, and 3D texture coordinates." alt="" coords="262,915,410,941"/>
+<area shape="rect" id="node21" href="$class_silver_lining_1_1_wind_volume.html" title="Defines an area of a given wind velocity and direction bounded by two altitudes." alt="" coords="242,965,430,992"/>
+<area shape="rect" id="node15" href="$class_silver_lining_1_1_cloud_layer_tcs_user_data.html" title="This is an ***internal*** class interface." alt="" coords="485,638,664,679"/>
+</map>

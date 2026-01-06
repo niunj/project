@@ -1,0 +1,84 @@
+#if OPENGL
+#elif SLVULKAN
+layout(location = 0) in vec4 vertex;
+layout(location = 1) in vec4 color;
+layout(location = 2) in vec4 texcoord;
+
+layout(location = 0) out vec4 vertColor;
+#else
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+#endif
+
+void overrideStars(in vec4 worldPos, in float magnitude, in vec4 starColor, in vec4 fogColor, in float fogDensity, inout vec4 finalColor);
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+#if OPENGL
+    vec4 horizonCoords = (sl_equatorialToHorizon * vec4(gl_Vertex.xyz, 1.0));
+#else
+    vec4 horizonCoords = (sl_equatorialToHorizon * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+#endif
+    gl_Position = overridePosition(sl_modelViewProj * horizonCoords);
+
+#if OPENGL
+    gl_TexCoord[0] = gl_MultiTexCoord0;
+    float magnitude = gl_MultiTexCoord0.x;
+#else
+    float magnitude = texcoord.x;
+#endif
+
+    // At scotopic levels when stars are visible, the varying effect of scattering by
+    // wavelength usually isn't visible. So it's not modeled to gain back a little performance.
+
+    // Convert magnitude to luminance
+    float luminance = pow(100.0, (-magnitude / 5.0));
+
+    float r2 = luminance / (pow(luminance, 2.0/3.0) + 0.02); // The .02 term controls the overall star brightness.
+    r2 *= sl_fogDistance.y;
+    vec4 luminanceRGB = vec4(r2, r2, r2, 1);
+
+#if OPENGL
+    vec4 starColor = gl_Color * luminanceRGB;
+#else
+    vec4 starColor = color * luminanceRGB;
+#endif
+
+    // Add fog
+    vec4 fogColor;
+    fogColor.xyz = sl_fog.xyz;
+    fogColor.w = 1.0;
+    float fogDensity = sl_fog.w;
+    float volumeDistance = sl_fogDistance.x;
+
+    float cosTheta = max(1.0E-10, dot(normalize(horizonCoords.xyz), sl_up.xyz));
+
+    float fFogDistance = volumeDistance / cosTheta;
+    float f = exp(-(fogDensity * fFogDistance));
+
+    f = clamp(f, 0.0, 1.0);
+
+    vec4 foggedColor = mix(fogColor, starColor, f);
+
+    vec4 finalColor = foggedColor * f;
+
+#if SLVULKAN
+    gl_PointSize = sl_pointSize.x;
+    if (sl_forceDepth.x > 0.0) {
+        gl_Position.z = sl_forceDepth.y;
+    }
+#endif
+
+#if OPENGL
+    gl_TexCoord[0].z = 0.0;
+    overrideStars(horizonCoords, magnitude, gl_Color, fogColor, fogDensity, finalColor);
+    gl_FrontColor = finalColor;
+#else
+    overrideStars(horizonCoords, magnitude, color, fogColor, fogDensity, finalColor);
+    vertColor = finalColor;
+#endif
+}

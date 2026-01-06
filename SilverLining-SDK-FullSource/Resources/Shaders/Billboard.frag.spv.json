@@ -1,0 +1,120 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "frag"
+        }
+    ],
+    "types" : {
+        "_39" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_modelView",
+                    "type" : "mat4",
+                    "offset" : 0,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_modelViewProj",
+                    "type" : "mat4",
+                    "offset" : 64,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_billboard",
+                    "type" : "mat4",
+                    "offset" : 128,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_basis",
+                    "type" : "mat4",
+                    "offset" : 192,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_flipTCoordsAndFogDensity",
+                    "type" : "vec4",
+                    "offset" : 256
+                },
+                {
+                    "name" : "sl_fogColor",
+                    "type" : "vec4",
+                    "offset" : 272
+                },
+                {
+                    "name" : "sl_billboardColor",
+                    "type" : "vec4",
+                    "offset" : 288
+                },
+                {
+                    "name" : "sl_fade",
+                    "type" : "vec4",
+                    "offset" : 304
+                },
+                {
+                    "name" : "sl_outputScale",
+                    "type" : "vec4",
+                    "offset" : 320
+                },
+                {
+                    "name" : "sl_noSpin",
+                    "type" : "vec4",
+                    "offset" : 336
+                },
+                {
+                    "name" : "sl_padding0",
+                    "type" : "vec4",
+                    "offset" : 352
+                },
+                {
+                    "name" : "sl_padding1",
+                    "type" : "vec4",
+                    "offset" : 368
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertTexcoord",
+            "location" : 1
+        },
+        {
+            "type" : "vec4",
+            "name" : "vertColor",
+            "location" : 0
+        },
+        {
+            "type" : "float",
+            "name" : "altitude",
+            "location" : 2
+        }
+    ],
+    "outputs" : [
+        {
+            "type" : "vec4",
+            "name" : "outFragColor",
+            "location" : 0
+        }
+    ],
+    "textures" : [
+        {
+            "type" : "sampler2D",
+            "name" : "sl_tex2D",
+            "set" : 1,
+            "binding" : 0
+        }
+    ],
+    "ssbos" : [
+        {
+            "type" : "_39",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 384,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

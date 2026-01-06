@@ -1,0 +1,72 @@
+
+#if OPENGL
+varying vec3 V;
+varying float fadeDist;
+#else
+#if SLVULKAN
+layout(location = 0) in vec4 vertex;
+layout(location = 1) in vec4 color;
+layout(location = 2) in vec4 texcoord;
+
+layout(location = 0) out vec3 vertTexcoord;
+layout(location = 1) out vec3 V;
+layout(location = 2) out vec4 vertColor;
+layout(location = 3) out float fadeDist;
+#else
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec3 vertTexcoord;
+out vec3 V;
+out vec4 vertColor;
+out float fadeDist;
+#endif
+#endif
+
+#if SLVULKAN
+layout(set = 1, binding = 0) uniform sampler2D sl_tex2D;
+layout(set = 1, binding = 1) uniform sampler2D sl_tex2D2;
+#else
+uniform sampler2D sl_tex2D;
+#endif
+
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+    float unitScale = sl_layerSizeAndUnitScale.w;
+
+#if OPENGL
+    vec4 position = gl_Vertex;
+    gl_TexCoord[0] = gl_MultiTexCoord0;
+    vec4 texel = texture2D(sl_tex2D, gl_MultiTexCoord0.xy);
+#else
+    vec4 position = vec4( vertex.xyz, 1.0 );
+    vertTexcoord = texcoord.xyz;
+    vec4 texel = texture(sl_tex2D, texcoord.xy);
+#endif
+
+    float minNSrc = sl_extinctionFactor.y;
+    float thicknessFactor = texel.x * (1.0 - minNSrc) + minNSrc;
+
+    float thickness = thicknessFactor * sl_upVectorAndThickness.w;
+
+    vec3 displacement = vec3(0.0,-1.0,0.0) * (sl_upVectorAndThickness.w - thickness);
+
+    position.xyz += displacement;
+
+    vec3 worldPos = position.xyz + sl_modelPos.xyz;
+    vec4 w4 = sl_invBasis * vec4(worldPos, 1.0);
+    V = (sl_cameraPos.xyz - w4.xyz);
+
+    fadeDist = length( (vec4(V, 1.0) * sl_invBasis).xz );
+
+#if OPENGL
+    gl_FrontColor = gl_Color;
+#else
+    vertColor = color;
+#endif
+
+    gl_Position = overridePosition(sl_modelViewProj * position);
+}

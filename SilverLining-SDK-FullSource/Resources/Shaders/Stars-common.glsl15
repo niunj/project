@@ -1,0 +1,37 @@
+//Stars-common.glsl15
+#define STARS_SHADER
+
+#ifdef USE_UBO
+#define UNIFORM_DECL_PREFIX
+#else
+#define UNIFORM_DECL_PREFIX uniform
+#endif
+
+#if defined(USE_UBO)
+#if defined(UBO_USE_SET_BINDING)
+layout(set = 0, binding = 0, std140) uniform sl_ShaderParameters_UBO {
+#else
+layout(std140) uniform sl_ShaderParameters_UBO {
+#endif
+#endif
+    // These are used in vertex shader
+    UNIFORM_DECL_PREFIX mat4 sl_invBasis;
+    UNIFORM_DECL_PREFIX mat4 sl_modelView;
+    UNIFORM_DECL_PREFIX mat4 sl_modelViewProj;
+    UNIFORM_DECL_PREFIX mat4 sl_equatorialToHorizon;
+    UNIFORM_DECL_PREFIX vec4 sl_fog;
+    UNIFORM_DECL_PREFIX vec4 sl_fogDistance;
+    UNIFORM_DECL_PREFIX vec4 sl_up;
+
+    UNIFORM_DECL_PREFIX vec4 sl_pointSize;
+
+#if SLVULKAN
+    UNIFORM_DECL_PREFIX vec4 sl_forceDepth;
+#endif
+
+    // These are used in fragment shader
+    UNIFORM_DECL_PREFIX vec4 sl_outputScale;
+
+#if defined(USE_UBO)
+};
+#endif

@@ -1,0 +1,24 @@
+#version 150
+
+#define PARTICLE_SHADER
+
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+out vec3 vertTexcoord;
+
+uniform mat4 sl_modelViewProj;
+uniform vec4 sl_lightingColor;
+
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+    vertColor = sl_lightingColor;
+
+    gl_Position = overridePosition(sl_modelViewProj * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+
+    vertTexcoord = texcoord;
+}

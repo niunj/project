@@ -1,0 +1,33 @@
+//Particle-instanced-sleet-common.glsl15
+#define PARTICLE_SHADER
+
+#ifdef USE_UBO
+#define UNIFORM_DECL_PREFIX
+#else
+#define UNIFORM_DECL_PREFIX uniform
+#endif
+
+#if defined(USE_UBO)
+#if defined(UBO_USE_SET_BINDING)
+#if defined(PARTICLE_UBO_IS_SSBO)
+layout(set = 0, binding = 0, std430) readonly buffer sl_ShaderParameters_UBO {
+#else
+layout(set = 0, binding = 0, std140) uniform sl_ShaderParameters_UBO {
+#endif
+#else
+layout(std140) uniform sl_ShaderParameters_UBO {
+#endif
+#endif
+    // These are used in vertex shader
+
+    UNIFORM_DECL_PREFIX mat4 sl_proj;
+    UNIFORM_DECL_PREFIX mat4 sl_cameraModelView;
+    UNIFORM_DECL_PREFIX mat4 sl_rotateTranslate;
+    UNIFORM_DECL_PREFIX mat4 sl_scale;
+
+    // These are used in fragment shader
+    UNIFORM_DECL_PREFIX vec4 sl_outputScale;
+
+#if defined(USE_UBO)
+};
+#endif

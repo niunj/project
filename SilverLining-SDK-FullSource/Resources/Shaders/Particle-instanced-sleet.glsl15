@@ -1,0 +1,56 @@
+#if SLVULKAN
+layout(location = 0) in vec4 vertex;
+layout(location = 1) in vec4 color;
+layout(location = 2) in vec4 texcoord;
+
+layout(location = 0) out vec4 vertColor;
+layout(location = 1) out vec3 vertTexcoord;
+layout(location = 2) flat out int textureIndex;
+#else
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+out vec3 vertTexcoord;
+flat out int textureIndex;
+#endif
+
+struct Particle {
+    vec3 sl_particlePosition;
+    int sl_textureIndex;
+    vec4 sl_lightingColor;
+};
+
+#if SLVULKAN
+layout(set = 2, binding = 0, std430) readonly buffer sl_particles_SSBO {
+    Particle particles[];
+};
+#else
+layout (binding = 1, std430) readonly buffer sl_particles_SSBO {
+    Particle particles[];
+};
+#endif
+
+vec4 overridePosition(in vec4 position);
+void main()
+{
+    // spirv uses gl_InstanceIndex instead of gl_InstanceID
+#if SLVULKAN
+#define gl_InstanceID gl_InstanceIndex
+#endif
+
+    vertColor = particles[gl_InstanceID].sl_lightingColor;
+    textureIndex = particles[gl_InstanceID].sl_textureIndex;
+
+    mat4 rotateTranslate = sl_rotateTranslate;
+    rotateTranslate[3][0] = particles[gl_InstanceID].sl_particlePosition.x;
+    rotateTranslate[3][1] = particles[gl_InstanceID].sl_particlePosition.y;
+    rotateTranslate[3][2] = particles[gl_InstanceID].sl_particlePosition.z;
+
+    mat4 mvp = sl_proj * (sl_cameraModelView * rotateTranslate * sl_scale);
+
+    gl_Position = overridePosition(mvp * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+
+    vertTexcoord = texcoord.xyz;
+}

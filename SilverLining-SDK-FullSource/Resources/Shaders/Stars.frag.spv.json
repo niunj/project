@@ -1,0 +1,87 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "frag"
+        }
+    ],
+    "types" : {
+        "_18" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_invBasis",
+                    "type" : "mat4",
+                    "offset" : 0,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_modelView",
+                    "type" : "mat4",
+                    "offset" : 64,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_modelViewProj",
+                    "type" : "mat4",
+                    "offset" : 128,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_equatorialToHorizon",
+                    "type" : "mat4",
+                    "offset" : 192,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_fog",
+                    "type" : "vec4",
+                    "offset" : 256
+                },
+                {
+                    "name" : "sl_fogDistance",
+                    "type" : "vec4",
+                    "offset" : 272
+                },
+                {
+                    "name" : "sl_up",
+                    "type" : "vec4",
+                    "offset" : 288
+                },
+                {
+                    "name" : "sl_pointSize",
+                    "type" : "vec4",
+                    "offset" : 304
+                },
+                {
+                    "name" : "sl_outputScale",
+                    "type" : "vec4",
+                    "offset" : 320
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertColor",
+            "location" : 0
+        }
+    ],
+    "outputs" : [
+        {
+            "type" : "vec4",
+            "name" : "outFragColor",
+            "location" : 0
+        }
+    ],
+    "ubos" : [
+        {
+            "type" : "_18",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 336,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

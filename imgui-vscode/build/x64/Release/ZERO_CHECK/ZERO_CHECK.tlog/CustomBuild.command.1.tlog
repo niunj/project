@@ -1,0 +1,10 @@
+^C:\USERS\56333\DESKTOP\显示界面\BUILD\CMAKEFILES\C86A5DF3D67CA6A470318AF9A1CE6860\GENERATE.STAMP.RULE
+setlocal
+C:\Strawberry\c\bin\cmake.exe -SC:/Users/56333/Desktop/显示界面 -BC:/Users/56333/Desktop/显示界面/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/56333/Desktop/显示界面/build/ImGuiImPlotExample.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

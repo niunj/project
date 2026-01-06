@@ -1,0 +1,34 @@
+#if SLVULKAN
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+layout(location = 0) in vec4 vertColor;
+layout(location = 1) in vec3 vertTexcoord;
+layout(location = 2) flat in int textureIndex;
+#else
+in vec4 vertColor;
+in vec3 vertTexcoord;
+flat in int textureIndex;
+#endif
+
+void overrideParticleColor(in vec4 textureColor, in vec4 lightColor, inout vec4 particleColor);
+void writeFragmentData(in vec4 finalColor);
+
+#if SLVULKAN
+layout(set = 1, binding = 0) uniform sampler2D tex[10];
+#else
+layout (binding = 2) uniform sl_textures_UBO {
+    uint64_t tex[10];
+};
+#endif
+
+void main()
+{
+#if SLVULKAN
+    vec4 texel = texture(tex[textureIndex], vertTexcoord.st);
+#else
+    vec4 texel = texture(sampler2D(tex[textureIndex]), vertTexcoord.st);
+#endif
+    vec4 particleColor = texel * vertColor;
+    overrideParticleColor(texel, vertColor, particleColor);
+    particleColor.xyz *= sl_outputScale.xyz;
+    writeFragmentData(particleColor);
+}

@@ -1,0 +1,45 @@
+#if SLVULKAN
+layout(location = 0) in vec4 vertex;
+layout(location = 1) in vec4 color;
+layout(location = 2) in vec4 texcoord;
+
+layout(location = 0) out vec4 vertColor;
+layout(location = 1) out vec3 vertTexcoord;
+#else
+in vec3 vertex;
+in vec4 color;
+in vec3 texcoord;
+
+out vec4 vertColor;
+out vec3 vertTexcoord;
+#endif
+
+
+#if SLVULKAN
+layout(set = 2, binding = 0, std430) readonly buffer sl_rotate_translate_SSBO {
+    mat4 sl_rotateTranslate[];
+};
+#else
+layout(binding = 1, std430) readonly buffer sl_rotate_translate_SSBO {
+    mat4 sl_rotateTranslate[];
+};
+#endif
+
+
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+    // spirv uses gl_InstanceIndex instead of gl_InstanceID
+#if SLVULKAN
+#define gl_InstanceID gl_InstanceIndex
+#endif
+
+    vertColor = sl_lightingColor;
+
+    mat4 mvp = sl_proj * (sl_rotateTranslate[gl_InstanceID] * sl_scale);
+
+    gl_Position = overridePosition(mvp * vec4(vertex.x, vertex.y, vertex.z, 1.0));
+
+    vertTexcoord = texcoord.xyz;
+}

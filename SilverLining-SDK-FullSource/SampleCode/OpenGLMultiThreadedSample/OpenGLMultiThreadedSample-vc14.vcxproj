@@ -1,0 +1,160 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectName>OpenGLMultiThreadedSample</ProjectName>
+    <ProjectGuid>{2481097F-2CF7-41AB-8ABA-1A513F73A0E3}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0.22000.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Debug\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Debug\</IntDir>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</LinkIncremental>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Release\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Release\</IntDir>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\..\Public Headers;..\..\third-party\glew\include;..\..\third-party\glfw\include;..\..\third-party\glm;..\..\third-party\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;GLEW_STATIC;_GLFW_USE_CONFIG_H;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+      <ShowIncludes>false</ShowIncludes>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>SilverLining-MTD-DLL.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)OpenGLMultiThreadedSample.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib\vc14\win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <IgnoreSpecificDefaultLibraries>LIBCMT;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(OutDir)OpenGLMultiThreadedSample.pdb</ProgramDatabaseFile>
+      <SubSystem>Console</SubSystem>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>..\..\Public Headers;..\..\third-party\glew\include;..\..\third-party\glfw\include;..\..\third-party\glm;..\..\third-party\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;GLEW_STATIC;_GLFW_USE_CONFIG_H;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ShowIncludes>false</ShowIncludes>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>SilverLining-MT-DLL.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)OpenGLMultiThreadedSample.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib\vc14\win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\third-party\glew\src\glew.cpp" />
+    <ClCompile Include="..\..\third-party\glfw\src\context.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\egl_context.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\init.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\input.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\monitor.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\osmesa_context.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\vulkan.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\wgl_context.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\win32_init.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\win32_joystick.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\win32_monitor.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\win32_thread.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\win32_time.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\win32_window.c" />
+    <ClCompile Include="..\..\third-party\glfw\src\window.c" />
+    <ClCompile Include="Buffer.cpp" />
+    <ClCompile Include="DrawDeferredMultiThreaded.cpp" />
+    <ClCompile Include="DrawDeferredSingleThreaded.cpp" />
+    <ClCompile Include="DrawImmediateSingleThreaded.cpp" />
+    <ClCompile Include="DrawStrategy.cpp" />
+    <ClCompile Include="GltfModel.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="MatrixUtils.cpp" />
+    <ClCompile Include="QuadRendering.cpp" />
+    <ClCompile Include="RenderToTexture.cpp" />
+    <ClCompile Include="SampleApp.cpp" />
+    <ClCompile Include="SetUpLayers.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Public Headers\Atmosphere.h" />
+    <ClInclude Include="..\..\Public Headers\AtmosphericConditions.h" />
+    <ClInclude Include="..\..\Public Headers\CloudLayer.h" />
+    <ClInclude Include="..\..\Public Headers\CloudLayerFactory.h" />
+    <ClInclude Include="..\..\Public Headers\CloudTypes.h" />
+    <ClInclude Include="..\..\Public Headers\LocalTime.h" />
+    <ClInclude Include="..\..\Public Headers\Location.h" />
+    <ClInclude Include="..\..\Public Headers\SilverLining.h" />
+    <ClInclude Include="DrawDeferredMultiThreaded.h" />
+    <ClInclude Include="DrawDeferredSingleThreaded.h" />
+    <ClInclude Include="DrawImmediateSingleThreaded.h" />
+    <ClInclude Include="DrawStrategy.h" />
+    <ClInclude Include="MatrixUtils.h" />
+    <ClInclude Include="QuadRendering.h" />
+    <ClInclude Include="RenderToTexture.h" />
+    <ClInclude Include="SampleApp.h" />
+    <ClInclude Include="SetUpLayers.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="..\..\Public Headers\WindVolume.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ReadMe.txt" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

@@ -1,0 +1,204 @@
+
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+varying float altitude;
+#else
+
+#if SLVULKAN
+layout (location = 0) in vec4 vertex;
+layout (location = 1) in vec4 color;
+layout (location = 2) in vec4 texcoord;
+
+layout (location = 0) out vec4 vertColor;
+layout (location = 1) out vec4 vertTexcoord;
+layout (location = 2) out float altitude;
+#else
+in vec4 vertex;
+in vec4 color;
+in vec4 texcoord;
+
+out vec4 vertColor;
+out vec4 vertTexcoord;
+out float altitude;
+#endif
+#endif
+
+#if defined(BILLBOARD_SHADER_INSTANCED)
+flat out int drawIndex;
+#endif
+
+void overrideBillboardFog(in vec3 eyePosition, inout vec4 fogColor, inout float fogExponent, inout float fogBlend, inout float fogFade);
+void overrideBillboardColor(in vec3 eyePosition, in vec4 modelPos, in vec4 foggedColor, in float cloudFade, in float voxelFade, in float fogFade, inout vec4 finalColor);
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+
+#if defined(BILLBOARD_SHADER_INSTANCED)
+    // These are used in vertex shader
+    int instanceId = gl_DrawID;
+
+    drawIndex = instanceId;
+
+    const mat4 sl_modelView = billboardParams[instanceId].sl_modelView;
+    const mat4 sl_modelViewProj = billboardParams[instanceId].sl_modelViewProj;
+    const mat4 sl_billboard = billboardParams[instanceId].sl_billboard;
+    const mat4 sl_basis = billboardParams[instanceId].sl_basis;
+    const vec4 sl_flipTCoordsAndFogDensity = billboardParams[instanceId].sl_flipTCoordsAndFogDensity;
+    const vec4 sl_fogColor = billboardParams[instanceId].sl_fogColor;
+    const vec4 sl_billboardColor = billboardParams[instanceId].sl_billboardColor;
+    const vec4 sl_fade = billboardParams[instanceId].sl_fade;
+
+    const vec4 sl_outputScale = billboardParams[instanceId].sl_outputScale;
+
+    const vec4 sl_noSpin = billboardParams[instanceId].sl_noSpin;
+
+    const vec4 sl_forceDepth = billboardParams[instanceId].sl_forceDepth;
+#endif
+
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+    vec3 eyePosition = (sl_modelView * vec4(gl_Vertex.xyz, 1.0)).xyz;
+#else
+    vec4 vertex4 = vec4(vertex.x, vertex.y, vertex.z, 1.0);
+    vec3 eyePosition = (sl_modelView * vertex4).xyz;
+#endif
+    float fogDistance = length(eyePosition);
+    float fogBoost = sl_fade.y;
+    float fogExponent = clamp(fogDistance * sl_flipTCoordsAndFogDensity.y, 0.0, 1.0);
+    float fogFactor = clamp(exp(-(fogExponent * fogExponent)) / fogBoost, 0.0, 1.0);
+    bool additiveBlend = sl_flipTCoordsAndFogDensity.w > 0.0;
+
+    vec4 vFogColor = sl_fogColor;
+    float fogFade = 1.0 - fogExponent * fogExponent;
+    overrideBillboardFog(eyePosition, vFogColor, fogExponent, fogFactor, fogFade);
+
+    vec4 preFadedColor;
+    if (sl_billboardColor.w > 0.0) {
+        preFadedColor.xyz = mix(vFogColor.xyz, sl_billboardColor.xyz, fogFactor);
+        preFadedColor.w = sl_billboardColor.w;
+    } else {
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+        vec4 c = gl_Color * vec4(sl_billboardColor.xyz, 1.0);
+#else
+        vec4 c = color * vec4(sl_billboardColor.xyz, 1.0);
+#endif
+        preFadedColor = mix(vFogColor, c, fogFactor);
+    }
+
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+    vec4 texcoord = gl_MultiTexCoord0.xyzw;
+#endif
+
+    float radius = abs(texcoord.x);
+    float rotateDirection = sign(texcoord.x);
+    float rotateSpeed = abs(texcoord.y);
+    float rotateAngle = abs(texcoord.z);
+    vec2 dir = vec2(sign(texcoord.y), sign(texcoord.z));
+    float fadeRate = abs(texcoord.w);
+    bool fadeIn = texcoord.w > 0.0;
+    bool fadeOut = texcoord.w < 0.0;
+
+    float voxelFade = 1.0;
+    if (sl_fade.z > 0.0) {
+        if (fadeIn) {
+            voxelFade = fadeRate * (sl_fade.w - sl_fade.z);
+        } else if (fadeOut) {
+            voxelFade = 1.0 - fadeRate * (sl_fade.w - sl_fade.z);
+        }
+        voxelFade = clamp(voxelFade, 0.0, 1.0);
+    }
+
+    vec4 vertPos = vec4(radius * dir.x, radius * dir.y, 0.0, 1.0);
+
+    vec4 rotatedPos;
+
+    float gradient = sl_noSpin.y;
+
+    if (sl_noSpin.x > 0.0) {
+        rotatedPos = vec4(vertPos.xy, 0.0, 1.0);
+        float grad = 1.0 - (-dir.y * gradient);
+        preFadedColor.xyz *= grad;
+    } else {
+        float angle = rotateAngle + rotateSpeed * rotateDirection * sl_fade.w;
+        angle = mod(angle, 3.14159265 * 2.0);
+        float cosLength = cos(angle);
+        float sinLength = sin(angle);
+
+        rotatedPos.x = (cosLength * vertPos.x + -sinLength * vertPos.y);
+        rotatedPos.y = (sinLength * vertPos.x + cosLength * vertPos.y);
+        rotatedPos.z = 0.0;
+        rotatedPos.w = 1.0;
+
+        float nposy = sinLength * dir.x + cosLength * dir.y;
+        float grad = 1.0 - (-nposy * gradient);
+        preFadedColor.xyz *= grad;
+    }
+
+    float flattening = sl_noSpin.w;
+    rotatedPos.y *= flattening;
+
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+    float atlasIndex = gl_Vertex.w;
+    vec4 vert = gl_Vertex * sl_basis;
+#else
+    float atlasIndex = vertex.w;
+    vec4 vert = vertex4 * sl_basis;
+#endif
+    bool isAtlas = atlasIndex > 0.0;
+    float scale = isAtlas ? 1.2 : 1.0;
+
+    mat4 xlate = mat4(scale, 0.0, 0.0, 0.0,
+                      0.0, scale, 0.0, 0.0,
+                      0.0, 0.0, scale, 0.0,
+                      vert.x, vert.y, vert.z, 1.0);
+
+    mat4 xlatebb = (xlate * sl_billboard);
+    mat4 mvb = (sl_modelViewProj * xlatebb);
+    gl_Position = overridePosition(mvb * rotatedPos);
+
+#if SLVULKAN
+    if (sl_forceDepth.x > 0.0) {
+        gl_Position.z = sl_forceDepth.y;
+    }
+#endif
+
+    vec4 modelPos = xlate * rotatedPos;
+    modelPos = sl_basis * modelPos;
+    altitude = modelPos.y;
+
+    vec2 tc = vec2(0.5 * dir.x + 0.5, 0.5 * dir.y * sl_flipTCoordsAndFogDensity.x + 0.5);
+
+    if (isAtlas) {
+        tc *= vec2(0.25, 0.25);
+        float idx = atlasIndex - 1.0;
+        float row = floor(idx / 4.0);
+        float col = idx - row * 4.0;
+        tc.x += 0.25 * col;
+        tc.y += (0.25 * (3.0 - row));
+    }
+
+    mat4 mv = (sl_modelView * xlatebb);
+    vec3 vEyePosition = (mv * rotatedPos).xyz;
+
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+    gl_TexCoord[0] = vec4(tc, 0.0, 1.0);
+#else
+    vertTexcoord = vec4(tc, 0.0, 0.0);
+#endif
+
+    float nearFade = 1.0 - clamp(length(vEyePosition) / radius, 0.0, 1.0);
+    voxelFade *= 1.0 - (nearFade * nearFade * (1.0 - sl_billboardColor.w));
+
+    vec4 finalColor;
+    if (additiveBlend) {
+        finalColor = mix(vec4(0.0, 0.0, 0.0, 0.0), preFadedColor, sl_fade.xxxx * voxelFade * fogFade);
+    } else {
+        finalColor = vec4(preFadedColor.xyz, sl_fade.x * voxelFade * fogFade * preFadedColor.a);
+    }
+    overrideBillboardColor(vEyePosition, modelPos, preFadedColor, sl_fade.x, voxelFade, fogFade, finalColor);
+
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+    gl_FrontColor = finalColor;
+#else
+    vertColor = finalColor;
+#endif
+}

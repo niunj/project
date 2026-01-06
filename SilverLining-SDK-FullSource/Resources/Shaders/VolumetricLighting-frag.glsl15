@@ -1,0 +1,55 @@
+#if OPENGL
+
+#elif SLVULKAN
+layout(location = 0) in vec4 vertTexcoord;
+#else
+in vec4 vertTexcoord;
+#endif
+
+#if SLVULKAN
+layout(set = 1, binding = 0) uniform sampler2D sl_tex2D;
+#else
+uniform sampler2D sl_tex2D;
+#endif
+
+const int NUM_SAMPLES = 100 ;
+
+void writeFragmentData(in vec4 finalColor);
+
+void main()
+{
+    float exposure = sl_parameters.x;
+    float decay = sl_parameters.y;
+    float density = sl_parameters.z;
+    float weight = sl_parameters.w;
+
+    vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
+#if OPENGL
+    vec4 vertTexcoord = gl_TexCoord[0];
+#endif
+    vec2 deltaTextCoord = vec2( vertTexcoord.st - sl_lightPositionOnScreen.xy );
+    vec2 textCoo = vertTexcoord.st;
+    deltaTextCoord *= 1.0 /  float(NUM_SAMPLES) * density;
+    float illuminationDecay = 1.0;
+
+    for(int i=0; i < NUM_SAMPLES ; i++) {
+        textCoo -= deltaTextCoord;
+#if OPENGL
+        vec4 sampleColor = texture2D(sl_tex2D, textCoo );
+#else
+        vec4 sampleColor = texture(sl_tex2D, textCoo );
+#endif
+        sampleColor.xyz *= smoothstep(0.95, 1.0, sampleColor.y) * 0.5 + 0.5;
+
+        sampleColor *= illuminationDecay * weight;
+        color += sampleColor;
+        illuminationDecay *= decay;
+    }
+
+    color *= exposure;
+
+    color.a = smoothstep(0.2, 1.0, color.y);
+    color.xyz *= sl_lightColor.xyz * sl_outputScale.xyz;
+
+    writeFragmentData(color);
+}

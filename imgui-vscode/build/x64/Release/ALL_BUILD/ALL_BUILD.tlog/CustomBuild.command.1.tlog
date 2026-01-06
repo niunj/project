@@ -1,0 +1,10 @@
+^C:\USERS\56333\DESKTOP\显示界面\CMAKELISTS.TXT
+setlocal
+C:\Strawberry\c\bin\cmake.exe -SC:/Users/56333/Desktop/显示界面 -BC:/Users/56333/Desktop/显示界面/build --check-stamp-file C:/Users/56333/Desktop/显示界面/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

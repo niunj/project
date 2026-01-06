@@ -1,0 +1,50 @@
+//Stratiform-common.glsl15
+#define STRATUS_SHADER
+
+#ifdef USE_UBO
+#define UNIFORM_DECL_PREFIX
+#else
+#define UNIFORM_DECL_PREFIX uniform
+#endif
+
+#if defined(USE_UBO)
+#if defined(UBO_USE_SET_BINDING)
+#if defined(STRATUS_UBO_IS_SSBO)
+layout(set = 0, binding = 0, std430) readonly buffer sl_ShaderParameters_UBO {
+#else
+layout(set = 0, binding = 0, std140) uniform sl_ShaderParameters_UBO {
+#endif
+#else
+layout(std140) uniform sl_ShaderParameters_UBO {
+#endif
+#endif
+    // These are used in vertex shader
+    UNIFORM_DECL_PREFIX mat4 sl_modelViewProj;
+    UNIFORM_DECL_PREFIX mat4 sl_modelView;
+    UNIFORM_DECL_PREFIX vec4 sl_modelPos;
+    UNIFORM_DECL_PREFIX vec4 sl_cameraPos;
+
+
+    // These are used in fragment shader
+    UNIFORM_DECL_PREFIX vec4 sl_lightDirection;
+    UNIFORM_DECL_PREFIX vec4 sl_layerThicknessAndIsTop;
+    UNIFORM_DECL_PREFIX vec4 sl_groundColor;
+    UNIFORM_DECL_PREFIX vec4 sl_outputScale;
+    UNIFORM_DECL_PREFIX vec4 sl_cloudTint;
+
+
+    // These are common
+    UNIFORM_DECL_PREFIX vec4 sl_displacementVectorAndContrast;
+    UNIFORM_DECL_PREFIX vec4 sl_fadeAndDisplacementFactor;
+    UNIFORM_DECL_PREFIX vec4 sl_upVectorAndThickness;
+    UNIFORM_DECL_PREFIX vec4 sl_sunColor;
+    UNIFORM_DECL_PREFIX vec4 sl_skyColor;
+    UNIFORM_DECL_PREFIX mat4 sl_invBasis;
+    UNIFORM_DECL_PREFIX vec4 sl_layerSizeAndUnitScale;
+    UNIFORM_DECL_PREFIX vec4 sl_fogColorAndDensity;
+    UNIFORM_DECL_PREFIX vec4 sl_extinctionFactor;
+
+
+#if defined(USE_UBO)
+};
+#endif

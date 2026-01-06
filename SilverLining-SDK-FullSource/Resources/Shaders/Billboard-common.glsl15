@@ -1,0 +1,59 @@
+//Billboard-common.glsl15
+#define BILLBOARD_SHADER
+
+#if defined(BILLBOARD_SHADER_INSTANCED)
+#define UNIFORM_DECL_PREFIX
+#else
+
+#ifdef USE_UBO
+#define UNIFORM_DECL_PREFIX
+#else
+#define UNIFORM_DECL_PREFIX uniform
+#endif
+
+#endif
+
+#if defined(BILLBOARD_SHADER_INSTANCED)
+struct BillboardParams {
+#elif defined(USE_UBO)
+#if defined(UBO_USE_SET_BINDING)
+#if defined(BILLBOARD_UBO_IS_SSBO)
+layout(set = 0, binding = 0, std430) readonly buffer sl_ShaderParameters_UBO {
+#else
+layout(set = 0, binding = 0, std140) uniform sl_ShaderParameters_UBO {
+#endif
+#else
+layout(std140) uniform sl_ShaderParameters_UBO {
+#endif
+#endif
+    // These are used in vertex shader
+    UNIFORM_DECL_PREFIX mat4 sl_modelView;
+    UNIFORM_DECL_PREFIX mat4 sl_modelViewProj;
+    UNIFORM_DECL_PREFIX mat4 sl_billboard;
+    UNIFORM_DECL_PREFIX mat4 sl_basis;
+
+    UNIFORM_DECL_PREFIX vec4 sl_flipTCoordsAndFogDensity;
+    UNIFORM_DECL_PREFIX vec4 sl_fogColor;
+    UNIFORM_DECL_PREFIX vec4 sl_billboardColor;
+    UNIFORM_DECL_PREFIX vec4 sl_fade;
+
+    // These are used in fragment shader
+    UNIFORM_DECL_PREFIX vec4 sl_outputScale;
+
+    // These are common
+    UNIFORM_DECL_PREFIX vec4 sl_noSpin;
+
+    UNIFORM_DECL_PREFIX vec4 sl_padding0;
+    UNIFORM_DECL_PREFIX vec4 sl_forceDepth;
+
+#if defined(BILLBOARD_SHADER_INSTANCED)
+};
+layout (binding = 0, std430) buffer sl_ShaderParameters_SSBO {
+    BillboardParams billboardParams[];
+};
+layout (binding = 1) uniform sl_textures_UBO {
+    uint64_t atlasTextures[50];
+};
+#elif defined(USE_UBO)
+};
+#endif

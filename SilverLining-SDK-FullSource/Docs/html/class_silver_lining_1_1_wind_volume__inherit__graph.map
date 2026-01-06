@@ -1,0 +1,4 @@
+<map id="SilverLining::WindVolume" name="SilverLining::WindVolume">
+<area shape="rect" id="node1" title="Defines an area of a given wind velocity and direction bounded by two altitudes." alt="" coords="5,80,193,107"/>
+<area shape="rect" id="node2" href="$class_silver_lining_1_1_mem_object.html" title="This base class for all SilverLining objects intercepts the new and delete operators,..." alt="" coords="9,5,190,32"/>
+</map>

@@ -1,0 +1,65 @@
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+varying float altitude;
+#else
+#if SLVULKAN
+layout (location = 0) in vec4 vertColor;
+layout (location = 1) in vec4 vertTexcoord;
+layout (location = 2) in float altitude;
+#else
+in vec4 vertColor;
+in vec4 vertTexcoord;
+in float altitude;
+#endif
+#endif
+
+#if SLVULKAN
+layout(set = 1, binding = 0) uniform sampler2D sl_tex2D;
+#else
+uniform sampler2D sl_tex2D;
+#endif
+
+void overrideBillboardFragment(in vec4 texColor, in vec4 lightColor, inout vec4 finalColor);
+void writeFragmentData(in vec4 finalColor);
+
+#if defined(BILLBOARD_SHADER_INSTANCED)
+flat in int drawIndex;
+#endif
+
+void main()
+{
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+    vec4 texel = texture2D(sl_tex2D, gl_TexCoord[0].xy);
+    vec4 finalColor = texel * gl_Color;
+#else
+#if defined(BILLBOARD_SHADER_INSTANCED)
+    const int whichTexture = int(billboardParams[drawIndex].sl_padding0.x);
+    vec4 texel = texture(sampler2D(atlasTextures[whichTexture]), vertTexcoord.st);
+#else
+    vec4 texel = texture(sl_tex2D, vertTexcoord.st);
+#endif
+    vec4 finalColor = texel * vertColor;
+#endif
+
+#if defined(BILLBOARD_SHADER_INSTANCED)
+    // These are used in vertex shader
+    int instanceId = drawIndex;
+    const vec4 sl_outputScale = billboardParams[instanceId].sl_outputScale;
+    const vec4 sl_noSpin = billboardParams[instanceId].sl_noSpin;
+#endif
+
+    float softness = sl_noSpin.z;
+    if (softness > 0.0) {
+        float softParticle = clamp(altitude / softness, 0.0, 1.0);
+        finalColor = mix(vec4(0.0,0.0,0.0,0.0), finalColor, softParticle);
+    }
+
+#if defined(OPENGL) && !defined(BILLBOARD_SHADER_INSTANCED)
+    overrideBillboardFragment(texel, gl_Color, finalColor);
+#else
+    overrideBillboardFragment(texel, vertColor, finalColor);
+#endif
+
+    finalColor.xyz *= sl_outputScale.xyz;
+
+    writeFragmentData(finalColor);
+}

@@ -1,0 +1,26 @@
+#if OPENGL
+
+#elif SLVULKAN
+layout(location = 0) in vec4 vertex;
+layout(location = 2) in vec4 texcoord;
+
+layout(location = 0) out vec4 vertTexcoord;
+#else
+in vec3 vertex;
+in vec4 texcoord;
+
+out vec4 vertTexcoord;
+#endif
+
+vec4 overridePosition(in vec4 position);
+
+void main()
+{
+#if OPENGL
+    gl_Position = overridePosition(gl_Vertex);
+    gl_TexCoord[0] = gl_MultiTexCoord0;
+#else
+    gl_Position = overridePosition(vec4(vertex.xyz, 1.0));
+    vertTexcoord = texcoord;
+#endif
+}

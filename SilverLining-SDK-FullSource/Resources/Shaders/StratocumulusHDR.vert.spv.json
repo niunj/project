@@ -1,0 +1,192 @@
+{
+    "entryPoints" : [
+        {
+            "name" : "main",
+            "mode" : "vert"
+        }
+    ],
+    "types" : {
+        "_32" : {
+            "name" : "gl_PerVertex",
+            "members" : [
+                {
+                    "name" : "gl_Position",
+                    "type" : "vec4"
+                },
+                {
+                    "name" : "gl_PointSize",
+                    "type" : "float"
+                },
+                {
+                    "name" : "gl_ClipDistance",
+                    "type" : "float",
+                    "array" : [
+                        1
+                    ],
+                    "array_size_is_literal" : [
+                        true
+                    ]
+                },
+                {
+                    "name" : "gl_CullDistance",
+                    "type" : "float",
+                    "array" : [
+                        1
+                    ],
+                    "array_size_is_literal" : [
+                        true
+                    ]
+                }
+            ]
+        },
+        "_38" : {
+            "name" : "sl_ShaderParameters_UBO",
+            "members" : [
+                {
+                    "name" : "sl_projectionMatrix",
+                    "type" : "mat4",
+                    "offset" : 0,
+                    "matrix_stride" : 16
+                },
+                {
+                    "name" : "sl_lightColor",
+                    "type" : "vec4",
+                    "offset" : 64
+                },
+                {
+                    "name" : "sl_lightObjectDirAndConstTerm",
+                    "type" : "vec4",
+                    "offset" : 80
+                },
+                {
+                    "name" : "sl_lightTexCoords",
+                    "type" : "vec4",
+                    "offset" : 96
+                },
+                {
+                    "name" : "sl_viewSampleDimensions",
+                    "type" : "vec4",
+                    "offset" : 112
+                },
+                {
+                    "name" : "sl_lightSampleDimensions",
+                    "type" : "vec4",
+                    "offset" : 128
+                },
+                {
+                    "name" : "sl_voxelDimensions",
+                    "type" : "vec4",
+                    "offset" : 144
+                },
+                {
+                    "name" : "sl_lightWorldDirAndExtinction",
+                    "type" : "vec4",
+                    "offset" : 160
+                },
+                {
+                    "name" : "sl_cameraTexCoords",
+                    "type" : "vec4",
+                    "offset" : 176
+                },
+                {
+                    "name" : "sl_skyLightColor",
+                    "type" : "vec4",
+                    "offset" : 192
+                },
+                {
+                    "name" : "sl_originTexCoords",
+                    "type" : "vec4",
+                    "offset" : 208
+                },
+                {
+                    "name" : "sl_fadeFlag",
+                    "type" : "vec4",
+                    "offset" : 224
+                },
+                {
+                    "name" : "sl_fogColorAndDensity",
+                    "type" : "vec4",
+                    "offset" : 240
+                },
+                {
+                    "name" : "sl_multipleScatteringTerm",
+                    "type" : "vec4",
+                    "offset" : 256
+                },
+                {
+                    "name" : "sl_noiseOffset",
+                    "type" : "vec4",
+                    "offset" : 272
+                },
+                {
+                    "name" : "sl_extinctionCoefficient",
+                    "type" : "vec4",
+                    "offset" : 288
+                },
+                {
+                    "name" : "sl_jitter",
+                    "type" : "vec4",
+                    "offset" : 304
+                },
+                {
+                    "name" : "sl_unitScale",
+                    "type" : "vec4",
+                    "offset" : 320
+                },
+                {
+                    "name" : "sl_outputScale",
+                    "type" : "vec4",
+                    "offset" : 336
+                },
+                {
+                    "name" : "sl_roundCenter",
+                    "type" : "vec4",
+                    "offset" : 352
+                }
+            ]
+        }
+    },
+    "inputs" : [
+        {
+            "type" : "vec4",
+            "name" : "color",
+            "location" : 1
+        },
+        {
+            "type" : "vec4",
+            "name" : "texcoord",
+            "location" : 2
+        },
+        {
+            "type" : "vec4",
+            "name" : "vertex",
+            "location" : 0
+        }
+    ],
+    "outputs" : [
+        {
+            "type" : "vec4",
+            "name" : "vertColor",
+            "location" : 0
+        },
+        {
+            "type" : "vec4",
+            "name" : "vertTexCoord",
+            "location" : 1
+        },
+        {
+            "type" : "float",
+            "name" : "eyeDepth",
+            "location" : 2
+        }
+    ],
+    "ssbos" : [
+        {
+            "type" : "_38",
+            "name" : "sl_ShaderParameters_UBO",
+            "block_size" : 368,
+            "set" : 0,
+            "binding" : 0
+        }
+    ]
+}

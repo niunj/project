@@ -1,0 +1,14 @@
+#version 150
+
+uniform vec4 sl_outputScale;
+
+in vec4 vertColor;
+
+void writeFragmentData(in vec4 finalColor);
+
+void main()
+{
+    vec4 finalColor = vertColor;
+    finalColor.xyz *= sl_outputScale.xyz;
+    writeFragmentData(finalColor);
+}

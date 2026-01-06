@@ -1,0 +1,26 @@
+
+#if SLVULKAN
+layout(set = 1, binding = 0) uniform sampler2D sl_tex2D;
+#else
+uniform sampler2D sl_tex2D;
+#endif
+
+#if SLVULKAN
+layout(location = 0) in vec4 vertColor;
+layout(location = 1) in vec3 vertTexcoord;
+#else
+in vec4 vertColor;
+in vec3 vertTexcoord;
+#endif
+
+void overrideParticleColor(in vec4 textureColor, in vec4 lightColor, inout vec4 particleColor);
+void writeFragmentData(in vec4 finalColor);
+
+void main()
+{
+    vec4 texel = texture(sl_tex2D, vertTexcoord.st);
+    vec4 particleColor = texel * vertColor;
+    overrideParticleColor(texel, vertColor, particleColor);
+    particleColor.xyz *= sl_outputScale.xyz;
+    writeFragmentData(particleColor);
+}
