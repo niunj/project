@@ -1,0 +1,1368 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SceneWindow</class>
+ <widget class="QMainWindow" name="SceneWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1449</width>
+    <height>790</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string/>
+  </property>
+  <property name="windowIcon">
+   <iconset>
+    <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftUp/64.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftUp/64.png</iconset>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QGridLayout" name="gridLayout_3">
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
+    <item row="0" column="0">
+     <widget class="QSplitter" name="splitter">
+      <property name="orientation">
+       <enum>Qt::Vertical</enum>
+      </property>
+      <widget class="QTabWidget" name="tabWidget">
+       <property name="currentIndex">
+        <number>-1</number>
+       </property>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QToolBar" name="toolBar">
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1449</width>
+     <height>25</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menu">
+    <property name="title">
+     <string>工程</string>
+    </property>
+    <addaction name="action_openPro"/>
+    <addaction name="action_savePro"/>
+    <addaction name="action_saveAs"/>
+    <addaction name="action_closePro"/>
+    <addaction name="separator"/>
+    <addaction name="action_exit"/>
+   </widget>
+   <widget class="QMenu" name="menu_3">
+    <property name="title">
+     <string>场景编辑</string>
+    </property>
+    <addaction name="action_materialDivTool"/>
+    <addaction name="separator"/>
+    <addaction name="action_terrianConfig"/>
+    <addaction name="action_backConfig"/>
+    <addaction name="action_objectConfig"/>
+    <addaction name="separator"/>
+    <addaction name="action_atmosphereEffect"/>
+    <addaction name="action_battleEffect"/>
+    <addaction name="separator"/>
+    <addaction name="action_sensorConfig"/>
+    <addaction name="action_trkConfig"/>
+   </widget>
+   <widget class="QMenu" name="menu_6">
+    <property name="title">
+     <string>传感器效应</string>
+    </property>
+    <addaction name="action_optical"/>
+    <addaction name="action_detector"/>
+    <addaction name="action_electric"/>
+   </widget>
+   <widget class="QMenu" name="menu_10">
+    <property name="title">
+     <string>设置</string>
+    </property>
+    <addaction name="action_systemConfig"/>
+    <addaction name="action_logConfig"/>
+    <addaction name="separator"/>
+    <addaction name="action_projectWidgetSetting"/>
+    <addaction name="action_logWidgetSetting"/>
+    <addaction name="action_propertyWidgetSetting"/>
+    <addaction name="action_fuse"/>
+   </widget>
+   <widget class="QMenu" name="menu_11">
+    <property name="title">
+     <string>帮助</string>
+    </property>
+    <addaction name="action_theoryMannual"/>
+    <addaction name="action_userMannual"/>
+    <addaction name="separator"/>
+    <addaction name="action_demoExample"/>
+    <addaction name="action_demoVideo"/>
+    <addaction name="separator"/>
+    <addaction name="action_about"/>
+   </widget>
+   <widget class="QMenu" name="menu_2">
+    <property name="title">
+     <string>大气辐射</string>
+    </property>
+    <addaction name="action_atmosphere"/>
+    <addaction name="separator"/>
+    <addaction name="action_atomTrans"/>
+    <addaction name="action_pathThrml"/>
+    <addaction name="action_surEmis"/>
+    <addaction name="action_solScat"/>
+    <addaction name="action_refSol"/>
+   </widget>
+   <addaction name="menu"/>
+   <addaction name="menu_3"/>
+   <addaction name="menu_2"/>
+   <addaction name="menu_6"/>
+   <addaction name="menu_10"/>
+   <addaction name="menu_11"/>
+  </widget>
+  <action name="action_newPro">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/project/create.png</normaloff>:/data/icons/data/icons/menuIcon/project/create.png</iconset>
+   </property>
+   <property name="text">
+    <string>新建工程</string>
+   </property>
+  </action>
+  <action name="action_openPro">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/project/open.png</normaloff>:/data/icons/data/icons/menuIcon/project/open.png</iconset>
+   </property>
+   <property name="text">
+    <string>打开工程</string>
+   </property>
+  </action>
+  <action name="action_savePro">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/project/save.png</normaloff>:/data/icons/data/icons/menuIcon/project/save.png</iconset>
+   </property>
+   <property name="text">
+    <string>保存工程</string>
+   </property>
+  </action>
+  <action name="action_saveAs">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/project/saveAs.png</normaloff>:/data/icons/data/icons/menuIcon/project/saveAs.png</iconset>
+   </property>
+   <property name="text">
+    <string>工程另存为</string>
+   </property>
+  </action>
+  <action name="action_closePro">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/project/close.png</normaloff>:/data/icons/data/icons/menuIcon/project/close.png</iconset>
+   </property>
+   <property name="text">
+    <string>关闭工程</string>
+   </property>
+  </action>
+  <action name="action_exit">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/project/exit.png</normaloff>:/data/icons/data/icons/menuIcon/project/exit.png</iconset>
+   </property>
+   <property name="text">
+    <string>退出</string>
+   </property>
+  </action>
+  <action name="action_terrianConfig">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/shezhidixing.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/shezhidixing.png</iconset>
+   </property>
+   <property name="text">
+    <string>地形配置</string>
+   </property>
+  </action>
+  <action name="action_backConfig">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/tianjiabeijing.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/tianjiabeijing.png</iconset>
+   </property>
+   <property name="text">
+    <string>背景配置
+</string>
+   </property>
+  </action>
+  <action name="action_objectConfig">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/tianjiamubiao.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/tianjiamubiao.png</iconset>
+   </property>
+   <property name="text">
+    <string>目标配置
+</string>
+   </property>
+  </action>
+  <action name="action_atmosphereEffect">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/qixiangtexiao.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/qixiangtexiao.png</iconset>
+   </property>
+   <property name="text">
+    <string>气象特效配置</string>
+   </property>
+  </action>
+  <action name="action_battleEffect">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/huoyan.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/huoyan.png</iconset>
+   </property>
+   <property name="text">
+    <string>战场特效配置
+</string>
+   </property>
+  </action>
+  <action name="action_sensorConfig">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/guijiyulan.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/guijiyulan.png</iconset>
+   </property>
+   <property name="text">
+    <string>添加传感器</string>
+   </property>
+  </action>
+  <action name="action_trkConfig">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/xinhaodianlu.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/xinhaodianlu.png</iconset>
+   </property>
+   <property name="text">
+    <string>运动轨迹配置
+</string>
+   </property>
+  </action>
+  <action name="action_importMesh">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/ImportMesh.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/ImportMesh.png</iconset>
+   </property>
+   <property name="text">
+    <string>导入网格</string>
+   </property>
+  </action>
+  <action name="action_Cas_Dat">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Importcas.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Importcas.png</iconset>
+   </property>
+   <property name="text">
+    <string>导入Cas/Dat</string>
+   </property>
+  </action>
+  <action name="action_setModel">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setModel.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setModel.png</iconset>
+   </property>
+   <property name="text">
+    <string>模型设置</string>
+   </property>
+  </action>
+  <action name="action_setMaterial">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>材料设置</string>
+   </property>
+  </action>
+  <action name="action_setEdget">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/bianjieshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/bianjieshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>边界设置</string>
+   </property>
+  </action>
+  <action name="action_solverPara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setSolvePara.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setSolvePara.png</iconset>
+   </property>
+   <property name="text">
+    <string>求解参数设置</string>
+   </property>
+  </action>
+  <action name="action_simSolver">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/SimSolve.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/SimSolve.png</iconset>
+   </property>
+   <property name="text">
+    <string>仿真求解</string>
+   </property>
+  </action>
+  <action name="action_simCal">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/SimCal.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/SimCal.png</iconset>
+   </property>
+   <property name="text">
+    <string>仿真计算</string>
+   </property>
+  </action>
+  <action name="action_resultCloud">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/resultCloud.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/resultCloud.png</iconset>
+   </property>
+   <property name="text">
+    <string>结果云图</string>
+   </property>
+  </action>
+  <action name="action_exportTemp">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/ExpTemp.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/ExpTemp.png</iconset>
+   </property>
+   <property name="text">
+    <string>导出温度场</string>
+   </property>
+  </action>
+  <action name="action_ExpCas_Dat">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Expcas.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Expcas.png</iconset>
+   </property>
+   <property name="text">
+    <string>导出Cas/Dat</string>
+   </property>
+  </action>
+  <action name="action_spectralDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/mubiaomoxingku.png</normaloff>:/data/icons/data/icons/menuIcon/database/mubiaomoxingku.png</iconset>
+   </property>
+   <property name="text">
+    <string>气体谱带库</string>
+   </property>
+  </action>
+  <action name="action_paraDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/beijingmoxing.png</normaloff>:/data/icons/data/icons/menuIcon/database/beijingmoxing.png</iconset>
+   </property>
+   <property name="text">
+    <string>大气参数库</string>
+   </property>
+  </action>
+  <action name="action_objectDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/dilimoxing.png</normaloff>:/data/icons/data/icons/menuIcon/database/dilimoxing.png</iconset>
+   </property>
+   <property name="text">
+    <string>目标模型库</string>
+   </property>
+  </action>
+  <action name="action_backDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/daqipudai.png</normaloff>:/data/icons/data/icons/menuIcon/database/daqipudai.png</iconset>
+   </property>
+   <property name="text">
+    <string>背景模型库</string>
+   </property>
+  </action>
+  <action name="action_geoDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>地理模型库</string>
+   </property>
+  </action>
+  <action name="db_materialpannel">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/rexuecaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/rexuecaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>材料库</string>
+   </property>
+  </action>
+  <action name="action_opticalMatDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/chuanganqi.png</normaloff>:/data/icons/data/icons/menuIcon/database/chuanganqi.png</iconset>
+   </property>
+   <property name="text">
+    <string>红外特征材质库</string>
+   </property>
+  </action>
+  <action name="action_modelTool2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/found/changfangti.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/found/changfangti.png</iconset>
+   </property>
+   <property name="text">
+    <string>建模工具</string>
+   </property>
+  </action>
+  <action name="action_materialDivTool2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/MaterialDiv/daoruwenli.png</normaloff>:/data/icons/data/icons/menuIcon/MaterialDiv/daoruwenli.png</iconset>
+   </property>
+   <property name="text">
+    <string>材质划分工具</string>
+   </property>
+  </action>
+  <action name="action_theoryMannual">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/help/lilun.png</normaloff>:/data/icons/data/icons/menuIcon/help/lilun.png</iconset>
+   </property>
+   <property name="text">
+    <string>理论手册</string>
+   </property>
+  </action>
+  <action name="action_userMannual">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/help/yonghushouce.png</normaloff>:/data/icons/data/icons/menuIcon/help/yonghushouce.png</iconset>
+   </property>
+   <property name="text">
+    <string>使用手册</string>
+   </property>
+  </action>
+  <action name="action_demoExample">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/help/yanshisuanli.png</normaloff>:/data/icons/data/icons/menuIcon/help/yanshisuanli.png</iconset>
+   </property>
+   <property name="text">
+    <string>演示算例</string>
+   </property>
+  </action>
+  <action name="action_demoVideo">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/help/yanshishiping.png</normaloff>:/data/icons/data/icons/menuIcon/help/yanshishiping.png</iconset>
+   </property>
+   <property name="text">
+    <string>演示视频</string>
+   </property>
+  </action>
+  <action name="action_about">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/help/guanyu.png</normaloff>:/data/icons/data/icons/menuIcon/help/guanyu.png</iconset>
+   </property>
+   <property name="text">
+    <string>关于软件</string>
+   </property>
+  </action>
+  <action name="action_systemConfig">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/set/xitongpeizhi.png</normaloff>:/data/icons/data/icons/menuIcon/set/xitongpeizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>系统配置</string>
+   </property>
+  </action>
+  <action name="action_logConfig">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/set/rihzi.png</normaloff>:/data/icons/data/icons/menuIcon/set/rihzi.png</iconset>
+   </property>
+   <property name="text">
+    <string>日志配置</string>
+   </property>
+  </action>
+  <action name="actionApps">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/set/APP.png</normaloff>:/data/icons/data/icons/menuIcon/set/APP.png</iconset>
+   </property>
+   <property name="text">
+    <string>Apps管理</string>
+   </property>
+  </action>
+  <action name="action_sensorEffect">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/effect.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/effect.png</iconset>
+   </property>
+   <property name="text">
+    <string>传感器效应</string>
+   </property>
+  </action>
+  <action name="action_optical">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/postProcess.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/postProcess.png</iconset>
+   </property>
+   <property name="text">
+    <string>光学系统</string>
+   </property>
+  </action>
+  <action name="action_detector">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/environment.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/environment.png</iconset>
+   </property>
+   <property name="text">
+    <string>探测器系统</string>
+   </property>
+  </action>
+  <action name="action_electric">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/found/quxian.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/found/quxian.png</iconset>
+   </property>
+   <property name="text">
+    <string>电学系统</string>
+   </property>
+  </action>
+  <action name="action_inInteRad">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/hongwaijifen.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/hongwaijifen.png</iconset>
+   </property>
+   <property name="text">
+    <string>积分辐射强度 </string>
+   </property>
+  </action>
+  <action name="action_spectrumInte">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/guangpujifen.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/guangpujifen.png</iconset>
+   </property>
+   <property name="text">
+    <string>光谱辐射强度</string>
+   </property>
+  </action>
+  <action name="action_radiogram">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/fusheliangdu.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/fusheliangdu.png</iconset>
+   </property>
+   <property name="text">
+    <string>辐射亮度图</string>
+   </property>
+  </action>
+  <action name="action_radTemp">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/jifenguangpu.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/jifenguangpu.png</iconset>
+   </property>
+   <property name="text">
+    <string>温度云图</string>
+   </property>
+  </action>
+  <action name="action_gray">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/hiudu.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/hiudu.png</iconset>
+   </property>
+   <property name="text">
+    <string>灰度图</string>
+   </property>
+  </action>
+  <action name="action_imgStatistics">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/tongjixinxi.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/tongjixinxi.png</iconset>
+   </property>
+   <property name="text">
+    <string>辐射对比度</string>
+   </property>
+  </action>
+  <action name="action_curve">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/quxian.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/quxian.png</iconset>
+   </property>
+   <property name="text">
+    <string>曲线图</string>
+   </property>
+  </action>
+  <action name="action_histogram">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/zhifang.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/zhifang.png</iconset>
+   </property>
+   <property name="text">
+    <string>直方图</string>
+   </property>
+  </action>
+  <action name="action_pieChart">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/dianbiaoji.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/dianbiaoji.png</iconset>
+   </property>
+   <property name="text">
+    <string>饼状图</string>
+   </property>
+  </action>
+  <action name="action_targetIde">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/leidatu.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/leidatu.png</iconset>
+   </property>
+   <property name="text">
+    <string>目标识别</string>
+   </property>
+  </action>
+  <action name="action_visualPara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/shexianshuliang.png</normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/shexianshuliang.png</iconset>
+   </property>
+   <property name="text">
+    <string>可见光特性参数
+</string>
+   </property>
+  </action>
+  <action name="action_visualSolvePara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qiujieshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qiujieshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>可见光求解设置</string>
+   </property>
+  </action>
+  <action name="action_visualSolveSim">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qitifushe.png</normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qitifushe.png</iconset>
+   </property>
+   <property name="text">
+    <string>可见光仿真求解
+</string>
+   </property>
+  </action>
+  <action name="action_infraredPara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/irSolve.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/irSolve.png</iconset>
+   </property>
+   <property name="text">
+    <string>红外特性参数</string>
+   </property>
+  </action>
+  <action name="action_infraredSolvePara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/simResult.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/simResult.png</iconset>
+   </property>
+   <property name="text">
+    <string>红外求解设置</string>
+   </property>
+  </action>
+  <action name="action_infraredSolveSim">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/backTheromal.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/backTheromal.png</iconset>
+   </property>
+   <property name="text">
+    <string>红外仿真求解</string>
+   </property>
+  </action>
+  <action name="action_atmosphere">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/yun.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/yun.png</iconset>
+   </property>
+   <property name="text">
+    <string>大气模型配置</string>
+   </property>
+  </action>
+  <action name="action_time">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/shijian.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/shijian.png</iconset>
+   </property>
+   <property name="text">
+    <string>时间</string>
+   </property>
+   <property name="visible">
+    <bool>true</bool>
+   </property>
+  </action>
+  <action name="action_atomTrans">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/found/quxian.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/found/quxian.png</iconset>
+   </property>
+   <property name="text">
+    <string>大气透过率</string>
+   </property>
+  </action>
+  <action name="action_imageBoxPara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/irSolve.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/irSolve.png</iconset>
+   </property>
+   <property name="text">
+    <string>成像盒</string>
+   </property>
+  </action>
+  <action name="action_detectorPara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/irSolve.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/irSolve.png</iconset>
+   </property>
+   <property name="text">
+    <string>探测器参数</string>
+   </property>
+  </action>
+  <action name="action_objInfraredPara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/irSolve.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/irSolve.png</iconset>
+   </property>
+   <property name="text">
+    <string>目标红外活性成分</string>
+   </property>
+  </action>
+  <action name="action_spectrumPara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/simResult.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/simResult.png</iconset>
+   </property>
+   <property name="text">
+    <string>光谱参数</string>
+   </property>
+  </action>
+  <action name="action_marginPara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/backTheromal.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/backTheromal.png</iconset>
+   </property>
+   <property name="text">
+    <string>边界设置</string>
+   </property>
+  </action>
+  <action name="action_ParaValidation">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/SimSolve.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/SimSolve.png</iconset>
+   </property>
+   <property name="text">
+    <string>参数检查</string>
+   </property>
+  </action>
+  <action name="action_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/tongjixinxi.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/tongjixinxi.png</iconset>
+   </property>
+   <property name="text">
+    <string>锁定距离计算</string>
+   </property>
+  </action>
+  <action name="action_lockDistance">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/MaterialDiv/daochucaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/MaterialDiv/daochucaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>锁定距离计算</string>
+   </property>
+  </action>
+  <action name="action_SoverParaSetting">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setSolvePara.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setSolvePara.png</iconset>
+   </property>
+   <property name="text">
+    <string>仿真求解器设置</string>
+   </property>
+  </action>
+  <action name="action_exeInfraredCalculate">
+   <property name="text">
+    <string>启动计算</string>
+   </property>
+  </action>
+  <action name="action">
+   <property name="text">
+    <string>分隔符</string>
+   </property>
+  </action>
+  <action name="action_IntegralRadiant">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/quxian.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/quxian.png</iconset>
+   </property>
+   <property name="text">
+    <string>积分辐射强度</string>
+   </property>
+  </action>
+  <action name="action_SpectralRadiant">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/found/quxian.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/found/quxian.png</iconset>
+   </property>
+   <property name="text">
+    <string>光谱辐射强度</string>
+   </property>
+  </action>
+  <action name="action_atmospherePara">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qitifushe.png</normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qitifushe.png</iconset>
+   </property>
+   <property name="text">
+    <string>大气设置</string>
+   </property>
+  </action>
+  <action name="action_probepoint">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qiujieshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qiujieshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>球面探测点</string>
+   </property>
+  </action>
+  <action name="action_pathThrml">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/daqitouguolv.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/daqitouguolv.png</iconset>
+   </property>
+   <property name="text">
+    <string>路径热辐射</string>
+   </property>
+  </action>
+  <action name="action_surEmis">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/dimianfushe.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/dimianfushe.png</iconset>
+   </property>
+   <property name="text">
+    <string>地表背景辐射</string>
+   </property>
+  </action>
+  <action name="action_grndRflt">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/guangxuexitong.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/guangxuexitong.png</iconset>
+   </property>
+   <property name="text">
+    <string>地表反射</string>
+   </property>
+  </action>
+  <action name="action_solScat">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/tiankongfushe.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/tiankongfushe.png</iconset>
+   </property>
+   <property name="text">
+    <string>天空背景辐射</string>
+   </property>
+  </action>
+  <action name="action_refSol">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/taiyangfushe.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/taiyangfushe.png</iconset>
+   </property>
+   <property name="text">
+    <string>太阳辐射</string>
+   </property>
+  </action>
+  <action name="action_measureDis">
+   <property name="text">
+    <string>距离测量</string>
+   </property>
+  </action>
+  <action name="action_measureArea">
+   <property name="text">
+    <string>面积测量</string>
+   </property>
+  </action>
+  <action name="action_setEdgetOne">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/resultCloud.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/resultCloud.png</iconset>
+   </property>
+   <property name="text">
+    <string>一维热边界设置</string>
+   </property>
+  </action>
+  <action name="action_simSolverOne">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setModel.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setModel.png</iconset>
+   </property>
+   <property name="text">
+    <string>一维热求解计算</string>
+   </property>
+  </action>
+  <action name="action_resultCloudOne">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>一维热结果展示</string>
+   </property>
+  </action>
+  <action name="action_setGeneral">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/teceqixitong.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/teceqixitong.png</iconset>
+   </property>
+   <property name="text">
+    <string>通用设置</string>
+   </property>
+  </action>
+  <action name="action_setSolarRadiation">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/taiyangfushe.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/taiyangfushe.png</iconset>
+   </property>
+   <property name="text">
+    <string>太阳辐射参数</string>
+   </property>
+  </action>
+  <action name="action_dataSave">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/guijiyulan.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/guijiyulan.png</iconset>
+   </property>
+   <property name="text">
+    <string>数据存储</string>
+   </property>
+  </action>
+  <action name="action_lock2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>锁定距离</string>
+   </property>
+  </action>
+  <action name="action_irAttri">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>红外特性参数</string>
+   </property>
+  </action>
+  <action name="action_box">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>成像盒</string>
+   </property>
+  </action>
+  <action name="action_detectorPara_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/jibencanshu.png</normaloff>:/data/icons/data/icons/menuIcon/SceneEdit/jibencanshu.png</iconset>
+   </property>
+   <property name="text">
+    <string>探测器参数</string>
+   </property>
+  </action>
+  <action name="action_obj">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>目标红外活性成分</string>
+   </property>
+  </action>
+  <action name="action_spectrumPara_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>光谱参数</string>
+   </property>
+  </action>
+  <action name="action_marginPara_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>边界设置</string>
+   </property>
+  </action>
+  <action name="action_exeInfraredCalculate_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>启动红外计算</string>
+   </property>
+  </action>
+  <action name="action_assess">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qiujieshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qiujieshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>效能评估</string>
+   </property>
+  </action>
+  <action name="action_dataProcess">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/resultCloud.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/resultCloud.png</iconset>
+   </property>
+   <property name="text">
+    <string>数据处理与统计</string>
+   </property>
+  </action>
+  <action name="action_thermolMatDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/geoMod/tianchong.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/geoMod/tianchong.png</iconset>
+   </property>
+   <property name="text">
+    <string>热特性材质库</string>
+   </property>
+  </action>
+  <action name="action_sensorParaDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/dilimoxing.png</normaloff>:/data/icons/data/icons/menuIcon/database/dilimoxing.png</iconset>
+   </property>
+   <property name="text">
+    <string>传感器参数库</string>
+   </property>
+  </action>
+  <action name="action_materialDatabase">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>材料库</string>
+   </property>
+  </action>
+  <action name="action_IntegralRadiant_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/guangpujifen.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/guangpujifen.png</iconset>
+   </property>
+   <property name="text">
+    <string>积分辐射强度</string>
+   </property>
+  </action>
+  <action name="action_SpectralRadiant_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/quxian.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/quxian.png</iconset>
+   </property>
+   <property name="text">
+    <string>光谱辐射强度曲线</string>
+   </property>
+  </action>
+  <action name="action_probepoint_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qiujieshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qiujieshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>球面探测点</string>
+   </property>
+  </action>
+  <action name="action_atmospherePara_2">
+   <property name="icon">
+    <iconset>
+     <disabledoff>:/data/icons/data/icons/menuIcon/OpticalSim/qitifushe.png</disabledoff>
+    </iconset>
+   </property>
+   <property name="text">
+    <string>大气设置</string>
+   </property>
+  </action>
+  <action name="action_ParaValidation_2">
+   <property name="icon">
+    <iconset>
+     <disabledoff>:/data/icons/data/icons/menuIcon/TheromalSim/SimSolve.png</disabledoff>
+    </iconset>
+   </property>
+   <property name="text">
+    <string>参数检查</string>
+   </property>
+  </action>
+  <action name="action_SoverParaSetting_2">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setSolvePara.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setSolvePara.png</iconset>
+   </property>
+   <property name="text">
+    <string>仿真求解器设置</string>
+   </property>
+  </action>
+  <action name="action_projectWidgetSetting">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/set/work.png</normaloff>:/data/icons/data/icons/menuIcon/set/work.png</iconset>
+   </property>
+   <property name="text">
+    <string>工程窗口</string>
+   </property>
+  </action>
+  <action name="action_logWidgetSetting">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/set/rizhipeizhi.png</normaloff>:/data/icons/data/icons/menuIcon/set/rizhipeizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>日志窗口</string>
+   </property>
+  </action>
+  <action name="action_propertyWidgetSetting">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/set/shuxing.png</normaloff>:/data/icons/data/icons/menuIcon/set/shuxing.png</iconset>
+   </property>
+   <property name="text">
+    <string>属性窗口</string>
+   </property>
+  </action>
+  <action name="action_oneSolverSetting">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setSolvePara.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/setSolvePara.png</iconset>
+   </property>
+   <property name="text">
+    <string>一维热求解设置</string>
+   </property>
+  </action>
+  <action name="action_modelTool">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/found/changfangti.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/found/changfangti.png</iconset>
+   </property>
+   <property name="text">
+    <string>前处理工具</string>
+   </property>
+  </action>
+  <action name="action_materialDivTool">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/MaterialDiv/daoruwenli.png</normaloff>:/data/icons/data/icons/menuIcon/MaterialDiv/daoruwenli.png</iconset>
+   </property>
+   <property name="text">
+    <string>材质划分</string>
+   </property>
+  </action>
+  <action name="action_lock">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>锁定距离</string>
+   </property>
+  </action>
+  <action name="action_CasDat">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Importcas.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Importcas.png</iconset>
+   </property>
+   <property name="text">
+    <string>导入Cas/Dat</string>
+   </property>
+  </action>
+  <action name="actiondf">
+   <property name="text">
+    <string/>
+   </property>
+  </action>
+  <action name="action_partTemperature">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/ExpTemp.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/ExpTemp.png</iconset>
+   </property>
+   <property name="text">
+    <string>部件赋温</string>
+   </property>
+  </action>
+  <action name="action_RGB">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qitifushe.png</normaloff>:/data/icons/data/icons/menuIcon/OpticalSim/qitifushe.png</iconset>
+   </property>
+   <property name="text">
+    <string>RGB图</string>
+   </property>
+  </action>
+  <action name="action_vgray">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/found/qiuti.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/found/qiuti.png</iconset>
+   </property>
+   <property name="text">
+    <string>灰度图</string>
+   </property>
+  </action>
+  <action name="action_vRad">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/cailiaoshezhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>积分辐射亮度图</string>
+   </property>
+  </action>
+  <action name="action_visualSolve">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/postProcess/guangpujifen.png</normaloff>:/data/icons/data/icons/menuIcon/postProcess/guangpujifen.png</iconset>
+   </property>
+   <property name="text">
+    <string>可见光特性求解</string>
+   </property>
+  </action>
+  <action name="action_imgSave">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/found/qiuti.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/found/qiuti.png</iconset>
+   </property>
+   <property name="text">
+    <string>数据存储</string>
+   </property>
+  </action>
+  <action name="action_ComponentSetting">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/solvePara.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/solvePara.png</iconset>
+   </property>
+   <property name="text">
+    <string>组分定义</string>
+   </property>
+  </action>
+  <action name="action_IRCloud">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Expcas.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Expcas.png</iconset>
+   </property>
+   <property name="text">
+    <string>红外图像</string>
+   </property>
+  </action>
+  <action name="action_MulDat">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/daoru.png</normaloff>:/data/icons/data/icons/menuIcon/database/daoru.png</iconset>
+   </property>
+   <property name="text">
+    <string>非定常设置</string>
+   </property>
+  </action>
+  <action name="action_MulDatCalculate">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/hongwaicaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>启动非定常求解</string>
+   </property>
+  </action>
+  <action name="action_MulDatResultDisplay">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Expcas.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/Expcas.png</iconset>
+   </property>
+   <property name="text">
+    <string>非定常结果展示</string>
+   </property>
+  </action>
+  <action name="actionhuanrexishu">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/SimCal.png</normaloff>:/data/icons/data/icons/menuIcon/TheromalSim/SimCal.png</iconset>
+   </property>
+   <property name="text">
+    <string>换热系数计算</string>
+   </property>
+  </action>
+  <action name="actionEquationSet">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/Geo/pathOper/zhenlie.png</normaloff>:/data/icons/data/icons/menuIcon/Geo/pathOper/zhenlie.png</iconset>
+   </property>
+   <property name="text">
+    <string>求解方程设置</string>
+   </property>
+  </action>
+  <action name="action_fuse">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/menuIcon/database/rexuecaizhi.png</normaloff>:/data/icons/data/icons/menuIcon/database/rexuecaizhi.png</iconset>
+   </property>
+   <property name="text">
+    <string>传感器融合</string>
+   </property>
+  </action>
+  <action name="action_lunkuo">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/sceneModel.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/sceneModel.png</iconset>
+   </property>
+   <property name="text">
+    <string>轮廓提取</string>
+   </property>
+  </action>
+  <action name="action_rongh">
+   <property name="icon">
+    <iconset>
+     <normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/image.png</normaloff>:/data/icons/data/icons/mainGuiIcon/mainGui/leftWork/image.png</iconset>
+   </property>
+   <property name="text">
+    <string>图像融合</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,28 @@
+// 分析saveSceneToObj方法为什么只写入了一个模型的OBJ文件信息
+
+**方法流程**：
+1. 克隆并flatten场景图
+2. 使用GeometryCollector收集所有Geometry
+3. 将所有Geometry合并到一个Geode中
+4. 调用osgDB::writeNodeFile写入OBJ文件
+
+**可能的问题点**：
+1. _top3Droot是否包含所有模型？
+2. GeometryCollector是否收集了所有Geometry？
+3. 多个Geometry是否被正确合并到mergedGeode？
+4. osgDB::writeNodeFile是否能处理多个Geometry？
+
+**调试建议**：
+1. 在代码中添加日志，输出collector._geometries.size()，查看收集到的Geometry数量
+2. 检查_top3Droot的子节点数量和结构
+3. 验证mergedGeode->getNumDrawables()是否等于collector._geometries.size()
+4. 检查osgDB::writeNodeFile的OBJ插件是否支持多个Geometry
+
+**代码修改建议**：
+在saveSceneToObj方法中添加调试日志，帮助定位问题：
+
+// 在第1872行后添加
+LOG_INFO << "Collected " << collector._geometries.size() << " geometries.";
+
+// 在第1888行后添加  
+LOG_INFO << "Added " << mergedGeode->getNumDrawables() << " drawables to mergedGeode.";
