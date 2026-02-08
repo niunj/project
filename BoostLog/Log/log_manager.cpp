@@ -5,6 +5,13 @@
 #include <ctime>
 #include "Common/loginfo.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <QDebug>
+#else
+#include <QDebug>
+#endif
+
 // Boost.Log相关命名空间别名，简化代码书写
 namespace logging = boost::log;
 namespace sinks = boost::log::sinks;
@@ -17,6 +24,74 @@ static LogConfig global_config;
 
 // 前向声明LogInfo类（UI日志显示界面），避免循环包含
 class LogInfo;
+
+#ifdef _WIN32
+// Windows 调试输出流缓冲区，将输出同时发送到 std::cout、OutputDebugString 和 Qt 调试器
+class DebugOutputBuf : public std::streambuf {
+public:
+    DebugOutputBuf() : std::streambuf() {
+        qDebug() << "=== DebugOutputBuf 构造函数调用 ===";
+    }
+
+protected:
+    virtual std::streamsize xsputn(const char* s, std::streamsize count) override {
+        if (s && count > 0) {
+            std::cout.write(s, count);
+            std::cout.flush();
+            OutputDebugStringA(s);
+            QString msg = QString::fromLocal8Bit(s, count);
+            qDebug().noquote() << msg;
+        }
+        return count;
+    }
+
+    virtual int overflow(int c) override {
+        if (c != EOF) {
+            char ch = static_cast<char>(c);
+            std::cout.put(ch);
+            std::cout.flush();
+            OutputDebugStringA(&ch);
+            qDebug().noquote() << QString(QLatin1Char(ch));
+        }
+        return c;
+    }
+};
+
+static DebugOutputBuf g_debugOutputBuf;
+static std::ostream g_debugStream(&g_debugOutputBuf);
+#else
+// Linux/Mac 调试输出流缓冲区，将输出同时发送到 std::cout 和 Qt 调试器
+class DebugOutputBuf : public std::streambuf {
+public:
+    DebugOutputBuf() : std::streambuf() {
+        qDebug() << "=== DebugOutputBuf 构造函数调用 ===";
+    }
+
+protected:
+    virtual std::streamsize xsputn(const char* s, std::streamsize count) override {
+        if (s && count > 0) {
+            std::cout.write(s, count);
+            std::cout.flush();
+            QString msg = QString::fromLocal8Bit(s, count);
+            qDebug().noquote() << msg;
+        }
+        return count;
+    }
+
+    virtual int overflow(int c) override {
+        if (c != EOF) {
+            char ch = static_cast<char>(c);
+            std::cout.put(ch);
+            std::cout.flush();
+            qDebug().noquote() << QString(QLatin1Char(ch));
+        }
+        return c;
+    }
+};
+
+static DebugOutputBuf g_debugOutputBuf;
+static std::ostream g_debugStream(&g_debugOutputBuf);
+#endif
 
 // 全局指针指向LogInfo界面实例，用于日志转发到UI
 // 注意：需确保UI界面生命周期长于日志管理器
@@ -36,27 +111,14 @@ public:
      */
     void consume(const logging::record_view& record, const std::string& formatted_log) {
 
-        // 1. 若UI界面指针为空（未初始化或已销毁），直接返回
         if (!g_logInfoWidget) {
            return;
         }
 
-        // 2. 获取当前日志的级别（从日志记录中提取Severity属性）
-        SeverityLevel currentLevel = record[severity_attr].get();
-
-        // 3. 过滤：仅保留级别<=配置的UI最低级别（如配置info则显示trace/debug/info）
-        //    注意：Boost.Log级别定义为 trace < debug < info < warning < error < fatal
-        if (currentLevel > global_config.uiMinLevel) {
-            return; // 当前级别高于UI配置级别，不转发到界面
-        }
-
-        // 4. 将std::string日志转为QString（适配Qt界面）
-        //    通过QMetaObject::invokeMethod异步调用UI方法，确保在UI线程执行
-        //    Qt::QueuedConnection：跨线程时自动排队到UI线程事件循环
-        QString logStr = QString::fromStdString(formatted_log);
+        QString logStr = QString::fromUtf8(formatted_log.c_str());
         QMetaObject::invokeMethod(g_logInfoWidget, "addLog",
-            Qt::QueuedConnection,  // 跨线程安全的调用方式
-            Q_ARG(QString, logStr) // 传递日志参数
+            Qt::QueuedConnection,
+            Q_ARG(QString, logStr)
         );
     }
 };
@@ -78,8 +140,10 @@ void setLogInfoWidget(LogInfo* widget) {
  * @note 用于Boost.Log输出QString类型的日志内容
  */
 std::ostream& operator<<(std::ostream& os, const QString& str) {
-    return os << str.toStdString();  // 或使用toUtf8().constData()（支持中文）
+    return os << str.toUtf8().constData() << " ";
 }
+
+
 
 /**
  * @brief 重载std::ostream<<运算符，支持QStringList输出
@@ -97,6 +161,17 @@ std::ostream& operator<<(std::ostream& os, const QStringList& list) {
     os << "]";
     return os;
 }
+
+
+std::ostream& operator<<(std::ostream& os, const QRect& str) {
+    return os << str.x() << " " << str.y() << " " << str.width() << " " << str.height();  // 或使用toUtf8().constData()（支持中文）
+}
+
+std::ostream& operator<<(std::ostream& os, const QPoint& str) {
+    return os << str.x() << " " << str.y();  // 或使用toUtf8().constData()（支持中文）
+}
+
+
 
 /**
  * @brief 字符串转布尔值（支持多种常见格式）
@@ -178,16 +253,42 @@ logging::formatter create_formatter() {
         << " " << expr::smessage;                                                     // 日志内容
 }
 
+void add_ui_sink() {
+    if (!g_logInfoWidget) return;
+
+    if (global_config.useAsyncSink) {
+        typedef sinks::asynchronous_sink<UILogSinkBackend> ui_sink_t;
+        auto sink = boost::make_shared<ui_sink_t>(boost::make_shared<UILogSinkBackend>());
+        sink->set_formatter(create_formatter());
+        sink->set_filter(expr::attr<SeverityLevel>("Severity") >= global_config.uiMinLevel);
+        logging::core::get()->add_sink(sink);
+    } else {
+        typedef sinks::synchronous_sink<UILogSinkBackend> ui_sink_t;
+        auto sink = boost::make_shared<ui_sink_t>(boost::make_shared<UILogSinkBackend>());
+        sink->set_formatter(create_formatter());
+        sink->set_filter(expr::attr<SeverityLevel>("Severity") >= global_config.uiMinLevel);
+        logging::core::get()->add_sink(sink);
+    }
+}
+
 /**
  * @brief 创建控制台输出Sink
  * @details 根据配置选择同步/异步Sink，支持Debug模式强制刷新
  *          输出日志到标准输出（std::cout）
+ *          Windows下同时输出到调试器（Qt Creator应用程序输出窗口）
  */
 void create_console_sink() {
     // 创建文本输出流后端（用于控制台输出）
     auto backend = boost::make_shared<sinks::text_ostream_backend>();
-    // 添加std::cout作为输出流，使用null_deleter避免Boost.Log管理std::cout生命周期
+    
+#ifdef _WIN32
+    // Windows下使用自定义调试输出流，同时输出到控制台和调试器
+    backend->add_stream(boost::shared_ptr<std::ostream>(&g_debugStream, boost::null_deleter()));
+#else
+    // Linux/Mac下使用标准输出
     backend->add_stream(boost::shared_ptr<std::ostream>(&std::cout, boost::null_deleter()));
+#endif
+    
     backend->auto_flush(global_config.autoFlush); // 根据配置设置自动刷新
 
     // --- Debug模式特殊配置 ---
@@ -289,15 +390,15 @@ void create_ui_sink() {
         typedef sinks::asynchronous_sink<UILogSinkBackend> ui_sink_t;
         auto sink = boost::make_shared<ui_sink_t>(boost::make_shared<UILogSinkBackend>());
         sink->set_formatter(create_formatter()); // 复用全局日志格式
-        // 过滤：仅转发级别<=UI最低级别的日志（如配置info则包含trace/debug/info）
-        sink->set_filter(expr::attr<SeverityLevel>("Severity") <= global_config.uiMinLevel);
+        // 过滤：仅转发级别>=UI最低级别的日志（如配置info则包含info/warning/error/fatal）
+        sink->set_filter(expr::attr<SeverityLevel>("Severity") >= global_config.uiMinLevel);
         logging::core::get()->add_sink(sink); // 添加到日志核心
     } else {
         // 同步UI Sink：实时性高但可能阻塞UI线程
         typedef sinks::synchronous_sink<UILogSinkBackend> ui_sink_t;
         auto sink = boost::make_shared<ui_sink_t>(boost::make_shared<UILogSinkBackend>());
         sink->set_formatter(create_formatter());
-        sink->set_filter(expr::attr<SeverityLevel>("Severity") <= global_config.uiMinLevel);
+        sink->set_filter(expr::attr<SeverityLevel>("Severity") >= global_config.uiMinLevel);
         logging::core::get()->add_sink(sink);
     }
 }
@@ -311,6 +412,11 @@ void create_ui_sink() {
 bool init_logging(const LogConfig& config) {
     try {
         global_config = config; // 更新全局配置
+
+#ifdef _WIN32
+        // 测试 OutputDebugString 是否正常工作
+        OutputDebugStringA("=== 测试 OutputDebugString ===\n");
+#endif
 
         // 若配置为"none"，禁用日志输出
         if (config.mode == "none") {
@@ -350,8 +456,8 @@ bool init_logging(const LogConfig& config) {
         // 创建UI日志Sink（转发日志到Qt界面）
         create_ui_sink();
 
-        // 设置全局日志级别过滤
-        set_log_level(config.minLevel);
+        // 不再设置全局日志级别过滤，避免覆盖 Sink 的独立过滤器
+        // 每个Sink已经设置了自己的过滤器
         return true;
     } catch (const std::exception& e) {
         // 捕获并输出初始化异常信息

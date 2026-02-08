@@ -20,12 +20,16 @@
 #include <ostream>
 #include <QString>
 #include <QStringList>
+#include <QRect>
+#include <QPoint>
 
 
 
 // 仅声明，不定义
 std::ostream& operator<<(std::ostream& os, const QString& str);
 std::ostream& operator<<(std::ostream& os, const QStringList& list);
+std::ostream& operator<<(std::ostream& os, const QRect& str);
+std::ostream& operator<<(std::ostream& os, const QPoint& str);
 
 // 定义日志级别类型
 using SeverityLevel = boost::log::trivial::severity_level;
@@ -69,6 +73,9 @@ void setLogInfoWidget(LogInfo* widget);
 // 初始化日志系统
 bool init_logging(const std::string& config_path = "./log_config.ini");
 bool init_logging(const LogConfig& config);
+
+// 添加UI日志Sink（在UI界面初始化后调用）
+void add_ui_sink();
 
 // 设置日志级别
 void set_log_level(SeverityLevel level);
