@@ -1,0 +1,13 @@
+set(PXR_PREFIX examples)
+set(PXR_INSTALL_SUBDIR share/usd/examples)
+
+if (EMSCRIPTEN)
+	add_subdirectory(wasmFetchResolver)
+else()
+	add_subdirectory(usdObj)
+	add_subdirectory(usdDancingCubesExample)
+	add_subdirectory(usdRecursivePayloadsExample)
+	add_subdirectory(usdResolverExample)
+	add_subdirectory(usdSchemaExamples)
+	add_subdirectory(usdMakeFileVariantModelAsset)
+endif()

@@ -1,21 +1,21 @@
 cmake_minimum_required(VERSION 3.22)
 
-# CUDA toolkit 必须在 project() 之前给出默认路径: project() 启用 CUDA 语言时
-# 就要定位 nvcc, 而新构建目录 (如 Qt Creator 的 Release kit) 没有缓存条目,
-# 若等到下面 set(CUDAToolkit_ROOT ...) 才赋值就已经晚了。
-set(THIRD_PARTY_ROOT "/home/mte/Code" CACHE PATH "Third-party install root")
-if(NOT CMAKE_CUDA_COMPILER)
-    set(CMAKE_CUDA_COMPILER "${THIRD_PARTY_ROOT}/Cuda/cuda-12.4/bin/nvcc"
-        CACHE FILEPATH "CUDA compiler")
+# Resolve the site SDKs before enabling CUDA. On a new machine CMake can
+# use CUDACXX, nvcc on PATH or its normal CUDA installation discovery.
+set(THIRD_PARTY_ROOT "/home/mte/Code" CACHE PATH "Optional local Qt/CUDA/Vulkan SDK root")
+if(NOT CUDAToolkit_ROOT AND EXISTS "${THIRD_PARTY_ROOT}/Cuda/cuda-12.4/bin/nvcc")
+    set(CUDAToolkit_ROOT "${THIRD_PARTY_ROOT}/Cuda/cuda-12.4" CACHE PATH "CUDA Toolkit")
 endif()
-if(NOT CUDAToolkit_ROOT)
-    set(CUDAToolkit_ROOT "${THIRD_PARTY_ROOT}/Cuda/cuda-12.4"
-        CACHE PATH "CUDA Toolkit")
+if(NOT CMAKE_CUDA_COMPILER AND NOT DEFINED ENV{CUDACXX} AND EXISTS "${CUDAToolkit_ROOT}/bin/nvcc")
+    set(CMAKE_CUDA_COMPILER "${CUDAToolkit_ROOT}/bin/nvcc" CACHE FILEPATH "CUDA compiler")
 endif()
 # 架构列表在 project() 之前设置, 避免 CMake 在识别阶段探测本机架构
 set(CMAKE_CUDA_ARCHITECTURES "75;86;89;90" CACHE STRING "CUDA architectures")
 
 project(vsgraysimulation LANGUAGES CXX CUDA)
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Installation prefix" FORCE)
+endif()
 include(CTest)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -32,56 +32,31 @@ endif()
 # Dependency roots (pre-installed third-party tree at /home/mte/Code)
 # -----------------------------------------------------------------------------
 
-# Vulkan SDK
-set(VULKAN_SDK "${THIRD_PARTY_ROOT}/vulkan/1.3.296.0/x86_64" CACHE PATH "Vulkan SDK")
-set(ENV{VULKAN_SDK} "${VULKAN_SDK}")
-# vsg 依赖 glslang / SPIRV-Tools, 它们都装在 Vulkan SDK 的 cmake 目录下,
-# 加入 CMAKE_PREFIX_PATH 让 find_package 能一并解析
-list(PREPEND CMAKE_PREFIX_PATH "${VULKAN_SDK}")
-
-# CUDA toolkit (默认值已在 project() 之前设置)
+if(NOT VULKAN_SDK)
+    if(DEFINED ENV{VULKAN_SDK} AND NOT "$ENV{VULKAN_SDK}" STREQUAL "")
+        set(VULKAN_SDK "$ENV{VULKAN_SDK}" CACHE PATH "Vulkan SDK")
+    elseif(IS_DIRECTORY "${THIRD_PARTY_ROOT}/vulkan/1.3.296.0/x86_64")
+        set(VULKAN_SDK "${THIRD_PARTY_ROOT}/vulkan/1.3.296.0/x86_64" CACHE PATH "Vulkan SDK")
+    endif()
+endif()
+if(VULKAN_SDK)
+    set(ENV{VULKAN_SDK} "${VULKAN_SDK}")
+    list(PREPEND CMAKE_PREFIX_PATH "${VULKAN_SDK}")
+endif()
 
 # The engine family is always compiled from repository-owned source trees.
 # External SDK roots are configured above and recorded in dependency-report.json.
 option(VSGRAYSIM_BUILD_GUI "Build Qt software front-ends" ON)
 include(cmake/Dependencies.cmake)
 
-# -----------------------------------------------------------------------------
-# OpenUSD (可选): USD<->VSG 场景桥接 (见 lib/usd_bridge)。默认 OFF —— 开启需要
-# 本机存在完整构建/安装、且暴露 lib/cmake/pxr 包的 OpenUSD。当前开发机只有半截
-# 构建树 (仅 pxr/base 层编译, usd/sdf/ar/usdGeom/usdShade/... 功能层尚未编译),
-# 故默认关闭; 打开后 pxr 仅由桥接库 PRIVATE 链入 (ABI 隔离, 不外泄 Boost/TBB/half)。
-# -----------------------------------------------------------------------------
-option(VSGRAYSIM_ENABLE_USD
-       "Build the OpenUSD<->VSG scene bridge (requires a full OpenUSD install exposing the pxr CMake package)"
-       OFF)
+option(VSGRAYSIM_ENABLE_USD "Build OpenUSD from source and enable scene USD export" ON)
 if(VSGRAYSIM_ENABLE_USD)
-    set(USD_ROOT "${THIRD_PARTY_ROOT}/openusd" CACHE PATH "OpenUSD install prefix containing lib/cmake/pxr")
-    list(PREPEND CMAKE_PREFIX_PATH "${USD_ROOT}")
-    set(pxr_DIR "${USD_ROOT}/lib/cmake/pxr" CACHE PATH "OpenUSD pxr CMake package directory")
-    find_package(pxr REQUIRED)
-    # pxrTargets.cmake 导出的真实 CMake 目标名 (usd/usdGeom/... 而非 libusd_usd)。
-    set(VSGRAYSIM_PXR_LIBS
-        usd usdGeom usdShade usdLux usdPhysics usdSkel usdUtils
-        sdf ar pcp kind sdr gf vt tf arch plug work)
+    include(cmake/SourceOpenUSD.cmake)
 endif()
 
-# -----------------------------------------------------------------------------
-# 自研 OBJ 加载器 (vsgXchange 无 assimp 的兜底, 极小静态库):
-# 先于 env_modules 定义, 供 vsgraysim_core 与 env_viewer 共享单一实现。
-# -----------------------------------------------------------------------------
 add_subdirectory(lib/objloader)
 add_subdirectory(lib/simcore)
-
-# -----------------------------------------------------------------------------
-# vsgraysim_usd_bridge — OpenUSD<->VSG 场景桥接 (见 lib/usd_bridge/CMakeLists.txt)。
-# 始终构建: ENABLE_USD=OFF 时编译安全桩 (仅 vsg/STL, 不触 pxr), ON 时 PRIVATE 链入 pxr。
-# -----------------------------------------------------------------------------
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lib/usd_bridge/CMakeLists.txt")
-    add_subdirectory(lib/usd_bridge)
-elseif(VSGRAYSIM_ENABLE_USD)
-    message(FATAL_ERROR "USD bridge sources are absent; configure with VSGRAYSIM_ENABLE_USD=OFF")
-endif()
+add_subdirectory(lib/usd_bridge)
 
 # -----------------------------------------------------------------------------
 # vsgraysim_product_dispatch — B5 分发时序桥接 (ProductFrame → 传输帧映射 +
@@ -163,10 +138,15 @@ target_include_directories(vsgraysim_core PUBLIC "${SIM_GDAL_INCLUDE}")
 target_link_libraries(vsgraysim_core PUBLIC "${SIM_GDAL_LIBRARY}")
 # BrokerNet (src/broker) 依赖 IPC 传输层 (ShmTransport) 实现跨进程链路网关
 target_link_libraries(vsgraysim_core PUBLIC vsgraysim_voxel_earth vsgraysim_common vsgraysim_cuda vsgraysim_ipc
-                                            vsgraysim_objloader vsgraysim_rocky_env zip)
-if(TARGET vsgraysim_usd_bridge)
-    target_link_libraries(vsgraysim_core PUBLIC vsgraysim_usd_bridge)
-endif()
+                                            vsgraysim_objloader vsgraysim_rocky_env "${VSGRAYSIM_BASE_ROOT}/lib/libzip.so")
+target_link_libraries(vsgraysim_core PRIVATE vsgraysim_usd_bridge)
+
+add_executable(voxel_target_sim EXCLUDE_FROM_ALL tools/voxel_target_sim.cpp)
+target_include_directories(voxel_target_sim PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/earth" "${CMAKE_CURRENT_SOURCE_DIR}/env_modules/src")
+target_compile_definitions(voxel_target_sim PRIVATE SIM_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(voxel_target_sim PRIVATE vsgraysim_core)
+target_link_options(voxel_target_sim PRIVATE "-Wl,--disable-new-dtags")
 
 add_executable(voxel_scene tools/voxel_scene.cpp)
 target_link_libraries(voxel_scene PRIVATE vsgraysim_voxel_earth)
@@ -205,8 +185,7 @@ set(_rpath_dirs
     "${CMAKE_BINARY_DIR}"
     "${VULKAN_SDK}/lib"
     ${VSGRAYSIM_ENGINE_RPATH_DIRS}
-    "${BULLET_ROOT}/lib"
-    "${ROCKY_EARTH3P_DIR}/lib"
+    ${VSGRAYSIM_BASE_LIB_DIRS}
 )
 if(CUDAToolkit_FOUND)
     list(APPEND _rpath_dirs "${CUDAToolkit_LIBRARY_DIR}")
@@ -304,7 +283,9 @@ if(VSGRAYSIM_BUILD_GUI)
     set(QT_SKIP_AUTO_PLUGIN_INCLUSION ON CACHE BOOL "Skip Qt auto plugin inclusion")
     set(QT6_ROOT "${THIRD_PARTY_ROOT}/Qt6" CACHE PATH "Qt6 install root")
     set(QT6_PREFIX "${QT6_ROOT}/6.12.0/gcc_64" CACHE PATH "External Qt SDK prefix")
-    set(Qt6_DIR "${QT6_PREFIX}/lib/cmake/Qt6" CACHE PATH "Qt6 CMake package directory")
+    if(NOT Qt6_DIR AND EXISTS "${QT6_PREFIX}/lib/cmake/Qt6/Qt6Config.cmake")
+        set(Qt6_DIR "${QT6_PREFIX}/lib/cmake/Qt6" CACHE PATH "Qt6 CMake package directory")
+    endif()
     find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets)
 
     # Qt6 RPATH (供 gui/ 和 app/ 共用)
@@ -312,9 +293,8 @@ if(VSGRAYSIM_BUILD_GUI)
         "${CMAKE_BINARY_DIR}"
         "${VULKAN_SDK}/lib"
         ${VSGRAYSIM_ENGINE_RPATH_DIRS}
-        "${BULLET_ROOT}/lib"
         "${QT6_PREFIX}/lib"
-        "${ROCKY_EARTH3P_DIR}/lib"
+        ${VSGRAYSIM_BASE_LIB_DIRS}
     )
     if(CUDAToolkit_FOUND)
         list(APPEND VSGRAYSIM_GUI_RPATH_DIRS "${CUDAToolkit_LIBRARY_DIR}")

@@ -5,6 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRESET=source-release
+CMAKE_BIN="${VSGRAYSIM_CMAKE:-cmake}"
 BUILD_OVERRIDE="${BUILD_DIR:-}"
 JOBS="$(nproc 2>/dev/null || echo 4)"
 if [ "$JOBS" -gt 4 ]; then JOBS=4; fi
@@ -64,12 +65,12 @@ if [ "$ALLOW_LOCAL_CHANGES" = ON ]; then VERIFY_ARGS+=(--allow-local-changes); f
 python3 "$SCRIPT_DIR/tools/dependencies/verify_sources.py" "${VERIFY_ARGS[@]}"
 
 cd "$SCRIPT_DIR"
-env -u LD_LIBRARY_PATH cmake --preset "$PRESET" -B "$BUILD_PATH" \
+env -u LD_LIBRARY_PATH "$CMAKE_BIN" --preset "$PRESET" -B "$BUILD_PATH" \
     "${CMAKE_ARGS[@]}" \
     -DVSGRAYSIM_ALLOW_LOCAL_DEPENDENCY_CHANGES="$ALLOW_LOCAL_CHANGES"
 BUILD_ARGS=(--build "$BUILD_PATH" --parallel "$JOBS")
 if [ "${#TARGETS[@]}" -ne 0 ]; then BUILD_ARGS+=(--target "${TARGETS[@]}"); fi
-env -u LD_LIBRARY_PATH cmake "${BUILD_ARGS[@]}"
+env -u LD_LIBRARY_PATH "$CMAKE_BIN" "${BUILD_ARGS[@]}"
 AUDIT_ARGS=(--build-dir "$BUILD_PATH" --json-output "$BUILD_PATH/dependency-audit.json")
 if [ "${#TARGETS[@]}" -ne 0 ]; then AUDIT_ARGS+=(--allow-unbuilt); fi
 if [ "$ALLOW_LOCAL_CHANGES" = ON ]; then AUDIT_ARGS+=(--allow-local-changes); fi

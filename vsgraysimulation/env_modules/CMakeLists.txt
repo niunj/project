@@ -98,11 +98,10 @@ endif()
 # xcb: 用于读取 VSG Xcb_Window 回写的原生窗口句柄并校验窗口映射状态。
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
-    pkg_check_modules(XCB QUIET xcb)
+    pkg_check_modules(XCB QUIET IMPORTED_TARGET xcb)
 endif()
 if(XCB_FOUND)
-    target_link_libraries(env_viewer PRIVATE ${XCB_LIBRARIES})
-    target_include_directories(env_viewer PRIVATE ${XCB_INCLUDE_DIRS})
+    target_link_libraries(env_viewer PRIVATE PkgConfig::XCB)
     target_compile_definitions(env_viewer PRIVATE ENV_VIEWER_HAVE_XCB=1)
 endif()
 set_target_properties(env_viewer PROPERTIES

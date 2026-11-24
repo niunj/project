@@ -11,7 +11,7 @@
 # -----------------------------------------------------------------------------
 get_filename_component(objloader_repo "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 if(NOT SPDLOG_INCLUDE_DIR)
-    set(SPDLOG_INCLUDE_DIR "${objloader_repo}/third_party/spdlog/include")
+    set(SPDLOG_INCLUDE_DIR "${objloader_repo}/third_party/support/spdlog/include")
 endif()
 add_library(vsgraysim_objloader STATIC ObjLoader.cpp)
 target_compile_features(vsgraysim_objloader PUBLIC cxx_std_17)

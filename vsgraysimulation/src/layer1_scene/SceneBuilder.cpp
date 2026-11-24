@@ -103,55 +103,17 @@ vsg::ref_ptr<vsg::Group> SceneBuilder::build() {
                 }
             }
 
-            // Try vsg::read first (handles .gltf/.glb/.osg).  Fall back to
-            // our built-in .obj parser for .obj files - vsgXchange's
-            // assimp reader is a stub in this environment.
-            mesh = vsg::read_cast<vsg::Node>(resolved, options_);
+            auto extension = std::filesystem::path(resolved).extension().string();
+            std::transform(extension.begin(), extension.end(), extension.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            // Keep native OBJ material slots ahead of other model readers.
+            if (extension == ".obj") mesh = loadObjNode(resolved, options_);
+            if (!mesh) mesh = vsg::read_cast<vsg::Node>(resolved, options_);
             if (!mesh) {
-                // Check extension to decide whether the .obj fallback applies.
-                auto dot = resolved.find_last_of('.');
-                if (dot != std::string::npos) {
-                    std::string ext = resolved.substr(dot);
-                    // Lowercase comparison.
-                    std::transform(ext.begin(), ext.end(), ext.begin(),
-                                   [](unsigned char c){ return std::tolower(c); });
-                    if (ext == ".obj") {
-                        spdlog::info("Layer1: vsg::read failed for '{}', "
-                                     "using built-in .obj parser "
-                                     "(expected - assimp is a stub)",
-                                     resolved);
-                        mesh = loadObjNode(resolved, options_);
-                    } else if (ext == ".gltf" || ext == ".glb" ||
-                               ext == ".osg" || ext == ".osgb" ||
-                               ext == ".vsgb") {
-                        spdlog::error("Layer1: vsg::read returned null "
-                                      "for '{}' (ext='{}') - the file may "
-                                      "be corrupt or reference missing "
-                                      "external resources",
-                                      resolved, ext);
-                    } else if (ext == ".fbx" || ext == ".dae" ||
-                               ext == ".3ds" || ext == ".ply" ||
-                               ext == ".stl") {
-                        spdlog::error("Layer1: vsg::read returned null "
-                                      "for '{}' - extension '{}' requires "
-                                      "assimp which is a stub in "
-                                      "vsgXchange. Convert to .gltf/.glb "
-                                      "or .obj to load.",
-                                      resolved, ext);
-                    } else {
-                        spdlog::error("Layer1: vsg::read returned null "
-                                      "for '{}' (unsupported extension "
-                                      "'{}'). Supported: .gltf/.glb/.osg/"
-                                      ".osgb/.vsgb (vsg::read), .obj "
-                                      "(built-in parser).",
-                                      resolved, ext);
-                    }
-                } else {
-                    spdlog::error("Layer1: vsg::read returned null for "
-                                  "'{}' and file has no extension - "
-                                  "cannot pick a fallback loader",
-                                  resolved);
-                }
+                if (extension == ".osg" || extension == ".osgb" || extension == ".osgt" || extension == ".ive")
+                    spdlog::error("Layer1: convert legacy model '{}' to GLB or OBJ before loading", resolved);
+                else
+                    spdlog::error("Layer1: failed to read model '{}'; check the path, format and external textures", resolved);
             }
         } else {
             spdlog::warn("Layer1: object '{}' has empty mesh_path - "

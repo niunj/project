@@ -6,14 +6,13 @@
       "name": "source-base", "hidden": true, "generator": "Unix Makefiles",
       "cacheVariables": {
         "BUILD_SHARED_LIBS": "ON", "BUILD_TESTING": "ON",
-        "VSGRAYSIM_BUILD_GUI": "ON", "VSGRAYSIM_ENABLE_USD": "OFF",
+        "VSGRAYSIM_BUILD_GUI": "ON", "VSGRAYSIM_ENABLE_USD": "ON",
         "VSGRAYSIM_ALLOW_LOCAL_DEPENDENCY_CHANGES": "OFF",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_FIND_USE_PACKAGE_REGISTRY": "OFF",
         "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY": "OFF",
         "FETCHCONTENT_FULLY_DISCONNECTED": "ON",
         "CMAKE_INSTALL_LIBDIR": "lib",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/${presetName}/install",
         "QT_FORCE_MIN_CMAKE_VERSION_FOR_USING_QT": "3.22",
         "CMAKE_CUDA_ARCHITECTURES": "75;86;89;90"
       }

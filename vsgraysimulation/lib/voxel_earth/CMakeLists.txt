@@ -12,9 +12,21 @@ if(NOT TARGET vsg::vsg)
     set(VSG_SUPPORTS_Windowing OFF CACHE BOOL "Host supplies its own surface")
     add_subdirectory("${earth_repo}/third_party/vsg" vsg EXCLUDE_FROM_ALL)
 endif()
+if(earth_standalone)
+    set(VSGRAYSIM_DEPENDENCY_SOURCE "${earth_repo}/third_party")
+    include("${earth_repo}/cmake/ThirdPartyBase.cmake")
+    vsgraysim_prepare_base()
+    set(ZLIB_INCLUDE_DIR "${VSGRAYSIM_BASE_ROOT}/include" CACHE PATH "Bundled zlib headers" FORCE)
+    set(ZLIB_LIBRARY_RELEASE "${VSGRAYSIM_BASE_ROOT}/lib/x86_64-linux-gnu/libz.so" CACHE FILEPATH "Bundled zlib" FORCE)
+    set(ZLIB_LIBRARY "${ZLIB_LIBRARY_RELEASE}" CACHE FILEPATH "Bundled zlib linkage" FORCE)
+    set(ZLIB_LIBRARY_REL "${ZLIB_LIBRARY_RELEASE}" CACHE FILEPATH "Bundled zlib (FindZLIB release)" FORCE)
+    set(ZLIB_LIBRARY_DBG "${ZLIB_LIBRARY_RELEASE}" CACHE FILEPATH "Bundled zlib (FindZLIB debug)" FORCE)
+endif()
 find_package(ZLIB REQUIRED)
 if(NOT BULLET_LIBRARIES)
-    find_package(Bullet REQUIRED)
+    set(VSGRAYSIM_DEPENDENCY_SOURCE "${earth_repo}/third_party")
+    include("${earth_repo}/cmake/SourceBullet.cmake")
+    include("${earth_repo}/cmake/SourceAssimp.cmake")
 endif()
 if(NOT TARGET vsgraysim_objloader)
     add_subdirectory("${earth_repo}/lib/objloader" objloader)
@@ -143,7 +155,7 @@ add_library(vsgraysim_voxel_earth STATIC
     ${earth_repo}/src/earth/TiledVoxelTerrain.cpp ${earth_repo}/src/earth/VoxelTerrain.cpp
     ${earth_repo}/src/earth/VoxelTerrainPhysics.cpp
     ${earth_repo}/src/earth/TiledVoxelTerrainPhysics.cpp
-    ${earth_repo}/src/earth/VoxelModelVoxelizer.cpp ${earth_repo}/src/earth/OsgVoxelImport.cpp
+    ${earth_repo}/src/earth/VoxelModelVoxelizer.cpp ${earth_repo}/src/earth/AssimpVoxelImport.cpp
     ${earth_repo}/src/earth/VoxelVolumeCodec.cpp ${earth_repo}/src/earth/VoxelScene.cpp
     ${earth_repo}/src/earth/VoxelScenePackage.cpp ${earth_repo}/src/earth/SceneWeather.cpp
     ${earth_repo}/src/earth/VoxelSculpt.cpp
@@ -151,17 +163,17 @@ add_library(vsgraysim_voxel_earth STATIC
     ${earth_repo}/src/earth/VoxelSceneSensors.cpp ${earth_repo}/src/earth/VoxelSensorMaterials.cpp
     ${earth_repo}/src/earth/VoxelEarthPatch.cpp ${earth_repo}/src/earth/VoxelOcean.cpp ${earth_repo}/src/earth/VoxelBuoyancy.cpp ${earth_repo}/src/earth/VoxelOceanOptics.cpp
     ${earth_repo}/src/earth/SurfaceMesh.cpp)
-include("${earth_repo}/cmake/VoxelAssetImport.cmake")
+
 add_library(vsgraysim_meshoptimizer STATIC
-    "${earth_repo}/third_party/meshoptimizer/allocator.cpp"
-    "${earth_repo}/third_party/meshoptimizer/simplifier.cpp"
-    "${earth_repo}/third_party/meshoptimizer/spatialorder.cpp")
-target_include_directories(vsgraysim_meshoptimizer PUBLIC "${earth_repo}/third_party/meshoptimizer")
+    "${earth_repo}/third_party/support/meshoptimizer/allocator.cpp"
+    "${earth_repo}/third_party/support/meshoptimizer/simplifier.cpp"
+    "${earth_repo}/third_party/support/meshoptimizer/spatialorder.cpp")
+target_include_directories(vsgraysim_meshoptimizer PUBLIC "${earth_repo}/third_party/support/meshoptimizer")
 set_target_properties(vsgraysim_meshoptimizer PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_include_directories(vsgraysim_voxel_earth PUBLIC "${earth_repo}/include" "${earth_repo}/third_party/json/include")
+target_include_directories(vsgraysim_voxel_earth PUBLIC "${earth_repo}/include" "${earth_repo}/third_party/support/json/include")
 target_link_libraries(vsgraysim_voxel_earth PUBLIC vsgraysim_earth_globe vsgraysim_earth_environment
-    PRIVATE vsgraysim_objloader vsgraysim_meshoptimizer vsgraysim_earth_shaders ${BULLET_LIBRARIES} ZLIB::ZLIB)
-target_include_directories(vsgraysim_voxel_earth PRIVATE ${BULLET_INCLUDE_DIRS} "${env_src}")
+    PRIVATE assimp::assimp vsgraysim_objloader vsgraysim_meshoptimizer vsgraysim_earth_shaders ${BULLET_LIBRARIES} ZLIB::ZLIB)
+target_include_directories(vsgraysim_voxel_earth PRIVATE ${BULLET_INCLUDE_DIRS} "${env_src}" "${earth_repo}/third_party/vsgXchange/src/stbi")
 if(NOT VSGRAYSIM_EARTH_PRODUCT_ADAPTERS)
     target_compile_definitions(vsgraysim_voxel_earth PRIVATE VSGRAYSIM_EARTH_RASTER=0)
     if(earth_standalone)
@@ -174,12 +186,12 @@ if(NOT VSGRAYSIM_EARTH_PRODUCT_ADAPTERS)
         add_test(NAME voxel_earth_unified_scene COMMAND voxel_earth_scene_contracts)
         add_executable(voxel_scene "${earth_repo}/tools/voxel_scene.cpp")
         target_link_libraries(voxel_scene PRIVATE vsgraysim_voxel_earth)
-        if(VSGRAYSIM_ENABLE_OSG_IMPORT)
-            add_executable(voxel_asset_import_contracts "${earth_repo}/tests/voxel_asset_import_tests.cpp")
-            target_include_directories(voxel_asset_import_contracts PRIVATE "${VOXEL_OSG_INCLUDE}")
-            target_link_libraries(voxel_asset_import_contracts PRIVATE vsgraysim_voxel_earth "${VOXEL_OSGDB_LIBRARY}" "${VOXEL_OSG_LIBRARY}")
-            add_test(NAME voxel_osg_vsg_ive_import COMMAND voxel_asset_import_contracts)
-        endif()
+        add_executable(voxel_asset_import_contracts "${earth_repo}/tests/voxel_asset_import_tests.cpp")
+        target_link_libraries(voxel_asset_import_contracts PRIVATE vsgraysim_voxel_earth)
+        add_test(NAME voxel_vsg_asset_contracts COMMAND voxel_asset_import_contracts)
+        add_executable(assimp_voxel_import_contracts "${earth_repo}/tests/assimp_voxel_import_tests.cpp")
+        target_link_libraries(assimp_voxel_import_contracts PRIVATE vsgraysim_voxel_earth)
+        add_test(NAME voxel_model_format_import COMMAND assimp_voxel_import_contracts)
         add_executable(voxel_fracture_contracts "${earth_repo}/tests/voxel_fracture_tests.cpp")
         target_link_libraries(voxel_fracture_contracts PRIVATE vsgraysim_voxel_earth)
         add_test(NAME voxel_structural_fracture COMMAND voxel_fracture_contracts)

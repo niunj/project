@@ -144,7 +144,7 @@
       ],
       "name": "glm",
       "repository": "https://github.com/g-truc/glm.git",
-      "source_directory": "third_party/glm",
+      "source_directory": "third_party/support/glm",
       "source_manifest": "third_party/manifests/glm.json",
       "source_origin": "upstream_archive",
       "upstream_commit": "bf71a834948186f4097caa076cd2663c69a10e1e",
@@ -159,7 +159,7 @@
       ],
       "name": "json",
       "repository": "https://github.com/nlohmann/json.git",
-      "source_directory": "third_party/json",
+      "source_directory": "third_party/support/json",
       "source_manifest": "third_party/manifests/json.json",
       "source_origin": "upstream_archive",
       "upstream_commit": "bc889afb4c5bf1c0d8ee29ef35eaaf4c8bef8a5d",
@@ -175,7 +175,7 @@
       ],
       "name": "spdlog",
       "repository": "https://github.com/gabime/spdlog.git",
-      "source_directory": "third_party/spdlog",
+      "source_directory": "third_party/support/spdlog",
       "source_manifest": "third_party/manifests/spdlog.json",
       "source_origin": "upstream_archive",
       "upstream_commit": "76fb40d95455f249bd70824ecfcae7a8f0930fa3",
@@ -190,7 +190,7 @@
       ],
       "name": "entt",
       "repository": "https://github.com/skypjack/entt.git",
-      "source_directory": "third_party/entt",
+      "source_directory": "third_party/support/entt",
       "source_manifest": "third_party/manifests/entt.json",
       "source_origin": "upstream_archive",
       "upstream_commit": "78213075654a688e9da6bc49f7f873d25c26d12c",
@@ -246,6 +246,49 @@
       "source_origin": "upstream_archive",
       "upstream_commit": "f156599faefe316f7dd20fe6c783bf87c8bb6fd9",
       "upstream_version": "0.17"
+    },
+    {
+      "archive_sha256": "f7c486f10b9f645d0577249d02855e076e8368babaa3d31ced6095e7162baee9",
+      "license_files": [
+        "LICENSE.txt"
+      ],
+      "name": "bullet",
+      "provenance_note": "Omitted demos, their data, and vendored example dependencies except tinyxml2 used by the XML serializer.",
+      "repository": "https://github.com/bulletphysics/bullet3.git",
+      "source_directory": "third_party/bullet",
+      "source_manifest": "third_party/manifests/bullet.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "2c204c49e56ed15ec5fcfa71d199ab6d6570b3f5",
+      "upstream_version": "3.25"
+    },
+    {
+      "archive_sha256": "cb98db69b3414578468492b95543d1180d802433453d18a4e4d28f1695d6d8f5",
+      "license_files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "name": "openusd",
+      "provenance_note": "Exact git archive of the local upstream checkout, excluding its untracked install directory.",
+      "repository": "https://github.com/PixarAnimationStudios/OpenUSD.git",
+      "source_directory": "third_party/openusd",
+      "source_manifest": "third_party/manifests/openusd.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "412f38c66167089d4bc807b633bf5bd071aae51a",
+      "upstream_version": "26.08"
+    },
+    {
+      "archive_sha256": "66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb",
+      "license_files": [
+        "LICENSE"
+      ],
+      "name": "assimp",
+      "provenance_note": "Omitted upstream fixture assets. The product builds the selected mesh importers.",
+      "repository": "https://github.com/assimp/assimp.git",
+      "source_directory": "third_party/assimp",
+      "source_manifest": "third_party/manifests/assimp.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "c35200e38ea8f058812b83de2ef32c6093b0ece2",
+      "upstream_version": "5.4.3"
     }
   ],
   "description": "Pinned in-repository graphics dependency sources. Configure/build never downloads code. Archive digests identify upstream downloads; per-file manifests identify the checked-in and reviewed source trees.",

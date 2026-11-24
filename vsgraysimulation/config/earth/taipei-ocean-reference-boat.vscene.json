@@ -34,7 +34,7 @@
       "role": "terrain",
       "source": {
         "type": "mesh",
-        "path": "../../models/OceanDemo/assumed-seabed.osgb",
+        "path": "../../models/OceanDemo/assumed-seabed.vsgb",
         "max_dimension": 160,
         "up_axis": "y",
         "fill_interior": true
@@ -67,7 +67,7 @@
       ],
       "source": {
         "type": "mesh",
-        "path": "../../models/OceanDemo/test-vessel.osgb",
+        "path": "../../models/OceanDemo/test-vessel.vsgb",
         "max_dimension": 128,
         "up_axis": "y",
         "fill_interior": true
@@ -109,7 +109,7 @@
       ],
       "source": {
         "type": "mesh",
-        "path": "../../models/OceanDemo/test-submersible.osgb",
+        "path": "../../models/OceanDemo/test-submersible.vsgb",
         "max_dimension": 96,
         "up_axis": "y",
         "fill_interior": true

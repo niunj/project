@@ -620,7 +620,7 @@ void SceneDesignerWindow::buildModelLibraryDock()
     if (model_root.exists()) {
         QDirIterator it(model_root.absolutePath(),
                         QStringList() << "*.obj" << "*.gltf" << "*.glb"
-                                      << "*.osgb" << "*.vsgt",
+                                      << "*.fbx" << "*.dae" << "*.ply" << "*.stl" << "*.3ds" << "*.vsgt",
                         QDir::Files, QDirIterator::Subdirectories);
         while (it.hasNext()) {
             const QString path = it.next();

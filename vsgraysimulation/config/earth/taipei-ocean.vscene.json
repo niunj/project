@@ -46,7 +46,7 @@
       ],
       "source": {
         "type": "mesh",
-        "path": "../../models/CG-57/cg57.osgb",
+        "path": "../../models/CG-57/cg57.vsgb",
         "max_dimension": 512,
         "units_to_metres": 1,
         "up_axis": "y",

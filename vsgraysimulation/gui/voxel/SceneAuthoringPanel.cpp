@@ -327,7 +327,7 @@ void SceneAuthoringPanel::import(bool terrain) {
     const auto file = QFileDialog::getOpenFileName(
         this, terrain ? tr("导入地形影像高程源") : tr("导入目标模型"), terrain ? "config/earth" : "",
         terrain ? tr("地图工程 (*.json *.ter *.vsgterrain)")
-                : tr("目标模型 (*.osg *.osgb *.ive *.vsg *.vsgt *.vsgb *.obj)"));
+                : tr("目标模型 (*.vsg *.vsgt *.vsgb *.obj *.glb *.gltf *.fbx *.dae *.ply *.stl *.3ds)"));
     if (file.isEmpty())
         return;
     QDialog d(this);

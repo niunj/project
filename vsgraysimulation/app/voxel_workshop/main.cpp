@@ -82,7 +82,7 @@ class Workshop final : public QMainWindow {
         auto* role=new QComboBox;role->addItems({"target","structure","terrain"});if(!create){role->setCurrentText(QString::fromStdString(snapshot->objects.at(id).role));role->setEnabled(false);}form->addRow(tr("对象角色"),role);
         std::string asset;QDoubleSpinBox* cell=nullptr;QDoubleSpinBox* units=nullptr;QComboBox* upAxis=nullptr;QCheckBox* interior=nullptr;QSpinBox* dimensions[3]{};QSpinBox* detail=nullptr;
         if(create&&mesh) {
-            const auto file=QFileDialog::getOpenFileName(this,tr("选择目标模型"),{},tr("目标模型 (*.osg *.osgb *.ive *.vsg *.vsgt *.vsgb *.obj)"));
+            const auto file=QFileDialog::getOpenFileName(this,tr("选择目标模型"),{},tr("目标模型 (*.vsg *.vsgt *.vsgb *.obj *.glb *.gltf *.fbx *.dae *.ply *.stl *.3ds)"));
             if(file.isEmpty()){runtime.setPaused(wasPaused);return;}asset=file.toStdString();form->addRow(tr("源模型"),new QLabel(file));
             cell=numeric(form,tr("体素边长（米；0 自动）"),0,0,1000,4);
             detail=new QSpinBox;detail->setRange(16,512);detail->setValue(512);form->addRow(tr("最长轴格数上限（自动适配预算）"),detail);

@@ -1,0 +1,7 @@
+add_library(vsgraysim_usd_bridge STATIC SceneUsd.cpp)
+target_include_directories(vsgraysim_usd_bridge PRIVATE "${CMAKE_SOURCE_DIR}/include")
+target_link_libraries(vsgraysim_usd_bridge PRIVATE vsg::vsg nlohmann_json::nlohmann_json)
+target_compile_definitions(vsgraysim_usd_bridge PRIVATE VSGRAYSIM_HAVE_USD=$<BOOL:${VSGRAYSIM_ENABLE_USD}>)
+if(VSGRAYSIM_ENABLE_USD)
+    target_link_libraries(vsgraysim_usd_bridge PRIVATE ${VSGRAYSIM_PXR_LIBS})
+endif()

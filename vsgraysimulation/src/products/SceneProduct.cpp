@@ -1,4 +1,5 @@
 #include "vsgraysim/products/SceneProduct.h"
+#include "../../lib/usd_bridge/SceneUsd.h"
 
 #include <algorithm>
 #include <random>
@@ -65,9 +66,8 @@ const Prefab* SceneProduct::getPrefab(const std::string& prefab_ref) const {
 
 // ---- Export stubs ----
 
-bool SceneProduct::exportUSD(const std::string&) const {
-    // TODO(M2): 通过 USD 桥接导出
-    return false;
+bool SceneProduct::exportUSD(const std::string& path) const {
+    return writeSceneUsd(*this, path);
 }
 
 bool SceneProduct::exportGLTF(const std::string&) const {

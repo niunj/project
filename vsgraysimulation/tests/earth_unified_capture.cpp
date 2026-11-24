@@ -25,7 +25,7 @@
 #include <QTimer>
 #include <QThread>
 #include <vsg/all.h>
-#include "../src/earth/OsgVoxelImport.h"
+
 #include <vsgXchange/all.h>
 #include <fstream>
 #include <iostream>
@@ -53,7 +53,7 @@ void runEarthTargetDestruction(const QString& output,int maxDimension) {
     require(QApplication::platformName()=="xcb","target acceptance needs a real native surface");
     const auto directory=std::filesystem::absolute(output.toStdString());
     std::filesystem::create_directories(directory);
-    const auto asset=std::filesystem::absolute("models/MQ-9/MQ-9.osgb");
+    const auto asset=std::filesystem::absolute("models/MQ-9/MQ-9.vsgb");
     const auto map=std::filesystem::absolute("config/earth/default.map.json");
     json definition={{"format","voxel-scene-v1"},{"fixed_step_seconds",.02},
         {"geo_anchor",{{"lat",25.078},{"lon",121.772},{"alt",364}}},
@@ -121,8 +121,8 @@ void runEarthTargetDestruction(const QString& output,int maxDimension) {
     capture("intact");
     view->context().camera()->projectionMatrix.cast<vsg::Perspective>()->fieldOfViewY=20.;capture("intact-detail");
     view->context().camera()->projectionMatrix.cast<vsg::Perspective>()->fieldOfViewY=43.;
-    // Render the exact original OSGB triangle mesh and source UV atlas at
-    // the identical geodetic placement, lighting and camera as its OSGB voxels.
+    // Render the exact original triangle mesh and source UV atlas at
+    // the identical geodetic placement, lighting and camera as its voxels.
     struct SourceTriangles : vsg::Visitor {
         using vsg::Visitor::apply;
         struct Batch{vsg::ref_ptr<vsg::Data> image;std::vector<vsg::vec3> p,n;std::vector<vsg::vec2> uv;std::vector<vsg::vec4> color;};
@@ -131,11 +131,13 @@ void runEarthTargetDestruction(const QString& output,int maxDimension) {
         void apply(vsg::VertexIndexDraw& draw)override {
             auto image=draw.getObject<vsg::Data>("voxel.import.image");auto& batch=batches[image];batch.image=image;
             const auto* p=draw.arrays[0]->data->cast<vsg::dvec3Array>();const auto* uv=draw.getObject<vsg::vec2Array>("voxel.import.uv");const auto* colors=draw.getObject<vsg::vec4Array>("voxel.import.color");const auto* normals=draw.getObject<vsg::vec3Array>("voxel.import.normal");
-            const auto cross=vsg::cross((*p)[1]-(*p)[0],(*p)[2]-(*p)[0]);const auto normal=vsg::length(cross)>1e-12?vsg::normalize(cross):vsg::dvec3(0,0,1);
-            for(size_t i=0;i<3;++i){batch.p.emplace_back((*p)[i]);batch.n.emplace_back(normals?vsg::dvec3((*normals)[i]):normal);batch.uv.push_back((*uv)[i]);batch.color.push_back((*colors)[i]);}
+            for (size_t t=0; t+2<p->size(); t+=3) {
+                const auto cross=vsg::cross((*p)[t+1]-(*p)[t],(*p)[t+2]-(*p)[t]);const auto normal=vsg::length(cross)>1e-12?vsg::normalize(cross):vsg::dvec3(0,0,1);
+                for (size_t i=t; i<t+3; ++i) {batch.p.emplace_back((*p)[i]);batch.n.emplace_back(normals?vsg::dvec3((*normals)[i]):normal);batch.uv.push_back((*uv)[i]);batch.color.push_back((*colors)[i]);}
+            }
         }
     } source;
-    auto raw=loadOsgVoxelMesh(asset.string());raw->accept(source);
+    auto raw=vsg::read_cast<vsg::Node>(asset.string());require(bool(raw),"original target reference failed to load");raw->accept(source);
     auto original=vsg::Group::create();
     for(const auto& [image,batch]:source.batches) {
         auto p=vsg::vec3Array::create(batch.p.size());std::copy(batch.p.begin(),batch.p.end(),p->begin());

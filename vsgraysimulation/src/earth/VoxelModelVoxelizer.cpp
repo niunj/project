@@ -1,7 +1,7 @@
 #include "VoxelModelVoxelizer.h"
 #include "VoxelTerrain.h"
 #include "VoxelSourceSurface.h"
-#include "OsgVoxelImport.h"
+#include "AssimpVoxelImport.h"
 #include <filesystem>
 #include <vsg/all.h>
 #include <map>
@@ -119,7 +119,9 @@ struct MeshTriangleCollector : public vsg::Visitor {
             bounds.max.y = std::max(bounds.max.y, w.y);
             bounds.max.z = std::max(bounds.max.z, w.z);
             triangles_.push_back(w);
-            VertexSurface attr;attr.emissive=emissive_;vid.getValue("voxel.import.emissive",attr.emissive);attr.metallic=metallic_;attr.roughness=roughness_;vid.getValue("voxel.import.metallic",attr.metallic);vid.getValue("voxel.import.roughness",attr.roughness);attr.normalImage=normalImage_;attr.mrImage=mrImage_;attr.image=texture;attr.color=diffuse_;attr.present=appearance;
+            VertexSurface attr;attr.emissive=emissive_;vid.getValue("voxel.import.emissive",attr.emissive);attr.metallic=metallic_;attr.roughness=roughness_;vid.getValue("voxel.import.metallic",attr.metallic);vid.getValue("voxel.import.roughness",attr.roughness);attr.normalImage=normalImage_;attr.mrImage=mrImage_;attr.image=texture;
+            if(auto* data=vid.getObject<vsg::Data>("voxel.import.normal_image"))attr.normalImage=data;
+            if(auto* data=vid.getObject<vsg::Data>("voxel.import.mr_image"))attr.mrImage=data;attr.color=diffuse_;attr.present=appearance;
             vid.getValue("voxel.import.diffuse",attr.color);
             if(colors&&!colors->empty()){const auto& c=(*colors)[colors->size()==1?0:index];for(int j=0;j<4;++j)attr.color[j]*=c[j];}
             if(normals&&!normals->empty()) {const auto n=normalMatrix*vsg::dvec4(vsg::dvec3((*normals)[normals->size()==1?0:index]),0.);attr.normal=vsg::normalize(vsg::vec3(n.x,n.y,n.z));}
@@ -224,9 +226,14 @@ bool triangleAabb(const vsg::dvec3& a, const vsg::dvec3& b, const vsg::dvec3& c,
 
 vsg::ref_ptr<vsg::Node> loadMeshFile(const std::string& path) {
     auto extension=std::filesystem::path(path).extension().string();std::transform(extension.begin(),extension.end(),extension.begin(),[](unsigned char c){return char(std::tolower(c));});
-    if(extension==".osg"||extension==".osgb"||extension==".ive"||extension==".osgt")return loadOsgVoxelMesh(path);
-    // .obj goes through the native ObjLoader (vsgXchange has no assimp
-    // backend in this build). Native VSG files use the core VSG reader.
+    if (extension==".osg" || extension==".osgb" || extension==".ive" || extension==".osgt") {
+        auto converted = std::filesystem::path(path).replace_extension(".vsgb");
+        if (std::filesystem::is_regular_file(converted)) return loadMeshFile(converted.string());
+        throw std::runtime_error("Convert legacy OSG/IVE to GLB, OBJ or VSG before importing: "+path);
+    }
+    if (extension==".gltf" || extension==".glb" || extension==".fbx" || extension==".dae" ||
+        extension==".ply" || extension==".stl" || extension==".3ds") return loadAssimpVoxelMesh(path);
+    // Preserve the native OBJ loader's material-slot contract.
     if (extension == ".obj") {
         std::vector<vsgraysim::ObjMaterialSlot> materials;
         auto node=vsgraysim::loadObjNode(path,vsg::Options::create(),&materials).cast<vsg::Group>();
@@ -243,7 +250,7 @@ vsg::ref_ptr<vsg::Node> loadMeshFile(const std::string& path) {
             const auto texture=(std::filesystem::path(path).parent_path()/material.map_kd).lexically_normal();
             auto [entry,inserted]=textures.try_emplace(texture);
             if(inserted) {
-                entry->second=loadOsgVoxelTexture(texture.string());
+                entry->second=loadVoxelTexture(texture.string());
                 if(!entry->second)vsg::warn("voxel OBJ uses diffuse colour because it could not read ",texture.string());
             }
             if(entry->second)draw->setObject("voxel.import.image",entry->second);

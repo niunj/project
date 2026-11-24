@@ -2,6 +2,8 @@
 
 来源：[FlightGear fgdata / CG-57-high-detail](https://gitlab.com/flightgear/fgdata/-/tree/next/Models/Maritime/Military/CG-57-high-detail)。固定上游提交与每个源文件的 SHA-256 见 `provenance.json`；上游 GPL-2.0 许可文本保留于 `UPSTREAM-LICENSE.md`，完整原始 AC3D、贴图和 XML 位于 `source/`。本目录转换资产保留同一上游许可。
 
+正式场景使用 `cg57.vsgb`。它由同一份原始三角面、贴图和材质数据重打包，继续使用相同的体素化设置。
+
 `cg57.osgb` 由 `tools/earth/prepare_cg57.cpp` 旋转坐标、平移水平中心、嵌入原贴图，并按源节点名补记航行灯自发光材质得到，没有缩比或删减细节。约长171.913m、宽20.584m，垂向从−7.772m至43.779m；舰艏为局部+Z（上游bowwake位于−X），上为+Y，保留源模型名义水线Y=0。模型尺寸来自源几何，不是本项目对实舰的测量。
 
 默认海洋演示使用这个模型，`max_dimension=512` 受现有每模型4M体素预算约束，自动选出 **0.3597343m** 体素，实际网格 **58×144×478**，占用 **811670** 格。这个分辨率不能冒称原12m小艇约0.094m的绝对物理精度。显示保留源几何重建的表面、法线与贴图；破坏仍基于上述占用单元。

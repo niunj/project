@@ -43,9 +43,8 @@ struct VoxelModel {
 VoxelModel voxelizeMesh(vsg::Node* mesh, const VoxelModelConfig& config = {});
 
 /// Load any supported mesh format and voxelise it.
-/// Supported: .obj (native), .osg/.osgb/.ive/.osgt (OSG SDK),
+/// Supported: .obj (native), .glb/.gltf/.fbx/.dae/.ply/.stl/.3ds (Assimp),
 /// .vsg/.vsgt/.vsgb (native VSG). LOD import selects the finest surface.
-void initializeVoxelModelImport();
 VoxelModel voxelizeFile(const std::string& path, const VoxelModelConfig& config = {});
 
 } // namespace vsgraysim::earth

@@ -47,7 +47,7 @@
       ],
       "source": {
         "type": "mesh",
-        "path": "../../models/MQ-9/MQ-9.osgb",
+        "path": "../../models/MQ-9/MQ-9.vsgb",
         "max_dimension": 48,
         "fill_interior": true,
         "up_axis": "z",
@@ -86,7 +86,7 @@
       ],
       "source": {
         "type": "mesh",
-        "path": "../../models/AH-64/AH-64.osgb",
+        "path": "../../models/AH-64/AH-64.vsgb",
         "max_dimension": 48,
         "fill_interior": true,
         "up_axis": "z",

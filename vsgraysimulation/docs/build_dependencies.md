@@ -1,37 +1,30 @@
 # 构建与依赖源码管理
 
-2026-11-12。本阶段把引擎及桥接组件放入本仓库编译，保留 Rocky；不迁移体素地球，
-不改变传感器或地形模型。源码、构建开关、编译工具和实际链接产物分别留有记录。
+源码快照由 `third_party/upstream.lock.json` 和逐文件清单管理。构建产物按组件
+写入当前构建目录的 `third_party/` 下。OpenUSD 使用独立的 CMake 构建和安装目录。
 
-## 源码范围
-
-| 组件 | 仓库目录 | 管理方式 |
+| 用途 | 仓库位置 | 构建产物 |
 |---|---|---|
-| VulkanSceneGraph | `third_party/vsg` | 固定上游 commit，本地源码构建 |
-| vsgXchange | `third_party/vsgXchange` | 固定 commit，显式固定加载器功能 |
-| vsgImGui | `third_party/vsgImGui` | 包含锁定的 ImGui/ImPlot 源码 |
-| vsgBullet | `third_party/vsgBullet` | 固定上游源码，构建碰撞和动力学桥 |
-| Rocky | `third_party/rocky` | ABI52 对应固定 commit，与本地 VSG 同编译 |
-| GLM、JSON、spdlog、EnTT | `third_party/{glm,json,spdlog,entt}` | 固定源码/头文件，不再借用机器安装的头文件 |
+| VSG、vsgXchange、Rocky、vsgBullet、vsgImGui | `third_party/<组件>` | `build/<配置>/third_party/<组件>/` |
+| Bullet 3.25、Assimp 5.4.3 | `third_party/bullet`、`third_party/assimp` | `build/<配置>/third_party/<组件>/` |
+| OpenUSD 26.08 C++ 核心 | `third_party/openusd` | `build/<配置>/third_party/openusd/` 和 `third_party/install/openusd/` |
+| GLM、JSON、spdlog、EnTT、meshoptimizer | `third_party/support/` | 头文件或产品内置静态库 |
+| GDAL、PROJ、GEOS、OpenEXR、IlmBase、Zlib、libzip、oneTBB | `deps/` | 解包到 `build/<配置>/third_party/base/` |
 
-vsgXchange 选用 1.1.14 开发期提交 `d2a93c1e`。这个提交的公开源码头与原安装版一致，可与当前 VSG 1.1.15 配套编译。Rocky 的本地适配覆盖 GDAL 3.14 的只读元数据，以及关闭 Rocky 内嵌 ImGui 时的头文件、标签系统编译和注册。产品使用的 vsgImGui 仍从源码构建。每次适配都在锁文件中记录。
+OpenUSD 构建包含场景组合、几何、材质、灯光和物理 schema。C++ 导出入口保存实体
+层级、变换和素材路径。原生体素包继续负责占用、表面和物理快照。
 
-确切来源、commit、导入归档 SHA-256、许可证与子组件见
-`third_party/upstream.lock.json`。逐文件清单位于该锁文件指定的 manifest；本地适配
-优先放在 `cmake/`，有意修改上游源码需明确记录原因。许可证按组件保留，不能将
-整个 third_party 目录统一标为 MIT，特别是 vsgBullet 的 LGPL 声明。
-
-配置及构建不执行下载，不自动选择已安装的 VSG/Rocky。源码缺失、校验不符或本地
-目标未建立时会失败。`vsg::vsg`、`rocky::rocky` 等目标名保留，但绑定到本地构建。
-`cmake/Dependencies.cmake` 和桥接适配器统一组装依赖。
+构建读取已锁定的仓库文件。版本、源码校验、编译命令和实际链接位置记录在
+`dependency-report.json` 和 `dependency-audit.json` 中。
 
 ## 标准入口
 
 下列构建命令在仓库的 `vsgraysimulation/` 目录中运行。
 
-要求 CMake ≥3.22、C++17 编译器、Python ≥3.10，以及下述外部 SDK。共享预设不保存
-个人机器路径。当前 Linux 预设使用 Unix Makefiles；默认并行4任务，避免首次编译
-地理库时内存耗尽。旧 `build/` 的已有二进制不被覆盖。
+要求 CMake ≥3.26、Ninja、C++17 编译器、Python ≥3.10 和下述平台 SDK。
+主工程使用 Unix Makefiles，OpenUSD 使用 Ninja，默认最多并行 2 个 OpenUSD 编译任务。
+通过 `VSGRAYSIM_CMAKE=/path/to/cmake` 选择新版 CMake。轻量构建可设置
+`-DVSGRAYSIM_ENABLE_USD=OFF`。
 
 ```bash
 ./build_all.sh --jobs 4
@@ -62,16 +55,13 @@ env -u LD_LIBRARY_PATH ctest --preset source-release
 
 ## 外部 SDK 与机器配置
 
-本轮没有源码化所有系统组件。以下依赖仍需安装，版本和路径写入构建报告：
+验收平台是 Ubuntu 22.04 x86_64。目标平台提供系统工具链、桌面显示环境和下表三套可用 SDK。VSG 使用的 XCB、X11 和 GLVND 开发文件随底层库包提供。
 
 | 依赖 | 配置入口 |
 |---|---|
-| Vulkan SDK / glslang / SPIRV-Tools | `VULKAN_SDK`、其 CMake package 路径 |
+| Vulkan SDK / glslang / SPIRV-Tools | `VULKAN_SDK` |
 | CUDA | `CMAKE_CUDA_COMPILER`、`CUDAToolkit_ROOT` |
-| Qt6 | `Qt6_DIR`、`QT6_PREFIX`；当前产品要求6.12及其私有GUI头 |
-| Bullet及Extras | `BULLET_ROOT`、FindBullet选择的实际库 |
-| GDAL / PROJ / GEOS及数据目录 | `ROCKY_EARTH3P_DIR` 或对应package路径 |
-| OpenEXR、Zlib、libzip、系统XCB等 | 对应开发包及CMake发现结果 |
+| Qt6 | `Qt6_DIR` 或 `QT6_PREFIX`，当前使用 Qt 6.12 |
 
 `THIRD_PARTY_ROOT` 保留对现有开发机 SDK 目录的兼容默认值；它不再决定 VSG/Rocky
 引擎源码位置。新机器可复制 `CMakeUserPresets.json.example` 为
@@ -92,9 +82,9 @@ env -u LD_LIBRARY_PATH ctest --preset my-linux-release
   -DCUDAToolkit_ROOT=/usr/local/cuda
 ```
 
-当前功能配置显式保留 vsgXchange 的 OpenEXR，关闭 Assimp、GDAL reader、网络等
-可选加载器，避免因机器多装一个包而改变产品行为。地理 DEM 由 Rocky/自研数据服务
-直接使用 GDAL，自研 OBJ 加载器继续工作。改变功能配置需作为可审查的构建变更。
+资产端启用 Assimp 与 OpenEXR。场景体素导入支持 GLB、glTF、FBX、DAE、
+PLY、STL、3DS、OBJ 和 VSG。仓库的主要示例场景已迁移为 VSG 资产。独立的旧 OSG/IVE
+文件需要先在模型工具内转换成 GLB、OBJ 或 VSG，再进入正式工程。
 
 ## 修改第三方源码
 
@@ -178,7 +168,7 @@ build/earth-only/voxel_earth_smoke config/earth/native-volume.scene.json --gpu
 | 天空与星历、云、海洋与 FFT | `env_modules/src`、`env_modules/include/rocky_env/EnvApi.h` |
 | 自有 GLSL 与编译清单 | `shaders/viewport/voxel_globe.*`、`shaders/env`、`lib/voxel_earth/CMakeLists.txt` |
 
-只需要整球绘制的宿主可链接 `vsgraysim_earth_globe`，用 `OrbitalSurface` 提供两半球的列顶高度与 RGBA 图像。需要云海天空的宿主链接 `vsgraysim_earth_environment`。加载原生场景包、局部体素和环境的宿主链接 `vsgraysim_voxel_earth`。原生包的 JSON 编解码使用仓库内的 `third_party/json` 单头库。整球绘制接口独立于此编解码器。
+只需要整球绘制的宿主可链接 `vsgraysim_earth_globe`，用 `OrbitalSurface` 提供两半球的列顶高度与 RGBA 图像。需要云海天空的宿主链接 `vsgraysim_earth_environment`。加载原生场景包、局部体素和环境的宿主链接 `vsgraysim_voxel_earth`。原生包的 JSON 编解码使用仓库内的 `third_party/support/json` 单头库。整球绘制接口独立于此编解码器。
 
 环境栈的 `worldRoot()` 挂到 ECEF 世界根，`contentRoot()` 和局部地表挂到同一锚点变换下。宿主在更新线程发布地表时将快照绑定到 `EnvironmentTerrain`，通过 `OceanParams::terrain` 提供海床和版本号。每帧将仿真 UTC、锚点和相机传给环境模块。使用 FFT 海面时，在编译前调用 `setDevice` 或 `setWindow`，将 `fftCommands()` 挂到绘制 pass 之前。独立地球的 GLSL 在构建阶段转为内嵌 SPIR-V；修改后重新构建即可生效。
 
@@ -371,7 +361,7 @@ CTest 通过；新增 OBJ 相对路径导入测试在删除原资产后仍可从
 ## 2026-11-17 体素目标断裂、刚体接触与测量版本
 
 本轮在 `VoxelScene` 正式运行路径接入面键断裂和 Bullet 3.25 刚体接触。
-工坊导入框支持 `.osg/.osgb/.ive/.osgt/.vsg/.vsgt/.vsgb/.obj`，提供源单位换算、
+工坊导入框支持 GLB、glTF、FBX、DAE、PLY、STL、3DS、OBJ 和 VSG，提供源单位换算、
 Y/Z 向上轴、封闭内部填充、动态/静态/预设运动、角速度、固定支撑、断裂能、摩擦和恢复系数。
 新增“断裂面”“刚体冲量”操作，碎块使用自己的稳定对象 ID，能继续被编辑、命中或销毁。
 默认示例改为真正的固定底部目标：tick 25 损伤切断支撑后，上部碎块通过重力与接触下落，
@@ -380,9 +370,9 @@ Y/Z 向上轴、封闭内部填充、动态/静态/预设运动、角速度、�
 ### 模型读取
 
 OSG 解码是宿主自己的 CPU 导入桥，不修改锁定的 vsgXchange 源码配置。
-`OPENSCENEGRAPH_ROOT` 指向外部 SDK，构建检查 osg、osgDB、OpenThreads 及 osg/ive 插件，
+历史 OSG 导入构建曾使用 osg、osgDB、OpenThreads 及 osg/ive 插件，
 把选定插件目录加入 Registry，避免 SDK 内置旧安装前缀导致“有库却读不了文件”。
-依赖可通过 `VSGRAYSIM_ENABLE_OSG_IMPORT=OFF` 关闭；关闭后 OSG/IVE 输入明确失败。
+旧场景保留同名 VSGB 资产时可沿用旧引用。
 本机本轮使用 `/home/mte/Code/osg_365_glx`，可以在配置时指定其他兼容 SDK。
 
 读取会累积节点变换、选择最细 LOD/PagedLOD、解析外部精细级资产，并将
@@ -462,14 +452,14 @@ VoxelScene/VoxelDynamics，不再调用该接口来生成正式碎块。一个�
 
 ### 验收入口
 
-    cmake -S . -B build -DOPENSCENEGRAPH_ROOT=/path/to/osg-sdk
+    cmake -S . -B build
     cmake --build build -j3
     ctest --test-dir build -R 'voxel_|simulation_offscreen_gpu_runtime' --output-on-failure
     build/app/vsgraysim_voxel_workshop --smoke /tmp/voxel-fracture
 
-独立库额外需要 Bullet SDK，可不配置 Qt/CUDA/主仿真器：
+独立库从同一份 Bullet 和 Assimp 源码构建，可单独配置：
 
-    cmake -S lib/voxel_earth -B build/earth-only -DOPENSCENEGRAPH_ROOT=/path/to/osg-sdk -DBULLET_ROOT=/path/to/bullet-sdk
+    cmake -S lib/voxel_earth -B build/earth-only
     cmake --build build/earth-only -j2
     ctest --test-dir build/earth-only --output-on-failure
 

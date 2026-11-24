@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """Rebuild the authored ocean validation assets (not measured bathymetry).
-Requires Pillow and OpenSceneGraph osgconv; use --osgconv for a custom install.
+Requires Pillow. Writes OBJ, MTL and terrain textures.
 """
-import argparse, subprocess, os
 from pathlib import Path
 import math,random,json
 from PIL import Image
 root=Path(__file__).resolve().parents[2]
-parser=argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--osgconv', default='osgconv')
-args=parser.parse_args()
 p=root/'models/OceanDemo'
 p.mkdir(parents=True,exist_ok=True)
 mtl='newmtl hull\nKd 0.15 0.24 0.31\nnewmtl deck\nKd 0.76 0.72 0.61\nnewmtl cabin\nKd 0.86 0.89 0.86\nnewmtl glass\nKd 0.07 0.22 0.28\nnewmtl orange\nKd 0.91 0.28 0.035\nnewmtl sand\nKd 0.75 0.69 0.47\nmap_Kd sand.png\n'
@@ -55,12 +51,9 @@ for z in range(512):
   noise=rng.gauss(0,3);ripple=4*math.sin(x*.32+1.3*math.sin(z*.035));pix[x,z]=tuple(max(0,min(255,int(c+noise+ripple))) for c in (181,170,135))
 im.save(p/'sand.png')
 scene={'format':'voxel-scene-v1','fixed_step_seconds':.02,'utc_origin':{'year':2026,'month':9,'day':10,'hours_utc':4},'geo_anchor':{'lat':25.22,'lon':121.8,'alt':19.8389225006104},'ocean':{'wave_height_m':.65,'wave_length_m':24,'swell_height_m':.25,'swell_length_m':80,'wind_speed_mps':6,'wind_azimuth_deg':70,'bottom_m':-40,'half_extent_m':4096,'cell_size_m':.5,'provenance':{'sea_level':'local mean sea surface anchored to the new Taipei DSM sample; no measured tide','bed':'synthetic validation bed; NOT measured Taipei bathymetry','body_density':'assumed bulk density including enclosed volume; no flooding compartments'}},'objects':[
- {'id':'assumed-bed','role':'terrain','source':{'type':'mesh','path':'../../models/OceanDemo/assumed-seabed.osgb','max_dimension':160,'up_axis':'y','fill_interior':True},'physics':{'motion':'static'},'material':{'density_kg_m3':2200,'color_rgba':[1,1,1,1]}},
- {'id':'vessel','role':'target','position_m':[0,1,0],'velocity_mps':[-.3,0,-1.5],'rotation_deg':[2,12,3],'source':{'type':'mesh','path':'../../models/OceanDemo/test-vessel.osgb','max_dimension':128,'up_axis':'y','fill_interior':True},'physics':{'motion':'dynamic','fracture':True,'support':'none','friction':.65},'material':{'density_kg_m3':400,'temperature_k':294,'color_rgba':[1,1,1,1]}},
- {'id':'submersible','role':'target','position_m':[-5,-5,-3],'rotation_deg':[0,-15,0],'source':{'type':'mesh','path':'../../models/OceanDemo/test-submersible.osgb','max_dimension':96,'up_axis':'y','fill_interior':True},'physics':{'motion':'dynamic','fracture':True,'support':'none'},'material':{'density_kg_m3':1025,'temperature_k':293,'color_rgba':[1,1,1,1]}}
+ {'id':'assumed-bed','role':'terrain','source':{'type':'mesh','path':'../../models/OceanDemo/assumed-seabed.obj','max_dimension':160,'up_axis':'y','fill_interior':True},'physics':{'motion':'static'},'material':{'density_kg_m3':2200,'color_rgba':[1,1,1,1]}},
+ {'id':'vessel','role':'target','position_m':[0,1,0],'velocity_mps':[-.3,0,-1.5],'rotation_deg':[2,12,3],'source':{'type':'mesh','path':'../../models/OceanDemo/test-vessel.obj','max_dimension':128,'up_axis':'y','fill_interior':True},'physics':{'motion':'dynamic','fracture':True,'support':'none','friction':.65},'material':{'density_kg_m3':400,'temperature_k':294,'color_rgba':[1,1,1,1]}},
+ {'id':'submersible','role':'target','position_m':[-5,-5,-3],'rotation_deg':[0,-15,0],'source':{'type':'mesh','path':'../../models/OceanDemo/test-submersible.obj','max_dimension':96,'up_axis':'y','fill_interior':True},'physics':{'motion':'dynamic','fracture':True,'support':'none'},'material':{'density_kg_m3':1025,'temperature_k':293,'color_rgba':[1,1,1,1]}}
 ]}
 (root/'config/earth/taipei-ocean-reference-boat.vscene.json').write_text(json.dumps(scene,ensure_ascii=False,indent=2)+'\n')
 print('Created procedural validation vessels/bed and explicit ocean scene.')
-
-for stem in ('assumed-seabed','test-vessel','test-submersible'):
- subprocess.run([args.osgconv,'-O','noRotation WriteImageHint=IncludeData',str(p/(stem+'.obj')),str(p/(stem+'.osgb'))],check=True)

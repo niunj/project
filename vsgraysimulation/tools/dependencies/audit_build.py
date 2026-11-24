@@ -20,8 +20,16 @@ import sys
 from verify_sources import SourceError, atomic_json, load_lock, read_json, within, verify_dependency
 
 REQUIRED_TARGETS = {"vsg", "vsgXchange", "vsgImGui", "vsgbCollision", "vsgbDynamics", "rocky"}
-MANAGED_LIBRARY = re.compile(r"^(?:lib)?(?:vsgXchange|vsgImGui|vsgbCollision|vsgbDynamics|vsg|rocky)(?:d)?(?:\.a|\.so(?:\..*)?|\.dylib|\.lib|\.dll)$")
-MANAGED_LFLAG = re.compile(r"^-l(?:vsgXchange|vsgImGui|vsgbCollision|vsgbDynamics|vsg|rocky)(?:d)?$")
+_MANAGED_NAMES = (
+    r"vsgXchange|vsgImGui|vsgbCollision|vsgbDynamics|vsg|rocky|assimp|"
+    r"BulletDynamics|BulletCollision|BulletSoftBody|BulletWorldImporter|BulletFileLoader|"
+    r"ConvexDecomposition|LinearMath|usd_(?:usd|usdGeom|sdf|tf|gf|vt)"
+)
+MANAGED_LIBRARY = re.compile(rf"^(?:lib)?(?:{_MANAGED_NAMES})(?:d)?(?:\.a|\.so(?:\..*)?|\.dylib|\.lib|\.dll)$")
+MANAGED_LFLAG = re.compile(rf"^-l(?:{_MANAGED_NAMES})(?:d)?$")
+BUNDLED_LIBRARY = re.compile(r"^lib(?:gdal|geos(?:_c)?|IlmImf[^.]*|Iex[^.]*|Half[^.]*|Imath[^.]*|IlmThread[^.]*|z|zip|tbb|usd_\w+)\.so(?:\..*)?$")
+LEGACY_OSG_LIBRARY = re.compile(r"^lib(?:osg\w*|OpenThreads)\.so(?:\..*)?$")
+
 
 
 class AuditError(ValueError):
@@ -84,26 +92,34 @@ def validate_report(repo: Path, build: Path, report: dict, require_artifacts: bo
     return checked
 
 
-def compile_sources(build: Path, dependencies: list) -> int:
-    path = build / "compile_commands.json"
-    try:
-        commands = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise AuditError(f"cannot read {path}; configure with CMAKE_EXPORT_COMPILE_COMMANDS=ON: {error}") from error
-    if not isinstance(commands, list) or not commands:
-        raise AuditError("compile_commands.json is empty or invalid")
-    sources = set()
-    for entry in commands:
-        if not isinstance(entry, dict) or not isinstance(entry.get("file"), str):
-            raise AuditError("invalid compilation database entry")
-        directory = Path(entry.get("directory", str(build)))
-        source = Path(entry["file"])
-        sources.add((source if source.is_absolute() else directory / source).resolve())
-    for entry in dependencies:
-        root = Path(entry["source_dir"])
-        if not any(within(source, root) for source in sources):
-            raise AuditError(f"{entry['target']}: no compilation command consumes its locked source tree: {root}")
-    return len(commands)
+def compile_sources(build: Path, dependencies: list, partial: bool = False) -> int:
+    databases: dict[Path, tuple[set, int]] = {}
+    for dependency in dependencies:
+        path = absolute_path(dependency.get("compile_database", str(build / "compile_commands.json")),
+                             f"{dependency['target']}.compile_database")
+        if not within(path, build):
+            raise AuditError(f"compilation database is outside this build: {path}")
+        if path not in databases:
+            if partial and not path.is_file() and not Path(dependency["artifact"]).is_file():
+                continue
+            try:
+                commands = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as error:
+                raise AuditError(f"cannot read {path}; configure with CMAKE_EXPORT_COMPILE_COMMANDS=ON: {error}") from error
+            if not isinstance(commands, list) or not commands:
+                raise AuditError(f"{path}: compilation database is empty or invalid")
+            sources = set()
+            for command in commands:
+                if not isinstance(command, dict) or not isinstance(command.get("file"), str):
+                    raise AuditError(f"{path}: invalid compilation database entry")
+                directory = Path(command.get("directory", str(build)))
+                source = Path(command["file"])
+                sources.add((source if source.is_absolute() else directory / source).resolve())
+            databases[path] = (sources, len(commands))
+        root = Path(dependency["source_dir"])
+        if not any(within(source, root) for source in databases[path][0]):
+            raise AuditError(f"{dependency['target']}: no compilation command consumes its locked source tree: {root}")
+    return sum(count for _, count in databases.values())
 
 
 def expand_responses(tokens: list, directory: Path, depth=0) -> list:
@@ -260,7 +276,20 @@ def elf_dependencies(build: Path, dependencies: list) -> list:
         audit_runtime_search_paths(rpaths, binary, build)
         resolved = parse_ldd(run_readonly(["ldd", str(binary)]), binary)
         managed = []
+        project_zlib = "libz.so.1" in needed or any(
+            name.startswith(("libgdal.so", "libassimp.so", "libIlmImf-", "libzip.so"))
+            for name, _ in resolved
+        )
         for name, path in resolved:
+            if LEGACY_OSG_LIBRARY.fullmatch(name):
+                raise AuditError(f"{binary}: obsolete OpenSceneGraph runtime dependency: {name}")
+            # Qt exercises its own system zlib in targets that never load the
+            # project data/asset libraries. Those Qt dependencies are external.
+            if (build / "third_party/base/.complete").is_file() and BUNDLED_LIBRARY.fullmatch(name):
+                if name != "libz.so.1" or project_zlib:
+                    provider = (build / "third_party/install/openusd" if name.startswith("libusd_")
+                                else build / "third_party/base")
+                    require_local_library(path, provider, f"bundled dependency of {binary}")
             if managed_library(Path(name)) or managed_library(path):
                 require_local_library(path, build, f"runtime dependency of {binary}", artifacts)
                 managed.append({"soname": name, "path": str(path.resolve())})
@@ -302,7 +331,7 @@ def audit(repo: Path, build: Path, report_path: Path, report_only: bool = False,
     partial = allow_unbuilt and bool(pending)
     result = {"schema": "vsgraysim.dependencies.audit", "version": 1, "ok": True, "complete": not (report_only or partial), "strict_clean": verification["strict_clean"], "mode": "report-only" if report_only else "partial" if partial else "full", "pending_targets": pending, "build_dir": str(build), "verification": verification, "dependencies": dependencies}
     if not report_only:
-        result["compilation_commands"] = compile_sources(build, dependencies)
+        result["compilation_commands"] = compile_sources(build, dependencies, partial)
         result["link_commands"], result["managed_link_references"] = link_commands(build, dependencies, not partial)
         # A targeted build can legitimately leave the managed engine unbuilt.
         # Its source/link configuration is checked, but this is explicitly not

@@ -1,12 +1,12 @@
 # 海洋验证资产
 
-默认海洋演示已改用 `models/CG-57/cg57.osgb` 的真尺寸高细节巡洋舰。本目录仅保留显式小艇性能/海底碰撞对照。
+默认海洋演示已改用 `models/CG-57/cg57.vsgb` 的真尺寸高细节巡洋舰。本目录仅保留显式小艇性能/海底碰撞对照。
 
 这些网格、颜色和沙底纹理由 `tools/earth/build_ocean_demo_assets.py` 确定性生成，供 `config/earth/taipei-coast-ocean-reference-boat.vscene.json` 对照验证。不是实测船舶、潜航器或台北海底数据。
 
-- `test-vessel.osgb`：约 12 m 长的封闭测试船，体素化上限 128，测试体积平均密度 400 kg/m³。
-- `test-submersible.osgb`：约 8 m 长的封闭潜航器，体素化上限 96，测试平均密度 1025 kg/m³。
-- `assumed-seabed.osgb`：128 × 128 m 的人工起伏海底，顶面约 −14 m，底面 −18 m。
+- `test-vessel.vsgb`：约 12 m 长的封闭测试船，体素化上限 128，测试体积平均密度 400 kg/m³。
+- `test-submersible.vsgb`：约 8 m 长的封闭潜航器，体素化上限 96，测试平均密度 1025 kg/m³。
+- `assumed-seabed.vsgb`：128 × 128 m 的人工起伏海底，顶面约 −14 m，底面 −18 m。
 - OBJ 和 MTL 是可编辑源；OSGB 包含材质和纹理，用于引擎现有 OSG 导入链路。普通 OBJ 导入器目前不完整支持 MTL，因此场景引用 OSGB。
 
 密度包含封闭体积的浮力假设，不是钢材密度。破坏后仍沿用剩余占用体素的质量/体积；尚未模拟进水舱室、压载或真实船舶稳性参数。
