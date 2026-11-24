@@ -7,7 +7,7 @@
 
 ## 1. 为什么必须有专门的时序核心
 
-### 1.1 当前 [Simulation](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/Simulation.h) 的时间模型缺陷
+### 1.1 当前 [Simulation](../include/vsgraysim/Simulation.h) 的时间模型缺陷
 
 当前 `Simulation::run()` 自驱动 60Hz,内部 7 步串行:
 
@@ -457,7 +457,7 @@ public:
 
 ---
 
-## 9. 与现有 [Simulation](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/Simulation.h) 的对接
+## 9. 与现有 [Simulation](../include/vsgraysim/Simulation.h) 的对接
 
 ### 9.1 改造点(最小侵入)
 
@@ -497,8 +497,8 @@ private:
 
 | 文件 | 改动 |
 |------|------|
-| [Simulation.h](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/Simulation.h) | `step()` 改 public,新增 frame_id 参数 |
-| [Simulation.cpp](file:///home/mte/FOLD/GitProject/vsgraysimulation/src/Simulation.cpp) | 删 `run()` 自循环,改由外部驱动 |
+| [Simulation.h](../include/vsgraysim/Simulation.h) | `step()` 改 public,新增 frame_id 参数 |
+| [Simulation.cpp](../src/Simulation.cpp) | 删 `run()` 自循环,改由外部驱动 |
 | [main.cpp](file:///home/mte/FOLD/GitProject/vsgraysimulation/main.cpp) | 新增 `--federate ground` 模式,启动 GroundFederate |
 | 新增 `federate/MasterClock.cpp` | 时序核心进程 main |
 | 新增 `federate/FederateBase.h` | 公共接口 |

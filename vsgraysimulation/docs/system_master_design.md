@@ -392,16 +392,16 @@ public:
 
 | 模块 | 现有代码对应 | 步长 | 职责 |
 |------|-------------|------|------|
-| **PhysicsModule** | [PhysicsEngine](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer0_phys/PhysicsEngine.h) | 8.33ms (120Hz) | Bullet3 刚体动力学 |
-| **SceneBuildModule** | [SceneBuilder](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer1_scene/SceneBuilder.h) | 启动时 | 加载 gltf/obj,构建场景图 |
-| **RTModule** | [RayTracingPipelineWrap](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer2_rt/RayTracingPipelineWrap.h) | 16.6ms (60Hz) | Vulkan RT 光线追踪 |
-| **SignalModule** | [SignalProcessor](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer3_cuda/SignalProcessor.h) | 16.6ms (60Hz) | CUDA 信号处理 |
-| **SensorModule** | [SensorScheduler](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer4_sched/SensorScheduler.h) | 100ms (10Hz) | 发射时序调度 |
-| **VisModule** | [Visualizer](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer5_vis/Visualizer.h) | 16.6ms (60Hz) | VSG 可视化 |
-| **AtmosModule** | [AtmosphereModel](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer0_phys/AtmosphereModel.h) | 1s (1Hz) | 大气环境 |
+| **PhysicsModule** | [PhysicsEngine](../include/vsgraysim/layer0_phys/PhysicsEngine.h) | 8.33ms (120Hz) | Bullet3 刚体动力学 |
+| **SceneBuildModule** | [SceneBuilder](../include/vsgraysim/layer1_scene/SceneBuilder.h) | 启动时 | 加载 gltf/obj,构建场景图 |
+| **RTModule** | [RayTracingPipelineWrap](../include/vsgraysim/layer2_rt/RayTracingPipelineWrap.h) | 16.6ms (60Hz) | Vulkan RT 光线追踪 |
+| **SignalModule** | [SignalProcessor](../include/vsgraysim/layer3_cuda/SignalProcessor.h) | 16.6ms (60Hz) | CUDA 信号处理 |
+| **SensorModule** | [SensorScheduler](../include/vsgraysim/layer4_sched/SensorScheduler.h) | 100ms (10Hz) | 发射时序调度 |
+| **VisModule** | [Visualizer](../include/vsgraysim/layer5_vis/Visualizer.h) | 16.6ms (60Hz) | VSG 可视化 |
+| **AtmosModule** | [AtmosphereModel](../include/vsgraysim/layer0_phys/AtmosphereModel.h) | 1s (1Hz) | 大气环境 |
 | **OrbitModule** | 新增 | 1s (1Hz) | 轨道动力学 |
 | **AeroModule** | 新增 | 1ms (1000Hz) | 飞行器空气动力学 |
-| **CrossInducModule** | [CrossInductionDetector](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer2_rt/CrossInductionDetector.h) | 事件驱动 | 跨频段互扰 |
+| **CrossInducModule** | [CrossInductionDetector](../include/vsgraysim/layer2_rt/CrossInductionDetector.h) | 事件驱动 | 跨频段互扰 |
 
 ### 5.3 ModuleRegistry(模块注册)
 
@@ -644,13 +644,13 @@ SimModule 框架自动根据部署清单选择通信方式(线程间 std::shared
 
 | 现有 | 改造为 | 改动量 |
 |------|--------|--------|
-| [Simulation](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/Simulation.h) | 大系统容器/编排器 | 中 |
-| [PhysicsEngine](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer0_phys/PhysicsEngine.h) | PhysicsModule | 小(加 SimModule 包装) |
-| [SceneBuilder](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer1_scene/SceneBuilder.h) | SceneBuildModule | 小 |
-| [RayTracingPipelineWrap](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer2_rt/RayTracingPipelineWrap.h) | RTModule | 小 |
-| [SignalProcessor](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer3_cuda/SignalProcessor.h) | SignalModule | 小 |
-| [SensorScheduler](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer4_sched/SensorScheduler.h) | SensorModule | 小 |
-| [Visualizer](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer5_vis/Visualizer.h) | VisModule | 小 |
+| [Simulation](../include/vsgraysim/Simulation.h) | 大系统容器/编排器 | 中 |
+| [PhysicsEngine](../include/vsgraysim/layer0_phys/PhysicsEngine.h) | PhysicsModule | 小(加 SimModule 包装) |
+| [SceneBuilder](../include/vsgraysim/layer1_scene/SceneBuilder.h) | SceneBuildModule | 小 |
+| [RayTracingPipelineWrap](../include/vsgraysim/layer2_rt/RayTracingPipelineWrap.h) | RTModule | 小 |
+| [SignalProcessor](../include/vsgraysim/layer3_cuda/SignalProcessor.h) | SignalModule | 小 |
+| [SensorScheduler](../include/vsgraysim/layer4_sched/SensorScheduler.h) | SensorModule | 小 |
+| [Visualizer](../include/vsgraysim/layer5_vis/Visualizer.h) | VisModule | 小 |
 
 ### 8.2 Simulation 类的改造
 

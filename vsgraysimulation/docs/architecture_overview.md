@@ -486,7 +486,7 @@ SimContext 结构:
 
 ### 9.1 系统树配置
 
-[system_tree.json](file:///home/mte/FOLD/GitProject/vsgraysimulation/config/system_tree.json) 定义完整系统树：
+[system_tree.json](../config/system_tree.json) 定义完整系统树：
 
 ```json
 {

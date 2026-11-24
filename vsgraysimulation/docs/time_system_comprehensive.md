@@ -806,7 +806,7 @@ T=100ms: TimeSystem 广播 TimeTick(major=N+1)
 
 ## 11. 与现有代码对接
 
-### 11.1 现有 [SensorScheduler](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer4_sched/SensorScheduler.h) 改造
+### 11.1 现有 [SensorScheduler](../include/vsgraysim/layer4_sched/SensorScheduler.h) 改造
 
 ```cpp
 // 现有: 单进程内按 PRR 排序发射
@@ -839,7 +839,7 @@ class SensorModule : public SimModule {
 };
 ```
 
-### 11.2 现有 [SignalProcessor](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer3_cuda/SignalProcessor.h) 改造
+### 11.2 现有 [SignalProcessor](../include/vsgraysim/layer3_cuda/SignalProcessor.h) 改造
 
 ```cpp
 class SignalModule : public SimModule {
@@ -868,7 +868,7 @@ class SignalModule : public SimModule {
 };
 ```
 
-### 11.3 现有 [CrossInductionDetector](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer2_rt/CrossInductionDetector.h) 改造
+### 11.3 现有 [CrossInductionDetector](../include/vsgraysim/layer2_rt/CrossInductionDetector.h) 改造
 
 ```cpp
 // 改造为事件订阅者
@@ -900,13 +900,13 @@ class CrossInducModule : public SimModule {
 - [ ] 定义 `Timestamp` / `TimeTick` / `SimEvent` 数据结构
 - [ ] 实现 `PoseInterpolationService`(Hermite 插值)
 - [ ] 实现 `EventBus`(进程内 pub-sub)
-- [ ] 现有 [Simulation::step()](file:///home/mte/FOLD/GitProject/vsgraysimulation/src/Simulation.cpp) 加 frame_id 参数
+- [ ] 现有 [Simulation::step()](../src/Simulation.cpp) 加 frame_id 参数
 
 **验收**: 现有功能不退化
 
 ### 阶段 B: 脉冲时序化(2 周)
 
-- [ ] 改造 [SensorScheduler](file:///home/mte/FOLD/GitProject/vsgraysimulation/include/vsgraysim/layer4_sched/SensorScheduler.h) 生成 `PulseEvent` 流
+- [ ] 改造 [SensorScheduler](../include/vsgraysim/layer4_sched/SensorScheduler.h) 生成 `PulseEvent` 流
 - [ ] 实现脉冲级平台位姿插值
 - [ ] RT 批量调度(按时间窗分组)
 - [ ] 验证脉冲时序精度 < 1μs

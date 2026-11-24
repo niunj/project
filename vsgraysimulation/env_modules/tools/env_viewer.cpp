@@ -3127,7 +3127,7 @@ int main(int argc, char** argv)
             // 中文字体 (NotoSansCJKSC) —— 用户工作区 fonts/
             namespace fs = std::filesystem;
             for (const auto& fp : {fs::path("fonts/NotoSansCJKSC.ttf"),
-                                   fs::path("/home/mte/FOLD/GitProject/vsgraysimulation/fonts/NotoSansCJKSC.ttf")}) {
+                                   fs::path(VSGRAYSIM_ENV_VIEWER_FONT)}) {
                 std::error_code ec;
                 if (fs::exists(fp, ec) && ImGui::GetIO().Fonts->AddFontFromFileTTF(
                         fp.string().c_str(), 18.0f, nullptr,

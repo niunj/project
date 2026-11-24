@@ -79,6 +79,8 @@ target_link_libraries(voxel_model_states PRIVATE vsgraysim_core vsgraysim_voxel_
 target_include_directories(voxel_model_states PRIVATE "${CMAKE_SOURCE_DIR}/env_modules/src" "${CMAKE_SOURCE_DIR}/lib/voxel_earth/src" "${CMAKE_SOURCE_DIR}/include")
 
 add_executable(env_viewer tools/env_viewer.cpp)
+target_compile_definitions(env_viewer PRIVATE
+    VSGRAYSIM_ENV_VIEWER_FONT="${CMAKE_CURRENT_SOURCE_DIR}/../fonts/NotoSansCJKSC.ttf")
 # 直调 rocky (VSGContextFactory) + GeoFrame.h 纯数学共享头 (头文件级复用, 不链接 gui);
 # vsgraysim_objloader: 传感器分支 OBJ 场景加载; vsgraysim_product_dispatch:
 # 传感器分支产品发布 (EquipmentRegistry / ProductDispatcher)。

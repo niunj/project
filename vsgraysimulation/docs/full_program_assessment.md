@@ -1,6 +1,6 @@
 # 场景设计、仿真与现有显控的完整程序评估
 
-实施更新：本报告以下审计为 P0 实施前的评估快照。多客户端租约、独立装备显示与按需 GPU 任务进程池的当前实现见 [正式链路与进程设计](formal_scene_chain.md)。正式体素源、专题保存和原显控接收的最新使用方式见 [体素装备仿真与显控](/home/mte/FOLD/GitProject/vsgraysimulation/docs/voxel_equipment.md)。
+实施更新：本报告以下审计为 P0 实施前的评估快照。多客户端租约、独立装备显示与按需 GPU 任务进程池的当前实现见 [正式链路与进程设计](formal_scene_chain.md)。正式体素源、专题保存和原显控接收的最新使用方式见 [体素装备仿真与显控](../docs/voxel_equipment.md)。
 
 评估日期：2026-11-22。依据当前源码与已有本机验收记录；本文是设计和实施依据，不表示以下改造已经完成。本轮只补充评估文档，未改动应用运行逻辑。
 
@@ -28,13 +28,13 @@
 
 ### 主要源码证据
 
-- [正式场景序列化和启动仿真](/home/mte/FOLD/GitProject/vsgraysimulation/gui/SceneDesignerWindow.cpp:3087)：`sceneDocument()`、`saveScenarioToPath()` 与专题入口分离；[专题加载](/home/mte/FOLD/GitProject/vsgraysimulation/gui/viewport3d/ViewportConfig.cpp:122) 另行配置体素场景。需用保存—重开—正式启动测试确认往返完整性。
-- [正式 Simulation 入口](/home/mte/FOLD/GitProject/vsgraysimulation/src/Simulation.cpp:133) 和 [EquipmentDataSource](/home/mte/FOLD/GitProject/vsgraysimulation/src/broker/EquipmentDataSource.cpp) 仍围绕原 `Simulation`；未调用新的体素多装备运行时。
-- [现有仿真工作线程](/home/mte/FOLD/GitProject/vsgraysimulation/gui/SimulationControlWindow.cpp:2048) 已承担运行推进，因此不能说当前全部计算还在 GUI。问题是同进程锁、[同步初始化](/home/mte/FOLD/GitProject/vsgraysimulation/gui/SimulationControlWindow.cpp:1170)、同步单步及停止等待。
-- [现有显控链接装配](/home/mte/FOLD/GitProject/vsgraysimulation/gui/display/ControlWorkbench.cpp:249) 已存在，不应替换。当前循环调用同步 `linkAttach()`；[面板 tick](/home/mte/FOLD/GitProject/vsgraysimulation/gui/display/SensorPanels.cpp:100) 包含检测等工作，需移出 GUI 热路径。
-- [BrokerNet 建链](/home/mte/FOLD/GitProject/vsgraysimulation/src/broker/BrokerNet.cpp:537) 以全局装备 ID 集合维护链接；一个客户端解绑会取消全局订阅，不足以支持多个独立显控客户端。
-- [实际 IPC](/home/mte/FOLD/GitProject/vsgraysimulation/lib/ipc/ShmTransport.cpp:1) 是有边界的 UDS 传输，单载荷上限 16 MiB。类名或 GPU 句柄类型的存在不证明全链路零拷贝。
-- [海洋传感器限制](/home/mte/FOLD/GitProject/vsgraysimulation/src/earth/VoxelSensorSession.cpp:19)、[当前晴空环境绑定](/home/mte/FOLD/GitProject/vsgraysimulation/src/earth/VoxelEquipmentRuntime.cpp:63) 是明确能力边界。
+- [正式场景序列化和启动仿真](../gui/SceneDesignerWindow.cpp:3087)：`sceneDocument()`、`saveScenarioToPath()` 与专题入口分离；[专题加载](../gui/viewport3d/ViewportConfig.cpp:122) 另行配置体素场景。需用保存—重开—正式启动测试确认往返完整性。
+- [正式 Simulation 入口](../src/Simulation.cpp:133) 和 [EquipmentDataSource](../src/broker/EquipmentDataSource.cpp) 仍围绕原 `Simulation`；未调用新的体素多装备运行时。
+- [现有仿真工作线程](../gui/SimulationControlWindow.cpp:2048) 已承担运行推进，因此不能说当前全部计算还在 GUI。问题是同进程锁、[同步初始化](../gui/SimulationControlWindow.cpp:1170)、同步单步及停止等待。
+- [现有显控链接装配](../gui/display/ControlWorkbench.cpp:249) 已存在，不应替换。当前循环调用同步 `linkAttach()`；[面板 tick](../gui/display/SensorPanels.cpp:100) 包含检测等工作，需移出 GUI 热路径。
+- [BrokerNet 建链](../src/broker/BrokerNet.cpp:537) 以全局装备 ID 集合维护链接；一个客户端解绑会取消全局订阅，不足以支持多个独立显控客户端。
+- [实际 IPC](../lib/ipc/ShmTransport.cpp:1) 是有边界的 UDS 传输，单载荷上限 16 MiB。类名或 GPU 句柄类型的存在不证明全链路零拷贝。
+- [海洋传感器限制](../src/earth/VoxelSensorSession.cpp:19)、[当前晴空环境绑定](../src/earth/VoxelEquipmentRuntime.cpp:63) 是明确能力边界。
 
 这些判断来自调用路径；没有对本轮未运行的多客户端故障、长期运行或全场景吞吐作实测结论。历史架构文档中的“多种独立显控进程”和“共享内存零拷贝”设想，不作为当前已完成能力。
 
@@ -169,7 +169,7 @@ stateDiagram-v2
 | 台北海岸、真实尺寸 CG-57、云与现有海洋 | 冻结绘制提交+等待中位 12.52 ms；动态绘制 26.29 ms；浮力 31.44 ms；场景推进 46.73 ms；推进+绘制 73.26 ms / 40 ms 仿真区间 | 尚非实时；浮力包含在推进内，不能重复相加。动态只测试 0.8 s，不含多波段采集、长期稳性、完整 GUI/传输 |
 | 晴空陆地固定 F-16、三台 192×144 成像设备与小规模雷达 | 冻结绘制 3.109 ms；传感器生成平均 14.613 ms；推进+设备生成+绘制平均 17.164 ms / 20 ms 步长 | 设备按各自周期采集，不是每个 tick 同时生成四台产品；未含显控 CFAR、IPC、导出，不能套用整舰场景 |
 
-来源：[专题历史指标](/home/mte/FOLD/GitProject/vsgraysimulation/build/scene-topic/validation-summary.json)、[体素装备历史验收](/home/mte/FOLD/GitProject/vsgraysimulation/build/voxel-equipment/validation-report.md)。这些是历史结果，本轮没有重新开展 Vulkan 性能或实拍验收。
+来源：[专题历史指标](../build/scene-topic/validation-summary.json)、[体素装备历史验收](../build/voxel-equipment/validation-report.md)。这些是历史结果，本轮没有重新开展 Vulkan 性能或实拍验收。
 
 移到后台进程主要解决界面响应、生命周期和崩溃边界，不会自动降低浮力或接触求解耗时。当前整舰案例的场景推进本身已超过 40 ms，必须优化计算，不能只靠拆进程宣称实时。
 
@@ -218,6 +218,6 @@ P4 的测量从 P0 就开始，不能最后才发现性能回退；复杂共享�
 
 ## 12. 本轮验证和未完成事项
 
-本轮重跑 `simulation_product_process_link`、`simulation_kernel_lifecycle`、`display_sensor_sessions`，3/3 通过，总计约 1.53 s。日志：[contracts.log](/home/mte/FOLD/GitProject/vsgraysimulation/build/program-assessment/contracts.log)。它们验证已有进程产品契约、核心生命周期和显控会话相关行为，不证明体素专题已经通过三个正式软件，也不证明性能、全天候或海洋观测已达标。
+本轮重跑 `simulation_product_process_link`、`simulation_kernel_lifecycle`、`display_sensor_sessions`，3/3 通过，总计约 1.53 s。日志：[contracts.log](../build/program-assessment/contracts.log)。它们验证已有进程产品契约、核心生命周期和显控会话相关行为，不证明体素专题已经通过三个正式软件，也不证明性能、全天候或海洋观测已达标。
 
 本轮交付的是基于源码的完整设计评估。P0–P4、后台工作进程、共享内存、界面重整和完整验收仍是后续实施任务；没有把计划写成已完成能力。

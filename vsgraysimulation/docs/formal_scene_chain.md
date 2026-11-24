@@ -26,7 +26,7 @@
 - **原界面复用**：综合台共用一处三维外景。数据表、电源按钮和运行状态随测量刷新更新；没有新增显控可执行程序。
 - **设备和窗口生命周期**：后台使用自己的 GPU 逻辑设备，界面不再等待预览设备来初始化正式传感器。各界面进程内部仍共享渲染设备；Qt 地球面板不创建未使用的全局 ImGui 后端，窄视口按实际原生尺寸创建交换链。
 
-关键代码：[正式源及工程解析](/home/mte/FOLD/GitProject/vsgraysimulation/src/broker/VoxelEquipmentSource.cpp)、[仿真窗口接入](/home/mte/FOLD/GitProject/vsgraysimulation/gui/SimulationControlWindow.cpp)、[场景保存与交付](/home/mte/FOLD/GitProject/vsgraysimulation/gui/SceneDesignerWindow.cpp)、[原显控链接装配](/home/mte/FOLD/GitProject/vsgraysimulation/gui/display/ControlWorkbench.cpp)、[三维消费者](/home/mte/FOLD/GitProject/vsgraysimulation/gui/display/EarthPanel.cpp)。
+关键代码：[正式源及工程解析](../src/broker/VoxelEquipmentSource.cpp)、[仿真窗口接入](../gui/SimulationControlWindow.cpp)、[场景保存与交付](../gui/SceneDesignerWindow.cpp)、[原显控链接装配](../gui/display/ControlWorkbench.cpp)、[三维消费者](../gui/display/EarthPanel.cpp)。
 
 ## 必须保留的边界
 
@@ -59,7 +59,7 @@ python3 tools/validate_formal_chain.py --output build/formal-chain/accepted
 - 暂停后等待有界的 UI 状态收敛，保留最后产品；校验源端和显控最新产品的帧号及原始载荷 SHA-256。
 - 实际 Vulkan 子窗口截图、原生视口不越界，以及仿真和显控正常退出。
 
-结果目录：[实际联调指标](/home/mte/FOLD/GitProject/vsgraysimulation/build/formal-chain/accepted/report.json)、[场景重开](/home/mte/FOLD/GitProject/vsgraysimulation/build/formal-chain/accepted/designer-reopened.png)、[正式仿真](/home/mte/FOLD/GitProject/vsgraysimulation/build/formal-chain/accepted/simulation-ready.png)、[原显控](/home/mte/FOLD/GitProject/vsgraysimulation/build/formal-chain/accepted/display-paused.png)。回归日志：[regression.log](/home/mte/FOLD/GitProject/vsgraysimulation/build/program-assessment/regression.log)。
+结果目录：[实际联调指标](../build/formal-chain/accepted/report.json)、[场景重开](../build/formal-chain/accepted/designer-reopened.png)、[正式仿真](../build/formal-chain/accepted/simulation-ready.png)、[原显控](../build/formal-chain/accepted/display-paused.png)。回归日志：[regression.log](../build/program-assessment/regression.log)。
 
 ## 尚未包含
 
@@ -170,7 +170,7 @@ ctest --test-dir build --output-on-failure -R 'subscription_client_leases|voxel_
 
 最终 11 项回归全部通过（32.37 s），覆盖结构断裂、场景运行、进程产品链路、装备通道、GPU 进程数值等价、订阅租约与实际字节路由、正式工程、异步显示、工作台、原飞机控制台及地球上下文。日志为 `build/task-pool-final-regression.log`。GPU 等价回归要求权威检查点和 VIS 精确相等；独立执行的 RD 按已说明的 FP32 累加误差界验证，同一传输产品仍要求逐载荷哈希精确相等。
 
-查看 [最终原始报告](/home/mte/FOLD/GitProject/vsgraysimulation/build/multi-display/accepted/report.json)、[仿真及进程监控截图](/home/mte/FOLD/GitProject/vsgraysimulation/build/multi-display/accepted/simulation/simulation-multidisplay.png)、[总显控截图](/home/mte/FOLD/GitProject/vsgraysimulation/build/multi-display/accepted/assembly-a/assembly-a.png)、[红外装备子窗口](/home/mte/FOLD/GitProject/vsgraysimulation/build/multi-display/accepted/assembly-a-equipment-7102.png)。
+查看 [最终原始报告](../build/multi-display/accepted/report.json)、[仿真及进程监控截图](../build/multi-display/accepted/simulation/simulation-multidisplay.png)、[总显控截图](../build/multi-display/accepted/assembly-a/assembly-a.png)、[红外装备子窗口](../build/multi-display/accepted/assembly-a-equipment-7102.png)。
 
 ## GPU 多装备批处理与调度
 
@@ -222,4 +222,4 @@ python3 tools/compare_gpu_batches.py
 
 最终优化运行使用 `--quiet-gpu-sampling`：仅验收脚本在采样前暂停，最多等待 30 秒避开其他 GPU 计算进程，再恢复并重置统计；不改变正式软件的播放策略。最终两次采样的起止 GPU 进程快照均未发现本工程之外的计算进程，这不是全过程独占 GPU 的保证。受外部 GPU 计算干扰的一轮单独保存于 `build/gpu-batch/prefix-contended`，不纳入上述指标。阶段一中间记录保留于 `build/gpu-batch/queued-stage`，没有将不同运行的最佳指标拼成最终结果。
 
-复核 [最终对照报告](/home/mte/FOLD/GitProject/vsgraysimulation/build/gpu-batch/comparison.json)、[串行原始报告](/home/mte/FOLD/GitProject/vsgraysimulation/build/gpu-batch/reference/report.json)、[优化原始报告](/home/mte/FOLD/GitProject/vsgraysimulation/build/gpu-batch/optimized/report.json)、[同机位串行 Vulkan 截图](/home/mte/FOLD/GitProject/vsgraysimulation/build/gpu-batch/reference/simulation/simulation-multidisplay-earth.png)、[同机位优化 Vulkan 截图](/home/mte/FOLD/GitProject/vsgraysimulation/build/gpu-batch/optimized/simulation/simulation-multidisplay-earth.png)。
+复核 [最终对照报告](../build/gpu-batch/comparison.json)、[串行原始报告](../build/gpu-batch/reference/report.json)、[优化原始报告](../build/gpu-batch/optimized/report.json)、[同机位串行 Vulkan 截图](../build/gpu-batch/reference/simulation/simulation-multidisplay-earth.png)、[同机位优化 Vulkan 截图](../build/gpu-batch/optimized/simulation/simulation-multidisplay-earth.png)。
