@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#08131c">
+    <title>裂环对决 · 45° 俯视格斗</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        min-height: 100vh;
+        min-height: 100svh;
+        display: grid;
+        align-content: center;
+        justify-items: center;
+        background: radial-gradient(ellipse at 50% 52%, #1b3443 0%, #08131c 67%);
+        color: #b9d7dc;
+        font: 14px sans-serif;
+      }
+      main {
+        width: min(100%, 1120px, 177.78vh);
+        width: min(100%, 1120px, 177.78svh);
+        aspect-ratio: 16 / 9;
+        background: #09151d;
+        box-shadow: 0 12px 70px #0008;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      canvas[data-state="menu"], canvas[data-state="select"], canvas[data-state="demo"], canvas[data-state$="End"], canvas[data-state="paused"] { cursor: pointer; }
+      .rotate { display: none; }
+      @media (orientation: portrait) and (max-width: 640px) {
+        .rotate { display: block; margin: 14px 12px 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas id="duel" role="application" aria-label="裂环对决。用方向键选择英雄，回车确认。对战用 WASD 移动，J、K、U、I、O 依次触发普攻到超大招，L 闪避。">
+        裂环对决需要支持 Canvas 的浏览器。
+      </canvas>
+    </main>
+    <p class="rotate">横屏游玩，操作区更大。</p>
+    <script src="src/roster.js"></script>
+    <script src="src/duel.js"></script>
+    <script src="src/view.js"></script>
+    <script src="src/rig.js"></script>
+    <script src="src/arena.js"></script>
+    <script src="src/supers.js"></script>
+    <script src="src/audio.js"></script>
+    <script src="src/stage.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

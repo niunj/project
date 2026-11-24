@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>通用小游戏 - 浏览器测试版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+
+        #game-container {
+            position: relative;
+            width: 375px;
+            height: 667px;
+            background: #1a1a2e;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .controls {
+            position: absolute;
+            top: 10px;
+            right: -120px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .controls button {
+            padding: 10px 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .controls button:hover {
+            background: #45a049;
+        }
+
+        .controls button.share {
+            background: #2196F3;
+        }
+
+        .controls button.share:hover {
+            background: #0b7dda;
+        }
+
+        .info {
+            position: absolute;
+            bottom: -60px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <!-- 游戏画布将在这里创建 -->
+    </div>
+
+    <div class="controls">
+        <button onclick="showAd()">观看广告</button>
+        <button onclick="shareGame()" class="share">分享</button>
+    </div>
+
+    <div class="info">
+        在浏览器中测试游戏逻辑<br>
+        可移植到抖音小游戏平台
+    </div>
+
+    <!-- 引入游戏脚本 -->
+    <script src="src/adapter.js"></script>
+    <script src="src/ad-manager.js"></script>
+    <script src="src/game-core.js"></script>
+    <script>
+        // 创建游戏实例
+        let game;
+        let adapter;
+        let gameCore;
+        let adManager;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            // 创建适配器
+            adapter = new GameAdapter();
+
+            // 创建游戏核心
+            gameCore = new GameCore(adapter);
+
+            // 创建广告管理器
+            adManager = new AdManager(adapter);
+
+            // 将画布移动到容器中
+            const container = document.getElementById('game-container');
+            if (adapter.canvas) {
+                adapter.canvas.style.border = 'none';
+                container.appendChild(adapter.canvas);
+            }
+
+            // 启动游戏
+            gameCore.start();
+        });
+
+        // 显示广告
+        function showAd() {
+            if (!adManager) return;
+
+            adManager.showRewardedVideo(
+                () => {
+                    // 获得奖励
+                    gameCore.state.lives++;
+                    gameCore.state.score += 50;
+                    adapter.showToast({
+                        title: '获得奖励：+1生命，+50分',
+                        icon: 'success'
+                    });
+                },
+                (err) => {
+                    console.log('广告失败:', err);
+                }
+            );
+        }
+
+        // 分享游戏
+        function shareGame() {
+            if (!adapter) return;
+
+            adapter.share({
+                title: '我在玩这个游戏，得分：' + (gameCore ? gameCore.state.score : 0),
+                imageUrl: '',
+                query: 'score=' + (gameCore ? gameCore.state.score : 0)
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "appid": "touristappid",
+  "projectname": "断层航线",
+  "description": "单指拖动飞机，穿过陨石带的竖屏生存挑战",
+  "miniprogramRoot": "./",
+  "compileType": "game",
+  "setting": {
+    "es6": true
+  },
+  "packOptions": {
+    "ignore": [
+      { "type": "file", "value": "index.html" },
+      { "type": "file", "value": "README.md" }
+    ]
+  }
+}

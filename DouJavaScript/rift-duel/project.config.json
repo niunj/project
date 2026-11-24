@@ -1,0 +1,14 @@
+{
+  "appid": "touristappid",
+  "projectname": "裂环对决",
+  "description": "原创 2.5D 对打小游戏，纵深走位、极限闪避与能量绝技",
+  "miniprogramRoot": "./",
+  "compileType": "game",
+  "setting": { "es6": true },
+  "packOptions": {
+    "ignore": [
+      { "type": "file", "value": "index.html" },
+      { "type": "file", "value": "README.md" }
+    ]
+  }
+}

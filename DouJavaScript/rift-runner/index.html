@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0b0a11">
+    <title>断层航线 · 飞机躲避小游戏</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: #09080e;
+      }
+      body {
+        display: grid;
+        justify-items: center;
+        background: radial-gradient(ellipse at center, #201a32 0%, #09080e 67%);
+      }
+      main {
+        width: min(100%, 440px);
+        height: 100vh;
+        height: 100svh;
+        background: #0b0a11;
+        box-shadow: 0 0 86px #0009;
+      }
+      canvas {
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        user-select: none;
+      }
+      @media (pointer: fine) {
+        canvas {
+          cursor: pointer;
+        }
+        canvas[data-state="playing"] {
+          cursor: crosshair;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas id="rift-game" role="application" aria-label="断层航线。拖动飞机躲避，点击绿色补给回血。擦边充能后点击相位反击，键盘 X 也可触发。空格开始、暂停和重开，方向键或 WASD 操控。">
+        断层航线需要支持 Canvas 的浏览器。
+      </canvas>
+    </main>
+    <script src="src/flight.js"></script>
+    <script src="src/renderer.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "miniprogramRoot": "./",
+  "compileType": "game",
+  "projectname": "douyin-game-template",
+  "description": "抖音小游戏基础模板",
+  "appid": "touristappid",
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": false
+  },
+  "simulatorType": "wechat",
+  "simulatorPluginLibVersion": {},
+  "condition": {}
+}
