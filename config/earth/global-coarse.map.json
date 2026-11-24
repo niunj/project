@@ -1,0 +1,11 @@
+{
+  "format": "voxel-geodetic-v1",
+  "profile": "global-geodetic",
+  "cells_per_tile": 12,
+  "peripheral_lod_delta": 1,
+  "texels_per_tile": 64,
+  "vertical_step_m": 5,
+  "dem": {"uri": "${VSGRAYSIM_EARTH_DATA_ROOT}/worldHeight/{z}/{x}/{-y}.tif", "max_level": 5},
+  "imagery": {"uri": "${VSGRAYSIM_EARTH_DATA_ROOT}/worldTexture_tiff/{z}/{x}/{-y}.tif", "max_level": 3},
+  "earth": {"backend":"voxel", "strict":true, "vertical_datum":"unknown", "provenance_assumed":true, "min_lod":6, "max_lod":12, "initial_lod":9}
+}

@@ -1,0 +1,55 @@
+{
+  "scenario_name": "JLG 城区多传感器成像验证场景",
+  "description": "JLG 城区 OBJ 地表模型 (201 万三角形, 613 材质贴图槽) 用于 TV 可见光/LWIR 红外成像验证: 地理锚点取模型中心点 WGS84 坐标, 单地形面组覆盖全部三角形。三维基座 = rocky 地球 (粗底图/地形包), terrain_ref 仅接受地形工程 (.ter/.vsgterrain) 或 rocky 地形包 (.map.json)。",
+  "version": "1.0",
+
+  "factions": { "blue": "蓝方 (观测)", "red": "红方 (城防)" },
+
+  "geo_anchor": {
+    "lat": 25.1395009659,
+    "lon": 121.7444998737,
+    "alt": 29.9,
+    "heading_deg": 0.0
+  },
+  "map_ref": "models/JLG/模型中心点经纬度.txt",
+
+  "ground": {
+    "temp_k": 302.0,
+    "emissivity": 0.92
+  },
+
+  "objects": [
+    {
+      "object_id": "jlg_city_terrain",
+      "mesh_path": "models/JLG/JLG.obj",
+      "face_count": 2012809,
+      "type": "terrain",
+      "tags": ["terrain"],
+      "faction": "red",
+      "physics": { "mass": 0 },
+      "face_groups": [
+        {
+          "group_id": "city_imagery",
+          "face_range": [0, 2012809],
+          "vis_params": { "brdf_type": "diffuse", "albedo": 0.45, "roughness": 0.85 },
+          "lwir_params": { "emissivity": 0.92, "base_temp": 302.0 },
+          "radar_x_params": { "sigma0_db": -14.0, "surface_rough": 0.7 }
+        }
+      ]
+    }
+  ],
+
+  "atmosphere": {
+    "config_path": "config/atmosphere_layers.json",
+    "weather_scenario": "clear",
+    "weather_severity": 0.2
+  },
+
+  "simulation": {
+    "frame_dt": 0.01667,
+    "total_duration": 30.0,
+    "max_frames": 1800,
+    "window_width": 1920,
+    "window_height": 1080
+  }
+}

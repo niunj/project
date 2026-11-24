@@ -1,0 +1,32 @@
+#version 450
+layout(local_size_x=4,local_size_y=4,local_size_z=4) in;
+layout(set=0,binding=0,rgba32f) readonly uniform image3D state0;
+layout(set=0,binding=1,rgba32f) writeonly uniform image3D state1;
+layout(std140,set=0,binding=4) uniform CloudParams {
+    vec4 originCell; vec4 gridDt; vec4 windHumidity; vec4 thermo;
+    vec4 phase; vec4 flow; vec4 colliderMeta;
+    vec4 colliderCentre[32]; vec4 colliderVelocity[32];
+} p;
+// Downward donor-cell flux (kg/m^2/s). No rain enters through the upper
+// boundary; rain leaving the lower boundary is precipitation, not air motion.
+float flux(ivec3 c) {
+    if(c.y>=int(p.gridDt.y))return 0.;
+    float rain=max(imageLoad(state0,c).a,0.);
+    float terminal=min(8.5,.45+900.*rain);
+    return rain*min(terminal,p.originCell.w/p.gridDt.w);
+}
+void main() {
+    ivec3 c=ivec3(gl_GlobalInvocationID.xyz);
+    if(any(greaterThanEqual(c,ivec3(p.gridDt.xyz))))return;
+    vec4 s=imageLoad(state0,c);
+    s.a=max(0.,s.a+p.gridDt.w/p.originCell.w*(flux(c+ivec3(0,1,0))-flux(c)));
+    float height=(float(c.y)+.5)*p.originCell.w;
+    float ambient=max(p.thermo.x-p.thermo.w*height,190.);
+    float pressure=p.thermo.y*exp(-p.thermo.z*height/(287.05*p.thermo.x));
+    float rho=pressure/(287.05*ambient),tc=ambient+s.b-273.15;
+    float es=610.94*exp(17.625*tc/(tc+243.04));
+    float qs=.622*es/max(pressure-es,1000.);
+    float evaporated=min(s.a,max(qs-s.r,0.)*rho*(1.-exp(-p.phase.y*p.gridDt.w)));
+    s.a-=evaporated;s.r+=evaporated/rho;s.b-=2490.*evaporated/rho;
+    imageStore(state1,c,s);
+}

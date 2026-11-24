@@ -1,0 +1,82 @@
+// radar_scatter.comp —— P1.1: 雷达散射体提取 (G-buffer 消费者, 替换 radar_scatter RT 三段)。
+// σ 模型 (与旧 radar_scatter.rchit 同式): 法向入射菲涅尔反射率 |Γ|² (复介电常数)
+// × sigma0 线性 × 粗糙度衰减, 相位取 arg(Γ)。
+// 散射体槽位 = G-buffer 像素索引 (每线程独占, 无原子竞争); hit=0 (天空) 槽位清零;
+// 速度恒 0 (静态场景, 微多普勒待动目标接入)。
+#version 460
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D inG0;   // (T, eps, range_m, hit)
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D inG1;   // (pos.xyz ENU, matId)
+
+layout(set = 0, binding = 2) coherent buffer ScatterPos { vec4 scatterPos[]; };  // [pos.xyz, hit]
+layout(set = 0, binding = 3) coherent buffer ScatterSig { vec4 scatterSig[]; };  // [σ.re, σ.im, R0, 0]
+layout(set = 0, binding = 4) buffer MatBuf { vec4 radarMats[]; };                // 3 vec4/材质 (批次4: +介电模型)
+
+// 批次4: 雷达载频 push (x = Hz, RadarChain 构建期 c/λ 打包; 介电模型频变消费)
+layout(push_constant) uniform ScatPush { vec4 freq; };
+
+void main() {
+    const uint pid = gl_GlobalInvocationID.x;
+    const ivec2 size = imageSize(inG0);
+    if (pid >= uint(size.x * size.y)) return;
+
+    // 槽位 = 像素索引 (行优先, 与旧 radar_scatter rgen 槽位一致)
+    const ivec2 px = ivec2(int(pid % uint(size.x)), int(pid / uint(size.x)));
+    const vec4 g0 = imageLoad(inG0, px);
+
+    if (g0.w < 0.5) {
+        scatterPos[pid] = vec4(0.0, 0.0, 0.0, 0.0);   // hit=0 (天空, 每 CPI 全量重写)
+        return;
+    }
+
+    const vec4 g1 = imageLoad(inG1, px);
+    const vec3 pos = g1.xyz;
+    const uint matId = uint(g1.w + 0.5);
+    const float range = g0.z;   // R0 (m)
+
+    // 材质: m0=[εr.re, εr.im, sigma0_dB, rough], m1=[rcs_lut_id, dielectric_model, 0, 0]
+    vec4 m0 = radarMats[matId * 3 + 0];
+    vec4 m1 = radarMats[matId * 3 + 1];
+    const int dModel = int(m1.y + 0.5);
+    if (length(m0.xy) < 0.5 && dModel == 0) m0 = vec4(6.0, 0.0, -15.0, 0.3);   // 缺省回退 (原行为, 仅模型0)
+
+    // 批次4 介电模型 → 频率相关有效复介电常数:
+    //   0 = 固定 (JSON 锚点值原样) / 1 = 海水 Debye 弛豫 /
+    //   2 = 良导体 (Γ=-1 反相 π, |Γ|²=1) / 3 = 陆地频变锚点 (f_ref=10GHz 幂律)
+    vec2 eps = m0.xy;
+    if (dModel == 1) {
+        // 海水 Debye: εr' = ε∞ + (εs−ε∞)/(1+ω²τ²), εr'' = ωτ(εs−ε∞)/(1+ω²τ²) + σ_ion/(ωε0)
+        // (ε∞=4.9, εs=80, τ=9.23 ps, σ_ion=4.3 S/m)
+        const float w  = 6.28318530718 * freq.x;
+        const float wt = w * 9.23e-12;
+        const float d  = 1.0 + wt * wt;
+        eps = vec2(4.9 + (80.0 - 4.9) / d,
+                   wt * (80.0 - 4.9) / d + 4.3 / (w * 8.8541878128e-12));
+    } else if (dModel == 2) {
+        eps = vec2(0.0);   // 良导体极限: √εr→0 → Γ=−1, |Γ|²=1, 相位 π
+    } else if (dModel == 3) {
+        eps = m0.xy * pow(1.0e10 / max(freq.x, 1.0), 0.35);   // 低频 εr 增大 (趋肤效应方向)
+    }
+
+    // 法向入射菲涅尔: Γ = (√εr − 1)/(√εr + 1), √εr 主支:
+    // a = √((|εr|+x)/2), b = sign(y)·√((|εr|−x)/2)
+    const float epsAbs = length(eps);
+    const vec2 se = vec2(sqrt(max(epsAbs + eps.x, 0.0) * 0.5),
+                         (eps.y >= 0.0 ? 1.0 : -1.0) * sqrt(max(epsAbs - eps.x, 0.0) * 0.5));
+    const vec2 num = vec2(se.x - 1.0, se.y);
+    const vec2 den = vec2(se.x + 1.0, se.y);
+    const float denAbs2 = dot(den, den) + 1e-12;
+    // 复除 (num/den): (num·conj(den))/|den|²
+    const vec2 gamma = vec2(dot(num, den), num.y * den.x - num.x * den.y) / vec2(denAbs2);
+
+    const float rho = dot(gamma, gamma);                    // |Γ|² (功率反射率)
+    const float amp = sqrt(max(rho, 0.0) * max(freq.y, 0.0))
+                    * pow(10.0, m0.z / 20.0)
+                    * 1.0 / (1.0 + 2.0 * clamp(m0.w, 0.0, 1.0));
+    const float phase = atan(gamma.y, gamma.x);
+
+    scatterPos[pid] = vec4(pos, 1.0);
+    scatterSig[pid] = vec4(amp * cos(phase), amp * sin(phase), range, m1.z);
+}

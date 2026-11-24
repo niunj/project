@@ -1,0 +1,49 @@
+// radar_bin.comp —— P2.1 回波合成两 pass 改造 · 分桶 pass (1/3)。
+// 逐散射体统计 CPI 内快时间 bin 跨度 [bmin, bmax] (逐脉冲精确 bf, 无三角函数),
+// 按 bmin 计数 (CSR 桶) 并 atomicMax 汇聚全局最大跨度 maxSpan —— 数据驱动,
+// 无平台速度假设。合成 pass (radar_echo) 据此确定桶扫描窗口。
+// meta 打包: bmin | bmax<<12 (nFast ≤ 4096, 12 bit/bin); 0xFFFFFFFF = 无效
+// (天空槽 / 本 CPI 全程出窗)。
+#version 460
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer ScatterPos { vec4 scatterPos[]; };  // [pos.xyz, hit]
+layout(set = 0, binding = 1) buffer ScatterSig { vec4 scatterSig[]; };  // [σ.re, σ.im, R0, 0]
+layout(set = 0, binding = 2) buffer BucketCount { uint bucketCount[]; };
+layout(set = 0, binding = 3) buffer MaxSpan { uint maxSpan; };
+layout(set = 0, binding = 4) buffer ScatterMeta { uint meta[]; };
+
+layout(set = 0, binding = 5) uniform Params {
+    vec4 ant[256];   // 脉冲天线位置 (xyz) ENU；w 为最大斜距
+    vec4 beam[256];  // P5: 逐脉冲波束指向 (xyz; 本 pass 不用)
+    vec4 m0;         // (lambda, c, rangeMin, drFast)
+    vec4 m1;         // (nPulses, nFast, enable, nScat)
+    vec4 m2;         // P5: (beamWidth, gExp, hasBeam, 0)
+} pr;
+
+void main() {
+    const uint k = gl_GlobalInvocationID.x;
+    if (k >= uint(pr.m1.w)) return;                       // nScat
+    if (scatterPos[k].w < 0.5) { meta[k] = 0xFFFFFFFFu; return; }   // 天空槽
+
+    const float c = pr.m0.y, rMin = pr.m0.z, drFast = pr.m0.w;
+    const uint nPulses = uint(pr.m1.x), nFast = uint(pr.m1.y);
+    const vec3 p = scatterPos[k].xyz;
+
+    uint bmin = 0xFFFFFFFFu, bmax = 0u;
+    for (uint n = 0u; n < nPulses; ++n) {
+        const float R = distance(p, pr.ant[n].xyz);
+        const float rMax = pr.ant[n].w;
+        if (R < rMin || (rMax > rMin && R > rMax)) continue;
+        const float bf = (R - rMin) * (2.0 / c) / drFast;
+        if (bf < 0.0 || bf >= float(nFast)) continue;
+        const uint b = uint(floor(bf));
+        bmin = min(bmin, b);
+        bmax = max(bmax, b);
+    }
+    if (bmin == 0xFFFFFFFFu) { meta[k] = 0xFFFFFFFFu; return; }     // 全程出窗
+
+    meta[k] = bmin | (bmax << 12u);
+    atomicAdd(bucketCount[bmin], 1u);
+    atomicMax(maxSpan, bmax - bmin);
+}

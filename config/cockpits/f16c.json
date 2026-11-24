@@ -1,0 +1,247 @@
+{
+  "schema": "vsgraysim.cockpit",
+  "version": 1,
+  "id": "f16c",
+  "name": "F-16C · 单发 / 右侧操作杆",
+  "background": "../../assets/cockpit/f16c/panel-base.png",
+  "grips": "../../assets/cockpit/f16c/control-grips.png",
+  "engine_count": 1,
+  "controls": {
+    "stick": [
+      0.8,
+      0.55,
+      0.18,
+      0.4
+    ],
+    "throttle": [
+      0.005,
+      0.58,
+      0.19,
+      0.36
+    ],
+    "maximum_axis_demand": 0.85
+  },
+  "hotspots": [
+    {
+      "id": "left_flt",
+      "label": "左 MFD / FLT 飞行页",
+      "action": "mfd_page",
+      "target": "left_mfd",
+      "value": "FLT",
+      "rect": [
+        0.208,
+        0.462,
+        0.026,
+        0.035
+      ]
+    },
+    {
+      "id": "left_ctrl",
+      "label": "左 MFD / CTRL 操纵页",
+      "action": "mfd_page",
+      "target": "left_mfd",
+      "value": "CTRL",
+      "rect": [
+        0.24,
+        0.462,
+        0.026,
+        0.035
+      ]
+    },
+    {
+      "id": "left_eng",
+      "label": "左 MFD / ENG 发动机页",
+      "action": "mfd_page",
+      "target": "left_mfd",
+      "value": "ENG",
+      "rect": [
+        0.271,
+        0.462,
+        0.026,
+        0.035
+      ]
+    },
+    {
+      "id": "right_flt",
+      "label": "右 MFD / FLT 飞行页",
+      "action": "mfd_page",
+      "target": "right_mfd",
+      "value": "FLT",
+      "rect": [
+        0.66,
+        0.462,
+        0.026,
+        0.035
+      ]
+    },
+    {
+      "id": "right_ctrl",
+      "label": "右 MFD / CTRL 操纵页",
+      "action": "mfd_page",
+      "target": "right_mfd",
+      "value": "CTRL",
+      "rect": [
+        0.691,
+        0.462,
+        0.026,
+        0.035
+      ]
+    },
+    {
+      "id": "right_eng",
+      "label": "右 MFD / ENG 发动机页",
+      "action": "mfd_page",
+      "target": "right_mfd",
+      "value": "ENG",
+      "rect": [
+        0.722,
+        0.462,
+        0.026,
+        0.035
+      ]
+    },
+    {
+      "id": "inst_light",
+      "label": "仪表显示亮度",
+      "action": "panel_light",
+      "rect": [
+        0.238,
+        0.585,
+        0.033,
+        0.055
+      ]
+    }
+  ],
+  "instruments": [
+    {
+      "id": "left_mfd",
+      "kind": "mfd",
+      "label": "LEFT MFD",
+      "rect": [
+        0.198,
+        0.19,
+        0.15,
+        0.26
+      ]
+    },
+    {
+      "id": "right_mfd",
+      "kind": "mfd",
+      "label": "RIGHT MFD",
+      "rect": [
+        0.646,
+        0.19,
+        0.156,
+        0.26
+      ]
+    },
+    {
+      "id": "ded",
+      "kind": "ded",
+      "label": "DED",
+      "rect": [
+        0.644,
+        0.043,
+        0.16,
+        0.073
+      ]
+    },
+    {
+      "id": "airspeed",
+      "kind": "dial",
+      "label": "AIRSPEED",
+      "binding": "air_data.ias_mps",
+      "unit": "KNOTS",
+      "min": 0,
+      "max": 800,
+      "scale": 1.943844,
+      "rect": [
+        0.39,
+        0.416,
+        0.065,
+        0.117
+      ]
+    },
+    {
+      "id": "adi",
+      "kind": "attitude",
+      "label": "ATTITUDE",
+      "rect": [
+        0.468,
+        0.416,
+        0.065,
+        0.117
+      ]
+    },
+    {
+      "id": "altimeter",
+      "kind": "dial",
+      "label": "ALT",
+      "binding": "air_data.pressure_altitude_m",
+      "unit": "FT",
+      "min": 0,
+      "max": 60000,
+      "scale": 3.28084,
+      "rect": [
+        0.548,
+        0.416,
+        0.065,
+        0.117
+      ]
+    },
+    {
+      "id": "vsi",
+      "kind": "dial",
+      "label": "V/S",
+      "binding": "velocity.1",
+      "unit": "FT/MIN",
+      "min": -6000,
+      "max": 6000,
+      "scale": 196.8504,
+      "rect": [
+        0.388,
+        0.581,
+        0.071,
+        0.13
+      ]
+    },
+    {
+      "id": "hsi",
+      "kind": "compass",
+      "label": "GRID HDG",
+      "binding": "yaw",
+      "rect": [
+        0.468,
+        0.581,
+        0.071,
+        0.13
+      ]
+    },
+    {
+      "id": "rpm",
+      "kind": "dial",
+      "label": "RPM",
+      "binding": "engine.rpm_pct",
+      "unit": "PCT",
+      "min": 0,
+      "max": 110,
+      "rect": [
+        0.548,
+        0.581,
+        0.071,
+        0.13
+      ]
+    }
+  ],
+  "category": "fighter",
+  "description": "单发战斗机 · 右侧力感杆 / 左侧油门",
+  "external_model": {
+    "uri": "../../models/F-16/F-16.obj",
+    "up_axis": "y",
+    "maximum_dimension_m": 15,
+    "chase_distance_m": 35,
+    "label": "F-16 外形",
+    "heading_deg": 180,
+    "view_azimuth_deg": 30
+  }
+}

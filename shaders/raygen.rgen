@@ -1,0 +1,183 @@
+// raygen.rgen
+// Multi-spectral ray-generation shader with full electromagnetic physics.
+// For each sensor registered by Layer 4's scheduler, emits one ray per
+// (pixel, sensor) pair.  Each ray carries:
+//   - frequency / wavelength  (from sensor carrier)
+//   - complex I/Q amplitude   (initialised from tx_power * beam_gain)
+//   - phase accumulator       (starts at 0, accumulated along path)
+//   - beam pattern gain       (Gaussian weighting by angle from boresight)
+
+#version 460
+#extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "vsgraysim_glsl_structs.glsl"
+
+layout(location = 0) rayPayloadEXT RayPayload payload;
+
+layout(set = 0, binding = 0, std430) readonly buffer CameraParams {
+    mat4 view_proj;
+    vec3 cam_pos;     float _pad0;
+    vec3 cam_dir;     float _pad1;
+    vec3 cam_up;      float _pad2;
+    vec3 cam_right;   float _pad3;
+    uint  width;      uint height;
+    uint  sensor_count;
+    float frame_time;
+};
+
+layout(set = 0, binding = 4, std430) readonly buffer SensorList {
+    uint  sensor_ids[];
+} sensors;
+
+layout(set = 0, binding = 5, std430) writeonly buffer ScatterPoints {
+    ScatterPoint scatter_points[];
+} out_scatter;
+
+layout(set = 0, binding = 8, rgba32f) uniform image2D output_image;
+layout(set = 0, binding = 9) uniform accelerationStructureEXT topLevelAS;
+
+layout(push_constant) uniform PC {
+    uint sensor_idx;
+    uint band_channel;
+    float tx_power;
+    float beam_width;
+    float frequency;
+    float wavelength;
+    // Scalar fields keep offsets identical to the 64-byte C++ packet. A vec3
+    // here would introduce std430 padding after wavelength (24 -> 32 bytes).
+    float origin_x;
+    float origin_y;
+    float origin_z;
+    uint pulse_seq;         // 帧内脉冲序号 (0-based)
+    float pulse_slow_time;  // 帧内慢时间 (s, fire_time)
+    uint flags;
+    float direction_x;
+    float direction_y;
+    float direction_z;
+    uint pc_pad;
+} pc;
+
+#include "atmosphere_common.glsl"
+
+vec4 amplitude_color(RayPayload p) {
+    float i = p.i_amplitude;
+    float q = p.q_amplitude;
+    float mag = sqrt(i*i + q*q);
+    float v = clamp(mag / max(1e-6, p.tx_power), 0.0, 1.0);
+    return vec4(v, v, v, 1.0);
+}
+
+// Gaussian beam pattern gain: G(angle) = exp(-0.5 * (angle/sigma)^2)
+float beam_pattern_gain(vec3 dir, vec3 boresight, float beam_width) {
+    float cos_angle = dot(normalize(dir), normalize(boresight));
+    float angle = acos(clamp(cos_angle, 0.0, 1.0));
+    float sigma = beam_width * 0.5;
+    if (sigma < 1e-8) return 1.0;
+    return exp(-0.5 * (angle / sigma) * (angle / sigma));
+}
+
+void main() {
+    const ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    if (pixel.x >= int(width) || pixel.y >= int(height)) return;
+
+    // 脉冲发射位置: 优先使用 push 的插值孔径位 (该脉冲发射时刻的平台孔径位置),
+    // 全 0 时回落相机位置 (stub/兼容路径)。
+    vec3 ray_origin = (pc.flags & 1u) != 0u ? vec3(pc.origin_x,pc.origin_y,pc.origin_z) : cam_pos;
+    vec3 boresight = (pc.flags & 2u) != 0u ? normalize(vec3(pc.direction_x,pc.direction_y,pc.direction_z)) : normalize(cam_dir);
+    vec3 up_hint = abs(boresight.y)<.99 ? vec3(0,1,0) : vec3(0,0,1);
+    vec3 right = normalize(cross(boresight,up_hint));
+    vec3 up = normalize(cross(right,boresight));
+
+    // Jittered direction within beam cone
+    vec2 jitter = vec2(
+        (float(pixel.x) + 0.5) / float(width) - 0.5,
+        (float(pixel.y) + 0.5) / float(height) - 0.5
+    );
+    vec3 dir = normalize(boresight + jitter.x * pc.beam_width * right + jitter.y * pc.beam_width * up);
+
+    // ----- Initialise full electromagnetic ray payload -----
+    payload.origin = Vec3(ray_origin.x, ray_origin.y, ray_origin.z);
+    payload.dir = Vec3(dir.x, dir.y, dir.z);
+    payload.distance = 1e6;
+    payload.total_attenuation = 1.0;
+    payload.scatter_power = 0.0;
+    // 波段位掩码 (BandMask: VIS=0x1/IR=0x2/RADAR=0x4/SAR=0x8):
+    // closesthit 据此解码大气衰减通道与交叉感应波段匹配。
+    payload.band_type = pc.band_channel;
+    payload.tx_power = pc.tx_power;
+
+    // Atmospheric state
+    payload.atm_total_atten = 1.0;
+    payload.atm_scatter_power = 0.0;
+    payload.atm_refract_offset = 0.0;
+    payload.atm_layer_id = -1;
+
+    // Cross-induction state
+    payload.is_cross_induction = 0;
+    payload.tx_sensor_id = sensors.sensor_ids[pc.sensor_idx];
+    payload.rx_sensor_id = 0;
+    payload.cross_type = 0;
+    payload.cross_power = 0.0;
+    payload.cross_delay = 0.0;
+    payload.cross_band_match = 0.0;
+    payload.hit_geo_unit_id = 0xFFFFFFFFu;
+    payload.hit_object_id = 0xFFFFFFFFu;
+
+    // ----- Electromagnetic wave physics initialisation -----
+    payload.frequency = pc.frequency;
+    payload.wavelength = pc.wavelength;
+    payload.phase_accum = 0.0;
+
+    // Complex amplitude: I = sqrt(Power * Gain), Q = 0
+    float gain = beam_pattern_gain(dir, boresight, pc.beam_width);
+    payload.beam_gain_tx = gain;
+    payload.beam_gain_rx = 0.0;
+    float amp_mag = sqrt(pc.tx_power * gain);
+    payload.i_amplitude = amp_mag;
+    payload.q_amplitude = 0.0;
+
+    payload.reserved = 0.0;
+
+    traceRayEXT(topLevelAS,
+                gl_RayFlagsOpaqueEXT, 0xFF,
+                0, 0, 0,
+                ray_origin, 0.001, dir, 1e6, 0);
+
+    // ----- Write fully-populated scatter point -----
+    uint idx = pc.sensor_idx * width * height + pixel.y * width + pixel.x;
+    ScatterPoint sp;
+    sp.position = payload.origin;
+    sp.normal = Vec3(0.0, 1.0, 0.0);
+    // Magnitude and phase from complex I/Q
+    float i = payload.i_amplitude;
+    float q = payload.q_amplitude;
+    sp.amplitude = sqrt(i*i + q*q);
+    sp.phase = atan(q, i);
+    sp.time_delay = payload.distance / 2.99792458e8;
+    sp.band_type = payload.band_type;
+    sp.geo_unit_id = payload.hit_geo_unit_id;
+    sp.object_id = payload.hit_object_id;
+    sp.tx_sensor_id = payload.tx_sensor_id;
+    sp.rx_sensor_id = payload.rx_sensor_id;
+    sp.atm_atten = payload.atm_total_atten;
+    sp.atm_scatter = payload.atm_scatter_power;
+    // Complex baseband I/Q
+    sp.i_amplitude = i;
+    sp.q_amplitude = q;
+    sp.frequency = payload.frequency;
+    sp.power = i*i + q*q;
+    sp.has_cross = payload.is_cross_induction;
+    sp.cross_power = payload.cross_power;
+    sp.cross_rx_sensor_id = payload.rx_sensor_id;
+    // 脉冲级时序: 散射点携带所属脉冲的序号与慢时间 (供信号成帧按序消费)
+    sp.pulse_seq = pc.pulse_seq;
+    sp.pulse_slow_time = pc.pulse_slow_time;
+    sp.reserved0 = 0;
+    sp.reserved1 = 0;
+    sp.reserved2 = 0;
+    out_scatter.scatter_points[idx] = sp;
+
+    imageStore(output_image, pixel, amplitude_color(payload));
+}

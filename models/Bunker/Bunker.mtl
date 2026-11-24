@@ -1,0 +1,19 @@
+# 3ds Max Wavefront OBJ Exporter v0.99 - (c)2007 guruware
+# 创建的文件:17.07.2026 10:41:17
+
+newmtl Bunker
+	Kd 0.7500 0.7400 0.7000
+	Ks 0.0600 0.0600 0.0600
+	Ka 0.1200 0.1200 0.1100
+	Ns 18.0000
+	Tr 0.0000
+	d 1.0000
+	Tf 1.0000 1.0000 1.0000
+	Pr 0.8800
+	Pm 0.0000
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.5000
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd Bunker.jpg

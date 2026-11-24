@@ -1,0 +1,48 @@
+{
+  "project": "FlightGear fgdata",
+  "url": "https://gitlab.com/flightgear/fgdata",
+  "commit": "d3bf5ba555403fb2ab6fab564ddc98989d323228",
+  "model": "CG-57 high-detail guided-missile cruiser",
+  "files": [
+    {
+      "path": "Models/Maritime/Military/CG-57-high-detail/CG-57-texture.png",
+      "bytes": 1082494,
+      "sha256": "f8686e10a6051173fc83b35a1499162d8d254f0e982777f9352e362d10509f93"
+    },
+    {
+      "path": "Models/Maritime/Military/CG-57-high-detail/CG-57.ac",
+      "bytes": 13299018,
+      "sha256": "b43a2792f4180e8645f285a79d1420a671dbebe606cada6df605def3ecb8b440"
+    },
+    {
+      "path": "Models/Maritime/Military/CG-57-high-detail/CG-57.xml",
+      "bytes": 8895,
+      "sha256": "0b62f664348755a8cd4057e84441029857fee930de490d5604fba4bfb05e8427"
+    },
+    {
+      "path": "Models/Maritime/Military/CG-57-high-detail/RSD-rails.png",
+      "bytes": 415003,
+      "sha256": "33a389c3c8a11660b222d3857dc3b206866f8ece1f82539fcdf870e3aac83fb5"
+    },
+    {
+      "path": "Models/Maritime/Military/CG-57-high-detail/deck-gray-large.png",
+      "bytes": 903998,
+      "sha256": "2fcaadf515d26442d3b8a63cfe191a589fea9349dfe2c28b6a88d9e1af9a6213"
+    },
+    {
+      "path": "Models/Maritime/Military/CG-57-high-detail/deck-gray.png",
+      "bytes": 134762,
+      "sha256": "221241c7f34d921f3338167f568fc674607a884ab1a4202abf98c21b078ada2a"
+    },
+    {
+      "path": "Models/Maritime/Military/CG-57-high-detail/deck-white.png",
+      "bytes": 111913,
+      "sha256": "2f88e7f6713e84aea7a05791b1777498d9937c5531ee96899dafde2d3305617b"
+    },
+    {
+      "path": "Models/Maritime/Military/CG-57-high-detail/nets.png",
+      "bytes": 34701,
+      "sha256": "2453c7de205106d60a87a1f12b2ed9f806084c24f17d1db439865b4ae9de9867"
+    }
+  ]
+}

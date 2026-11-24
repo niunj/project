@@ -1,0 +1,21 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#define CLOUD_COMPUTE
+#define CLOUD_LIGHT_CACHE_WRITE
+#include "planet_cloud_shadow.glsl"
+#include "cloud_light_cache.glsl"
+layout(local_size_x=8,local_size_y=8,local_size_z=4)in;
+void main(){
+    int tile=int(cloudLightCache.data[0].y),axis=int(cloudLightCache.data[0].z);
+    ivec3 invocation=ivec3(gl_GlobalInvocationID);
+    int job=invocation.z/tile;
+    ivec3 pixel=ivec3(invocation.xy,invocation.z%tile);
+    if(job>=int(cloudLightCache.data[1].x)||any(greaterThanEqual(pixel,ivec3(tile))))return;
+    int index=int(cloudLightCache.data[2+job/4][job%4]);
+    vec4 r=sparseCloud.objects[index*3+1],shape=sparseCloud.objects[index*3+2];
+    vec3 q=OBJECT_SHAPE_LO+(vec3(pixel)+.5-1.)/cloudLightCache.data[0].x*(OBJECT_SHAPE_HI-OBJECT_SHAPE_LO);
+    vec4 profile=objectBulkProfile(q,r.xyz,shape);
+    ivec3 cell=ivec3(index%axis,(index/axis)%axis,index/(axis*axis));
+    imageStore(cloudLightAtlas,cell*tile+pixel,vec4(profile.x*profile.w));
+    if(all(equal(pixel,ivec3(0))))cloudLightKeys.keys[index]=cloudLightCache.data[74+index];
+}

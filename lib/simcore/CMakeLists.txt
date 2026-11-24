@@ -1,0 +1,3 @@
+add_library(vsgraysim_simcore INTERFACE)
+target_include_directories(vsgraysim_simcore INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_features(vsgraysim_simcore INTERFACE cxx_std_17)

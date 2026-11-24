@@ -1,0 +1,16 @@
+// radar_zero.comp —— P2.1: 回波分桶前置缓冲清零 (bucketCount + maxSpan)。
+// 常驻链首每帧执行 (与 echo 清零解耦): B1 分桶 pass 的 atomicAdd/atomicMax
+// 需要零初值。
+#version 460
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer B0 { uint b0[]; };   // bucketCount (nFast)
+layout(set = 0, binding = 1) buffer B1 { uint b1[]; };   // maxSpan (1)
+
+layout(push_constant) uniform PC { uvec4 u; } pc;        // (nB0, nB1, 0, 0)
+
+void main() {
+    const uint k = gl_GlobalInvocationID.x;
+    if (k < pc.u.x) b0[k] = 0u;
+    if (k < pc.u.y) b1[k] = 0u;
+}

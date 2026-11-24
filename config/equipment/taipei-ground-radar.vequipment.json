@@ -1,0 +1,30 @@
+{
+  "format": "voxel-equipment-v1",
+  "topic": "../topics/taipei-ground-radar.vtopic.json",
+  "visibility_m": 30000,
+  "equipment": [
+    {
+      "id": 7104,
+      "name": "台北地物散射雷达",
+      "band": "RADAR",
+      "output": "P0",
+      "period_seconds": 0.16,
+      "width": 128,
+      "height": 96,
+      "fov_deg": 46,
+      "aperture": {"position_m": [0, 720, 0], "look_at_m": [0, 310, -365], "up": [0, 1, 0]},
+      "radar": {
+        "lambda_m": 0.03,
+        "prf_hz": 50,
+        "cpi_pulses": 8,
+        "bandwidth_hz": 20000000,
+        "sample_rate_hz": 20000000,
+        "receiver_noise_iq_rms": 0.035,
+        "range_min_m": 0,
+        "range_max_m": 1500,
+        "n_fast": 256,
+        "beam_width_rad": 0.43
+      }
+    }
+  ]
+}

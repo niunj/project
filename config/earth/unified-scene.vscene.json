@@ -1,0 +1,149 @@
+{
+  "format": "voxel-scene-v1",
+  "fixed_step_seconds": 0.05,
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 480,
+    "heading_deg": 0
+  },
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 10,
+    "hours_utc": 4
+  },
+  "objects": [
+    {
+      "id": "earth-terrain",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "default.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -256,
+            "max_x": 256,
+            "min_z": -256,
+            "max_z": 256
+          },
+          "grid_size": 129,
+          "imagery_size": 256,
+          "strict": true
+        },
+        "cell_size_m": 8,
+        "bottom_m": -512,
+        "hd_subdivisions": 2,
+        "mode": "hd"
+      }
+    },
+    {
+      "id": "ground-MQ9",
+      "role": "target",
+      "position_m": [
+        -20,
+        8,
+        0
+      ],
+      "source": {
+        "type": "mesh",
+        "path": "../../models/MQ-9/MQ-9.osgb",
+        "max_dimension": 48,
+        "fill_interior": true,
+        "up_axis": "z",
+        "units_to_metres": 1
+      },
+      "physics": {
+        "motion": "dynamic",
+        "fracture": true,
+        "friction": 0.8,
+        "restitution": 0
+      },
+      "material": {
+        "density_kg_m3": 1000,
+        "temperature_k": 330,
+        "emissivity": 0.85,
+        "color_rgba": [
+          0.35,
+          0.3,
+          0.22,
+          1
+        ]
+      }
+    },
+    {
+      "id": "flying-AH64",
+      "role": "target",
+      "position_m": [
+        -140,
+        700,
+        -20
+      ],
+      "velocity_mps": [
+        100,
+        0,
+        0
+      ],
+      "source": {
+        "type": "mesh",
+        "path": "../../models/AH-64/AH-64.osgb",
+        "max_dimension": 48,
+        "fill_interior": true,
+        "up_axis": "z",
+        "units_to_metres": 1
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "material": {
+        "density_kg_m3": 1000,
+        "temperature_k": 315,
+        "emissivity": 0.85,
+        "color_rgba": [
+          0.2,
+          0.25,
+          0.3,
+          1
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "tick": 10,
+      "kind": "terrain_mode",
+      "object": "earth-terrain",
+      "mode": "voxel"
+    },
+    {
+      "tick": 20,
+      "kind": "damage",
+      "object": "earth-terrain",
+      "space": "object",
+      "point_m": [
+        -20,
+        0,
+        0
+      ],
+      "radius_m": 12
+    },
+    {
+      "tick": 28,
+      "kind": "damage",
+      "object": "ground-MQ9",
+      "space": "object",
+      "point_m": [
+        -0.6615565145015712,
+        -0.1202812564373017,
+        0.20714368462562582
+      ],
+      "radius_m": 1.044718724489212
+    },
+    {
+      "tick": 35,
+      "kind": "terrain_mode",
+      "object": "earth-terrain",
+      "mode": "hd"
+    }
+  ]
+}

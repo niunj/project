@@ -1,0 +1,48 @@
+// radar_echo_reduce.comp —— P2.1: 回波段部分和归约 pass。
+// radar_echo.comp 以散射体段维 (S) 并行产出 partSum (每组单写者, 无原子),
+// 本 pass 每 (脉冲, fast bin) 一线程无原子求和 S 段 → echo, 恢复 B6 的
+// echo 布局 (n×nFast 行优先, 复数交错) 供脉压 FFT 链消费。
+#version 460
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer PartSum { float partSum[]; };   // S×nPulses×nFast 复数交错
+layout(set = 0, binding = 1) buffer EchoBuf { float echo[]; };      // nPulses×nFast 复数交错
+layout(set = 0, binding = 2) uniform ReceiverParams {
+    layout(offset=8240) vec4 receiver;  // complex RMS, frame seed
+} pr;
+
+layout(push_constant) uniform PC { uvec4 u; } pc;
+// u = (nCells, nPulses, nFast, S)
+
+uint mixBits(uint x) {
+    x ^= x >> 16u; x *= 0x7feb352du;
+    x ^= x >> 15u; x *= 0x846ca68bu;
+    return x ^ (x >> 16u);
+}
+
+vec2 receiverNoise(uint cell, uint seed) {
+    const uint key = mixBits(seed ^ (cell * 0x9e3779b9u));
+    const float u = (float(mixBits(key ^ 0xa341316cu) >> 9u) + .5) / 8388608.0;
+    const float v = (float(mixBits(key ^ 0xc8013ea4u) >> 9u) + .5) / 8388608.0;
+    const float phase = 6.28318530718 * v;
+    return sqrt(-log(u)) * vec2(cos(phase), sin(phase));
+}
+
+void main() {
+    const uint k = gl_GlobalInvocationID.x;
+    const uint nCells = pc.u.x;
+    if (k >= nCells) return;
+    const uint nPulses = pc.u.y, nFast = pc.u.z, S = pc.u.w & 65535u;
+    const uint n = k / nFast, cell = k % nFast;
+    const uint selected=pc.u.w>>16;
+    if(selected!=0u && n!=selected-1u) return;
+
+    vec2 acc = vec2(0.0);
+    for (uint z = 0u; z < S; ++z) {
+        const uint idx = (z * nPulses + n) * nFast + cell;
+        acc += vec2(partSum[2u * idx], partSum[2u * idx + 1u]);
+    }
+    if (pr.receiver.x > 0.0) acc += pr.receiver.x * receiverNoise(k, uint(pr.receiver.y));
+    echo[2u * k + 0u] = acc.x;
+    echo[2u * k + 1u] = acc.y;
+}

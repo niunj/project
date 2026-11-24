@@ -1,0 +1,78 @@
+{
+  "format": "voxel-scene-v1",
+  "coordinates": "east-up-south-metres",
+  "fixed_step_seconds": 0.02,
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 480,
+    "heading_deg": 0
+  },
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 10,
+    "hours_utc": 4
+  },
+  "objects": [
+    {
+      "id": "earth-terrain",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "../earth/default.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -40,
+            "max_x": 40,
+            "min_z": -40,
+            "max_z": 40
+          },
+          "grid_size": 81,
+          "imagery_size": 256,
+          "strict": true
+        },
+        "cell_size_m": 2,
+        "bottom_m": -128,
+        "hd_subdivisions": 2,
+        "mode": "hd"
+      },
+      "physics": {
+        "motion": "static",
+        "fracture": true,
+        "support": "base",
+        "friction": 0.8,
+        "restitution": 0.05
+      },
+      "material": {
+        "density_kg_m3": 2600
+      }
+    }
+  ],
+  "events": [
+    {
+      "tick": 10,
+      "kind": "terrain_mode",
+      "object": "earth-terrain",
+      "mode": "voxel"
+    },
+    {
+      "tick": 25,
+      "kind": "damage",
+      "object": "earth-terrain",
+      "space": "object",
+      "point_m": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 6
+    },
+    {
+      "tick": 40,
+      "kind": "terrain_mode",
+      "object": "earth-terrain",
+      "mode": "hd"
+    }
+  ]
+}

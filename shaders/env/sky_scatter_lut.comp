@@ -1,0 +1,113 @@
+#version 450
+// Precompute an isotropic (height, view-cosine) multiple-scattering LUT for
+// the native sky dome. Real-time double scattering per pixel costs a nested
+// 16x8 march; instead this kernel integrates the second scattering order
+// once per (mu, h) texel and the sky shader adds LUT * phaseRatio to the
+// single-scattered result. Energy is preserved: the LUT is attenuated by the
+// same view transmittance the primary march accumulates.
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0,rgba32f) writeonly uniform image2D lut;
+
+layout(push_constant) uniform ScatterPush {
+    float rPlanet;
+    float rAtmos;
+    float hRayleigh;
+    float hMie;
+    float mieG;
+    float sunIrradiance;
+    float turbScale;
+    float pad;
+} pc;
+
+const float PI = 3.14159265359;
+const vec3 BETA_RAYLEIGH = vec3(5.802e-6, 13.558e-6, 33.1e-6);
+const vec3 BETA_MIE_SCAT = vec3(3.996e-6);
+const vec3 BETA_MIE_EXT  = BETA_MIE_SCAT / 0.9;
+const vec3 BETA_OZONE    = vec3(0.650e-6, 1.881e-6, 0.085e-6);
+const float OZONE_CENTER = 25000.0;
+const float OZONE_WIDTH  = 15000.0;
+
+float rayleighPhase(float ct) { return (3.0/(16.0*PI))*(1.0+ct*ct); }
+float miePhase(float ct, float g) {
+    float g2 = g*g;
+    return 3.0*(1.0-g2)*(1.0+ct*ct) /
+           ((8.0*PI)*(2.0+g2)*pow(1.0+g2-2.0*g*ct, 1.5));
+}
+float rayleighDensity(float h){ return exp(-h/pc.hRayleigh); }
+float mieDensity(float h){ return exp(-h/pc.hMie); }
+float ozoneDensity(float h){ return max(0.0, 1.0-abs(h-OZONE_CENTER)/OZONE_WIDTH); }
+
+vec2 raySphere2(vec3 origin, vec3 dir, float radius) {
+    float b = dot(origin, dir);
+    float c = dot(origin, origin) - radius*radius;
+    float d = b*b - c;
+    if (d < 0.0) return vec2(-1.0);
+    d = sqrt(d);
+    return vec2(-b-d, -b+d);
+}
+vec3 transmittance(vec3 origin, vec3 dir, float pathLen) {
+    const int N = 4;
+    float step = pathLen / float(N);
+    vec3 od = vec3(0.0);
+    for (int i = 0; i < N; ++i) {
+        vec3 p = origin + dir*(float(i)+0.5)*step;
+        float h = length(p) - pc.rPlanet;
+        od += (BETA_RAYLEIGH*rayleighDensity(h)
+             + BETA_MIE_EXT*mieDensity(h)*pc.turbScale
+             + BETA_OZONE*ozoneDensity(h)) * step;
+    }
+    return exp(-od);
+}
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(lut);
+    if (texel.x >= size.x || texel.y >= size.y) return;
+
+    // x: view cosine -1..1, y: camera height 0..rAtmos
+    float mu = (float(texel.x)+0.5)/float(size.x)*2.0 - 1.0;
+    float camH = (float(texel.y)+0.5)/float(size.y)*(pc.rAtmos-pc.rPlanet);
+    vec3 cameraPos = vec3(0.0, pc.rPlanet+camH, 0.0);
+    // Azimuth-free: use a representative scattering plane.
+    vec3 viewDir = normalize(vec3(sqrt(max(1.0-mu*mu,0.0)), mu, 0.0));
+
+    float tNear = 0.0;
+    vec2 hit = raySphere2(cameraPos, viewDir, pc.rAtmos);
+    float tFar = max(hit.y, 0.0);
+    float groundHit = raySphere2(cameraPos, viewDir, pc.rPlanet).x;
+    bool hitsGround = groundHit > 0.0;
+    if (hitsGround) tFar = groundHit;
+
+    // Integrate second-order in-scatter along the view ray: at each sample the
+    // first-order field (sun -> point) is already single-scattered; multiply
+    // by the point -> camera transmittance and accumulate.
+    const int VIEW_N = 8;
+    float stepLen = (tFar-tNear)/float(VIEW_N);
+    vec3 sum = vec3(0.0);
+    vec3 viewOD = vec3(0.0);
+    for (int i = 0; i < VIEW_N; ++i) {
+        float t = tNear + (float(i)+0.5)*stepLen;
+        vec3 p = cameraPos + viewDir*t;
+        float h = length(p) - pc.rPlanet;
+        vec3 ext = BETA_RAYLEIGH*rayleighDensity(h)
+                 + BETA_MIE_EXT*mieDensity(h)*pc.turbScale
+                 + BETA_OZONE*ozoneDensity(h);
+        viewOD += ext*stepLen;
+        vec3 viewTrans = exp(-viewOD);
+
+        // Isotropic second-order source: single-scattered radiance from the
+        // average sun direction (overhead) attenuated to the sample point.
+        float sunPath = max(raySphere2(p, vec3(0,1,0), pc.rAtmos).y, 0.0);
+        vec3 sunTrans = transmittance(p, vec3(0,1,0), sunPath);
+        float rhoR = rayleighDensity(h);
+        float rhoM = mieDensity(h);
+        // First order at p for an overhead sun: Rayleigh + Mie lobes at ct=1.
+        vec3 firstOrder = pc.sunIrradiance *
+            (BETA_RAYLEIGH*rayleighPhase(1.0)*rhoR + BETA_MIE_SCAT*pc.turbScale*miePhase(1.0,pc.mieG)*rhoM)
+            * sunTrans;
+        // Second-order: firstOrder is scattered again toward the camera with
+        // the isotropic (1/4pi) phase.
+        sum += viewTrans * firstOrder * ext * stepLen / (4.0*PI);
+    }
+    imageStore(lut, texel, vec4(sum, 1.0));
+}

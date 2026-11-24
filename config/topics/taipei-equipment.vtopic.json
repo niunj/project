@@ -1,0 +1,30 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北陆地多谱段装备验收",
+  "scene": "../earth/taipei-equipment.vscene.json",
+  "earth_map": "../earth/default.map.json",
+  "sky": {
+    "show_atmosphere": true,
+    "time_scale": 1,
+    "visibility": 30000
+  },
+  "clouds": {
+    "cover": 0,
+    "volume": true,
+    "cumulus_count": 0
+  },
+  "camera": {
+    "eye_m": [
+      20,
+      1816,
+      26
+    ],
+    "target_m": [
+      0,
+      1800,
+      0
+    ]
+  },
+  "paused": false,
+  "equipment": "../equipment/taipei-multispectral.vequipment.json"
+}

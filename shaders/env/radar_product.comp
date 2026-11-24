@@ -1,0 +1,40 @@
+// radar_product.comp —— P1: RD 复图 → |z| → 峰值归一化幅度图 (显控消费形态)。
+// 两 pass (免浮点 atomicMax —— VK_EXT_shader_atomic_float 不含 max):
+//   pass1 (f.x=0): 逐单元取模写 prod + 工作组树形归约峰值 → gmax[组号]
+//   pass2 (f.x=1): 扫描 gmax 求全局峰值 → prod 归一化
+// 与 CPU 基准 (ProductStageImpl) 同一形态: |z| / max|z|。
+#version 460
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer Rd   { float rd[]; };    // 交错复数 re,im
+layout(set = 0, binding = 1) buffer Prod { float prod[]; };  // 幅度图
+layout(set = 0, binding = 2) buffer GMax { float gmax[]; };  // 每工作组峰值
+
+layout(push_constant) uniform PC { uvec4 u; vec4 f; } pc;    // u=(nCells, nGroups,0,0)  f.x=mode
+
+shared float sh[256];
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (pc.f.x < 0.5) {                       // pass 1: 取模 + 组内归约
+        float m = 0.0;
+        if (i < pc.u.x) {
+            const float re = rd[2u * i], im = rd[2u * i + 1u];
+            m = sqrt(re * re + im * im);
+            prod[i] = m;
+        }
+        sh[gl_LocalInvocationID.x] = m;
+        barrier();
+        for (uint s = 128u; s > 0u; s >>= 1u) {
+            if (gl_LocalInvocationID.x < s)
+                sh[gl_LocalInvocationID.x] = max(sh[gl_LocalInvocationID.x],
+                                                 sh[gl_LocalInvocationID.x + s]);
+            barrier();
+        }
+        if (gl_LocalInvocationID.x == 0u) gmax[gl_WorkGroupID.x] = sh[0];
+    } else {                                  // pass 2: 全局峰值 → 归一化
+        float gm = 0.0;
+        for (uint g = 0u; g < pc.u.y; ++g) gm = max(gm, gmax[g]);
+        if (i < pc.u.x && gm > 0.0) prod[i] = prod[i] / gm;
+    }
+}

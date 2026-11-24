@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "configurePresets": [{
+    "name": "my-linux-release", "inherits": "source-release",
+    "binaryDir": "${sourceDir}/build/my-linux-release",
+    "cacheVariables": {
+      "THIRD_PARTY_ROOT": "/opt/vsgraysim-sdk",
+      "VULKAN_SDK": "/opt/vulkan/1.3.296.0/x86_64",
+      "CMAKE_CUDA_COMPILER": "/usr/local/cuda/bin/nvcc",
+      "CUDAToolkit_ROOT": "/usr/local/cuda",
+      "ROCKY_EARTH3P_DIR": "/opt/earth-sdk", "BULLET_ROOT": "/opt/bullet",
+      "Qt6_DIR": "/opt/Qt/6.12.0/gcc_64/lib/cmake/Qt6",
+      "QT6_PREFIX": "/opt/Qt/6.12.0/gcc_64"
+    }
+  }],
+  "buildPresets": [{"name": "my-linux-release", "configurePreset": "my-linux-release", "jobs": 4}],
+  "testPresets": [{"name": "my-linux-release", "configurePreset": "my-linux-release", "output": {"outputOnFailure": true}}]
+}

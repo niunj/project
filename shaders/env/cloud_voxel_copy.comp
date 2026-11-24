@@ -1,0 +1,12 @@
+#version 450
+layout(local_size_x=4,local_size_y=4,local_size_z=4) in;
+layout(set=0,binding=0,rgba32f) writeonly uniform image3D state0;
+layout(set=0,binding=1,rgba32f) readonly uniform image3D state1;
+layout(set=0,binding=2,rgba32f) writeonly uniform image3D velocity0;
+layout(set=0,binding=3,rgba32f) readonly uniform image3D velocity1;
+layout(std140,set=0,binding=4) uniform CloudParams {
+    vec4 originCell; vec4 gridDt; vec4 windHumidity; vec4 thermo;
+    vec4 phase; vec4 flow; vec4 colliderMeta;
+    vec4 colliderCentre[32]; vec4 colliderVelocity[32];
+} p;
+void main(){ivec3 c=ivec3(gl_GlobalInvocationID.xyz);if(any(greaterThanEqual(c,ivec3(p.gridDt.xyz))))return;imageStore(velocity0,c,imageLoad(velocity1,c));imageStore(state0,c,imageLoad(state1,c));}

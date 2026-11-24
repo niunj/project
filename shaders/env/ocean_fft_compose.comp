@@ -1,0 +1,66 @@
+#version 460
+/// ocean_fft_compose.comp —— P3 空间场合成 (对标 Triton CreateTextures .cu:29-106):
+///   由 IFFT 输出的 5 路空间场 (H, chopX, chopZ, slopeX, slopeZ) 合成:
+///     displacementMap = (chopX, chopZ, H)         —— 顶点位移 (xyz)
+///     slopeFoamMap    = (Nx, Ny, Nz, foamJ)       —— 法线 + 完整 2×2 雅可比泡沫
+///   雅可比 J = (1+Q·sxx)(1+Q·syy) - Q²·sxy·syx,  s 由 chop 场中心差分。
+///   泡沫阈值与 ocean.frag/band_shade 同标定 (0.62..0.82) 在消费端做。
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D heightTex;  // IFFT 输出 (re=h)
+layout(set = 0, binding = 1) uniform sampler2D chopXTex;
+layout(set = 0, binding = 2) uniform sampler2D chopZTex;
+layout(set = 0, binding = 3) uniform sampler2D slopeXTex;  // ∂h/∂x
+layout(set = 0, binding = 4) uniform sampler2D slopeZTex;  // ∂h/∂z
+layout(set = 0, binding = 5, rgba32f) uniform writeonly image2D displacement;
+layout(set = 0, binding = 6, rgba32f) uniform writeonly image2D slopeFoam;
+
+layout(push_constant) uniform Push {
+    float cellSize;    // 格元边长 L/N (m)
+    float chopScale;   // Q (与谱演化同值; 雅可比梯度用)
+    float foamEnabled; // 1=计算泡沫, 0=跳过 (J 写 1)
+    float sprayThresh; // 泡沫 > 此值记为喷雾候选 (alpha 通道保留 J 原值)
+} pc;
+
+void main() {
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 N = imageSize(displacement);
+    if (xy.x >= N.x || xy.y >= N.y) return;
+
+    // Spectrum is centered at N/2. Undo the resulting checkerboard after IFFT.
+    float sign = ((xy.x + xy.y) % 2 == 0) ? 1.0 : -1.0;
+    float h  = texelFetch(heightTex, xy, 0).r * sign;
+    float cx = texelFetch(chopXTex, xy, 0).r * sign;
+    float cz = texelFetch(chopZTex, xy, 0).r * sign;
+
+    // 位移 (顶点着色直接加)
+    imageStore(displacement, xy, vec4(cx, h, cz, 0.0));
+
+    // 法线: 精确坡度场 (slopeX=∂h/∂x, slopeZ=∂h/∂z) 叉积
+    float sx = texelFetch(slopeXTex, xy, 0).r * sign;
+    float sz = texelFetch(slopeZTex, xy, 0).r * sign;
+    vec3 nrm = normalize(vec3(-sx, 1.0, -sz));
+
+    // 完整 2×2 雅可比: chop 场中心差分 (对标 Triton .cu:71-97)
+    float J = 1.0;
+    if (pc.foamEnabled > 0.5) {
+        ivec2 px = ivec2((xy.x + N.x - 1) % N.x, xy.y);
+        ivec2 nx = ivec2((xy.x + 1) % N.x, xy.y);
+        ivec2 py = ivec2(xy.x, (xy.y + N.y - 1) % N.y);
+        ivec2 ny = ivec2(xy.x, (xy.y + 1) % N.y);
+        float two = 2.0 * pc.cellSize;
+        // Every direct neighbor has the opposite checkerboard sign. Chop fields
+        // already contain Q in spectrum evolution; applying it again is wrong.
+        float sxx = (texelFetch(chopXTex, px, 0).r - texelFetch(chopXTex, nx, 0).r) * sign / two;
+        float szz = (texelFetch(chopZTex, py, 0).r - texelFetch(chopZTex, ny, 0).r) * sign / two;
+        float sxz = (texelFetch(chopXTex, py, 0).r - texelFetch(chopXTex, ny, 0).r) * sign / two;
+        float szx = (texelFetch(chopZTex, px, 0).r - texelFetch(chopZTex, nx, 0).r) * sign / two;
+        float jxx = 1.0 + sxx;
+        float jyy = 1.0 + szz;
+        float jxy = sxz;
+        float jyx = szx;
+        J = jxx * jyy - jxy * jyx;
+    }
+
+    imageStore(slopeFoam, xy, vec4(nrm, J));
+}

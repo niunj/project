@@ -1,0 +1,123 @@
+{
+  "schema": "vsgraysim.cockpit",
+  "version": 1,
+  "id": "mq9",
+  "name": "MQ-9 · 无人机手柄操控台",
+  "category": "uav",
+  "description": "三屏地面站 / HOTAS / 当前平台 EO、IR 实测载荷 / 机外跟随",
+  "background": "../../assets/cockpit/mq9/panel-base.png",
+  "grips": "../../assets/cockpit/f16c/control-grips.png",
+  "engine_count": 1,
+  "controls": {
+    "stick": [
+      0.745,
+      0.63,
+      0.19,
+      0.34
+    ],
+    "throttle": [
+      0.025,
+      0.675,
+      0.2,
+      0.28
+    ],
+    "maximum_axis_demand": 0.55,
+    "stick_travel_x": 0.16,
+    "stick_travel_y": 0.12
+  },
+  "external_model": {
+    "uri": "../../models/MQ-9/MQ-9.obj",
+    "up_axis": "y",
+    "maximum_dimension_m": 20,
+    "chase_distance_m": 45,
+    "label": "MQ-9 外形",
+    "heading_deg": 180,
+    "view_azimuth_deg": 30
+  },
+  "instruments": [
+    {
+      "id": "pfd",
+      "kind": "pfd",
+      "label": "FLIGHT",
+      "rect": [
+        0.057,
+        0.09,
+        0.272,
+        0.369
+      ]
+    },
+    {
+      "id": "navigation",
+      "kind": "mfd",
+      "label": "NAVIGATION",
+      "rect": [
+        0.364,
+        0.09,
+        0.272,
+        0.369
+      ],
+      "initial_page": "NAV"
+    },
+    {
+      "id": "payload",
+      "kind": "payload",
+      "label": "EO / IR PAYLOAD",
+      "rect": [
+        0.67,
+        0.09,
+        0.273,
+        0.369
+      ]
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "nav_page",
+      "label": "导航显示",
+      "action": "mfd_page",
+      "target": "navigation",
+      "value": "NAV",
+      "rect": [
+        0.402,
+        0.478,
+        0.026,
+        0.031
+      ]
+    },
+    {
+      "id": "nav_ctrl",
+      "label": "操纵需求 / 实际",
+      "action": "mfd_page",
+      "target": "navigation",
+      "value": "CTRL",
+      "rect": [
+        0.428,
+        0.478,
+        0.026,
+        0.031
+      ]
+    },
+    {
+      "id": "nav_eng",
+      "label": "发动机数据",
+      "action": "mfd_page",
+      "target": "navigation",
+      "value": "ENG",
+      "rect": [
+        0.455,
+        0.478,
+        0.026,
+        0.031
+      ]
+    }
+  ],
+  "joystick": {
+    "roll_axis": 0,
+    "pitch_axis": 1,
+    "throttle_axis": 2,
+    "rudder_axis": 3,
+    "invert_throttle": true,
+    "deadzone": 0.04,
+    "release_button": 7
+  }
+}

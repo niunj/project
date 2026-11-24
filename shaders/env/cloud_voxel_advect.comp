@@ -1,0 +1,54 @@
+#version 450
+layout(local_size_x=4,local_size_y=4,local_size_z=4) in;
+layout(set=0,binding=0,rgba32f) readonly uniform image3D state0;
+layout(set=0,binding=1,rgba32f) writeonly uniform image3D state1;
+layout(set=0,binding=2,rgba32f) readonly uniform image3D velocity0;
+layout(set=0,binding=3,rgba32f) writeonly uniform image3D velocity1;
+layout(std140,set=0,binding=4) uniform CloudParams {
+    vec4 originCell; vec4 gridDt; vec4 windHumidity; vec4 thermo;
+    vec4 phase; vec4 flow; vec4 colliderMeta;
+    vec4 colliderCentre[32]; vec4 colliderVelocity[32];
+} p;
+
+vec4 sampleState(vec3 at) {
+    // Open lateral/top boundaries supply environmental air on inflow rather
+    // than indefinitely recirculating a clamped copy of the edge cell.
+    if(any(lessThan(at,vec3(0.)))||any(greaterThan(at,p.gridDt.xyz-vec3(1.))))
+        return vec4(p.windHumidity.w,0,0,0);
+    at=clamp(at,vec3(0.),p.gridDt.xyz-vec3(1.));
+    ivec3 n=ivec3(p.gridDt.xyz), i0=ivec3(floor(at)); vec3 f=fract(at);
+    i0=clamp(i0,ivec3(0),n-1); ivec3 i1=min(i0+1,n-1);
+    vec4 a=mix(imageLoad(state0,ivec3(i0.x,i0.y,i0.z)),imageLoad(state0,ivec3(i1.x,i0.y,i0.z)),f.x);
+    vec4 b=mix(imageLoad(state0,ivec3(i0.x,i1.y,i0.z)),imageLoad(state0,ivec3(i1.x,i1.y,i0.z)),f.x);
+    vec4 c=mix(imageLoad(state0,ivec3(i0.x,i0.y,i1.z)),imageLoad(state0,ivec3(i1.x,i0.y,i1.z)),f.x);
+    vec4 d=mix(imageLoad(state0,ivec3(i0.x,i1.y,i1.z)),imageLoad(state0,ivec3(i1.x,i1.y,i1.z)),f.x);
+    return mix(mix(a,b,f.y),mix(c,d,f.y),f.z);
+}
+vec4 sampleVelocity(vec3 at) {
+    if(any(lessThan(at,vec3(0.)))||any(greaterThan(at,p.gridDt.xyz-vec3(1.))))
+        return vec4(p.windHumidity.xyz,0);
+    at=clamp(at,vec3(0.),p.gridDt.xyz-vec3(1.));
+    ivec3 n=ivec3(p.gridDt.xyz), i0=ivec3(floor(at)); vec3 f=fract(at);
+    i0=clamp(i0,ivec3(0),n-1); ivec3 i1=min(i0+1,n-1);
+    vec4 a=mix(imageLoad(velocity0,ivec3(i0.x,i0.y,i0.z)),imageLoad(velocity0,ivec3(i1.x,i0.y,i0.z)),f.x);
+    vec4 b=mix(imageLoad(velocity0,ivec3(i0.x,i1.y,i0.z)),imageLoad(velocity0,ivec3(i1.x,i1.y,i0.z)),f.x);
+    vec4 c=mix(imageLoad(velocity0,ivec3(i0.x,i0.y,i1.z)),imageLoad(velocity0,ivec3(i1.x,i0.y,i1.z)),f.x);
+    vec4 d=mix(imageLoad(velocity0,ivec3(i0.x,i1.y,i1.z)),imageLoad(velocity0,ivec3(i1.x,i1.y,i1.z)),f.x);
+    return mix(mix(a,b,f.y),mix(c,d,f.y),f.z);
+}
+void main() {
+    ivec3 c=ivec3(gl_GlobalInvocationID.xyz), n=ivec3(p.gridDt.xyz);
+    if(any(greaterThanEqual(c,n)))return;
+    // Midpoint (RK2) characteristic tracing is materially less biased in a
+    // sheared cloud than one Euler backtrace, and supplies the forward half of
+    // the following BFECC correction.
+    float scale=p.gridDt.w/p.originCell.w;
+    vec3 v=imageLoad(velocity0,c).xyz;
+    vec3 midpoint=vec3(c)-.5*v*scale;
+    vec3 previous=vec3(c)-sampleVelocity(midpoint).xyz*scale;
+    vec4 s=sampleState(previous);
+    vec4 u=sampleVelocity(previous);
+    s.r=max(s.r,0.0);s.g=max(s.g,0.0);s.a=max(s.a,0.0);
+    imageStore(state1,c,s);
+    imageStore(velocity1,c,vec4(u.xyz,0));
+}

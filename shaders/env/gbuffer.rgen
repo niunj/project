@@ -1,0 +1,28 @@
+// gbuffer.rgen —— P1.1: 全场景唯一主射线生成 (波段无关 G-buffer)。
+// 射线构造与 band_rt.rgen 同式 (vsg 相机 proj 内含 Vulkan y 翻转, 无需再翻)。
+// tmax 固定 1e5 m (ENU 场景尺度 ~km 级; 更远命中交 rmiss = 天空)。
+// 像素载荷未用 —— rchit/rmiss 直写 G-buffer storage image (每像素独占)。
+#version 460
+#extension GL_EXT_ray_tracing : enable
+
+layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
+
+layout(push_constant) uniform Push {
+    mat4 viewInv;
+    mat4 projInv;
+} pc;
+
+layout(location = 0) rayPayloadEXT vec4 prd;   // 载荷未用 (rchit/rmiss 直写 SSBO/图像)
+
+void main() {
+    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+    const vec2 uv = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+    const vec2 clip = uv * 2.0 - 1.0;
+
+    const vec4 origin = pc.viewInv * vec4(0.0, 0.0, 0.0, 1.0);
+    const vec4 viewDir = pc.projInv * vec4(clip.x, clip.y, 1.0, 1.0);
+    const vec4 dir = pc.viewInv * vec4(normalize(viewDir.xyz), 0.0);
+
+    traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0,
+                origin.xyz, 0.001, dir.xyz, 1.0e5, 0);
+}

@@ -1,0 +1,736 @@
+// band_shade.comp —— P1.1: per-波段 compute 着色 (读 G-buffer + 波段 LUT + 环境项)。
+// 基础式 (与旧 band_rt.rchit 同式): L = (ε·M_band(T)/π)·τ + (1-τ)·L_path
+// 批次1 扩展 (太阳反射项): 目标面增加直射太阳反射 ——
+//   漫反射  L_diff = ρ_band·Esun/π·max(N·L,0)          (Tv/SWIR 朗伯阳面增亮)
+//   镜面    L_spec = GGX(D·Vis·F)·N·L·Esun·strength    (水面/光滑面太阳耀斑)
+//   L = (ε·M/π + L_diff + L_spec)·τ + (1-τ)·L_path
+// ρ_band 按波段选材质谱列 (band.w: 0=TV→ρ_tv / 1=SWIR→ρ_swir / ≥2 红外热主导→0);
+// MWIR/LWIR 波段 Esun_band≈0, 太阳项自然归零。夜间/无直射 (Esun=0) 时输出
+// 与旧版逐位一致 (P0 回归硬标准)。
+// 批次2 扩展 (谱天空图): CPU 侧 bandSky 烘焙的 latlong R32F 天空辐亮度图
+// (binding 9, 256×128, u=方位 v=仰角), 背景与路径辐射逐像素方向化:
+//   背景 (hit=0): L = L_sky(view_dir) + 太阳盘 (解析, 角半径 0.267°)
+//   路径辐射:     L_path = (1-τ)·L_sky(相机→目标方向)   (均匀时退化为旧标量式)
+// 方向约定: ENU y 朝上, az=atan2(x,z) (与 CPU dirFromAzEl 同约定)。
+// 多波段共享同一 G-buffer (每帧唯一 TraceRays), 本着色 per-波段 dispatch。
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#ifdef USE_VOXEL_CLOUD_FIELD
+#define CLOUD_COMPUTE 1
+#include "voxel_cloud_sensor.glsl"
+#endif
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D inG0;   // (T, eps, range_m, hit)
+layout(set = 0, binding = 1, rgba32f) uniform image2D  outP0;          // P0: (L, T, eps, range_km)
+layout(set = 0, binding = 7, rgba32f) uniform readonly image2D inG1;   // (pos.xyz ENU, matId)
+layout(set = 0, binding = 8, rgba32f) uniform readonly image2D inG2;   // hit: 法线 / miss: 视线方向
+
+layout(set = 0, binding = 2) uniform EnvUbo {
+    vec4 env;    // sigma_per_km, sky_radiance(标量回退), sun_irradiance(Esun_band), night
+    vec4 env2;   // sunDir ENU xyz (单位, 指向太阳), pad
+} ub;
+
+layout(set = 0, binding = 3) uniform BandUbo {
+    vec4 band;    // lutTmin, lutTmax, lambdaC_um, bandId(0=TV 1=SWIR 2=MWIR 3=LWIR)
+    vec4 band2;   // B2: kSunOrient (朝向温差 K, 夜/阴=0), 基准 N·L | #5: 云底高度 m (<=0 禁用), 云影强度
+    vec4 band3;   // #5 体积云: 云顶高度 m, 覆盖率 0..1, 密度系数 0..1, 风速 m/s
+    vec4 band4;   // #5 体积云: 风向x, 风向z, 时间 s, 云发射辐亮度 (IR: ε·M(T_c)/π; TV 未用)
+    vec4 oceanWave[16];  // #4 海面波场: x=波长L y=振幅A z=cosθ w=sinθ (CPU WaveField 单一真值)
+    vec4 oceanOpt;       // #4: x=Gerstner Q (<=0 禁用), y=有效谐波数, z=像素角 rad/px, w pad
+    vec4 thermal;        // #6 热演化: x=dayRelax y=nightRelax z=nightDrop K w=云影降温 K
+    vec4 band5;          // r10 云型: x=cloudType 0卷云/1层云/2层积云/3积云/4积雨云, yzw pad
+} bb;
+
+layout(set = 0, binding = 4) uniform sampler2D lutTex;    // 波段出射度 LUT (512×1)
+// #1: 谱天空图 (256×128 latlong) —— TV 波段 RGBA32F (rgb=bandSky 三子带物理真值,
+//     a=luma), 其它波段 R32F 标量。TV 取色改 .rgb 物理值, 删除旧解析 skyTint。
+layout(set = 0, binding = 9) uniform sampler2D skyTex;
+
+layout(set = 0, binding = 5) buffer SpecBuf {
+    vec4 mats[];   // 2 vec4/材质: a=(ρ_tv, ρ_swir, ε_mwir, ε_lwir) b=(镜面强度, GGX粗糙度, 0, 0)
+};
+
+layout(set = 0, binding = 6) uniform CamUbo {
+    vec4 cam;    // 相机 ENU 位置 xyz (活跃视角同源, 镜面 V 向)
+} cb;
+
+// TV 彩色批次: G3 (uv/槽号) + albedo 贴图数组 (层=槽-1) + 槽表 (Kd.rgb, hasTex)
+layout(set = 0, binding = 10, rgba32f) uniform readonly image2D inG3;
+layout(set = 0, binding = 11) uniform sampler2DArray albedoTex;
+layout(set = 0, binding = 12) buffer TexSlotBuf { vec4 texSlots[]; };  // (Kd.rgb, hasTex)
+// #5: 旧 2D 云覆盖图 (binding 13) 已删除 —— 云体由 3D 密度场 slab ray march 实时渲染
+
+const float PI = 3.14159265;
+const float SUN_ANG_RAD = 0.267 * PI / 180.0;   // 太阳角半径 (0.267°)
+// 第八轮云观感: 太阳直射白光色度 (~5900K) + BT.709 亮度权值 —— 白云锚
+// 色度从天顶蓝改为太阳白; 亮度 r10d 提为天顶晴空 luma×9.5 (云反照率与雪
+// 同量级 0.6-0.9, ×4.5 使云比地平天空还暗 = 黑灰云/远场暗团根因)。
+const vec3 SUN_WHITE = vec3(1.0, 0.97, 0.92);
+const vec3 LUMA_W = vec3(0.2126, 0.7152, 0.0722);
+
+float bandExitance(float T) {
+    float u = clamp((T - bb.band.x) / (bb.band.y - bb.band.x), 0.0, 1.0);
+    return texture(lutTex, vec2(u * (1.0 - 1.0/512.0) + 0.5/512.0, 0.5)).r;
+}
+
+/// ENU 方向 → 天空图 uv (u=方位/2π+0.5, v=仰角/(π/2); 与 CPU 烘焙同约定)
+vec2 skyUv(vec3 dir) {
+    const float el = asin(clamp(dir.y, -1.0, 1.0));
+    const float az = atan(dir.x, dir.z);
+    return vec2(az / (2.0 * PI) + 0.5, clamp(el / (0.5 * PI), 0.0, 1.0));
+}
+
+/// 纯天图采样 (不含太阳盘; IR 路径标量基准)
+float skyMapL(vec3 dir) {
+    return texture(skyTex, skyUv(dir)).r;
+}
+
+/// #1: TV 物理天空取色 (RGB 天空图, bandSky 三子带真值; IR 路径不使用)
+vec3 skyRGB(vec3 dir) {
+    // 天空图数据序 [0]=低λ(蓝)/[2]=高λ(红), swizzle 为显示通道序 (R=红光)
+    return texture(skyTex, skyUv(dir)).bgr;
+}
+
+// ---------------------------------------------------------------------------
+// #5: continuous 3D cloud matter density shared with the environment volume.
+// 600m noise scale, deterministic integer hash, wind in m/s and time in seconds.
+// Existing per-type extinction and radiative transfer remain below this block.
+// ---------------------------------------------------------------------------
+// Legacy 2D noise is retained only for ocean micro-normal/foam radiometry.
+float cHash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+float cNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0);
+    float a = cHash(i), b = cHash(i + vec2(1.0, 0.0));
+    float c = cHash(i + vec2(0.0, 1.0)), d = cHash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float cHash3(vec3 p) {
+    uvec3 cell=uvec3(ivec3(p));
+    uint h=cell.x*73856093u ^ cell.y*19349663u ^ cell.z*83492791u;
+    h^=h>>16;h*=2246822519u;h^=h>>13;h*=3266489917u;h^=h>>16;
+    return float(h&0x00ffffffu)/16777216.0;
+}
+
+float cNoise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a000 = cHash3(i);
+    float a100 = cHash3(i + vec3(1, 0, 0));
+    float a010 = cHash3(i + vec3(0, 1, 0));
+    float a110 = cHash3(i + vec3(1, 1, 0));
+    float a001 = cHash3(i + vec3(0, 0, 1));
+    float a101 = cHash3(i + vec3(1, 0, 1));
+    float a011 = cHash3(i + vec3(0, 1, 1));
+    float a111 = cHash3(i + vec3(1, 1, 1));
+    return mix(mix(mix(a000, a100, f.x), mix(a010, a110, f.x), f.y),
+               mix(mix(a001, a101, f.x), mix(a011, a111, f.x), f.y), f.z);
+}
+
+float cFbm3(vec3 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 5; ++i) {
+        v += a * cNoise3(p);
+        p *= 2.03;
+        a *= 0.5;
+    }
+    return v;
+}
+
+float coverageThreshold(float cov) {
+    float kMean = 0.482, kSigma = 0.130;
+    float p = clamp(1.0 - cov, 1e-4, 1.0 - 1e-4);
+    float z;
+    if (p < 0.02425) {
+        float q = sqrt(-2.0 * log(p));
+        float num = (((((-7.784894002430293e-03 * q - 3.223964580411365e-01) * q
+                       - 2.400758277161838) * q - 2.549732539343734) * q
+                       + 4.374664141464968) * q + 2.938163982698783);
+        float den = ((((7.784695709041462e-03 * q + 3.224671290700398e-01) * q
+                      + 2.445134137142996) * q + 3.754408661907416) * q + 1.0);
+        z = num / den;
+    } else if (p <= 0.97575) {
+        float q = p - 0.5;
+        float r = q * q;
+        float num = (((((-3.969683028665376e+01 * r + 2.209460984245205e+02) * r
+                       - 2.759285104469687e+02) * r + 1.383577518672690e+02) * r
+                       - 3.066479806614716e+01) * r + 2.506628277459239);
+        float den = (((((-5.447609879822406e+01 * r + 1.615858368580409e+02) * r
+                       - 1.556989798598866e+02) * r + 6.680131188771972e+01) * r
+                       - 1.328068155288572e+01) * r + 1.0);
+        z = num * q / den;
+    } else {
+        float q = sqrt(-2.0 * log(1.0 - p));
+        float num = (((((-7.784894002430293e-03 * q - 3.223964580411365e-01) * q
+                       - 2.400758277161838) * q - 2.549732539343734) * q
+                       + 4.374664141464968) * q + 2.938163982698783);
+        float den = ((((7.784695709041462e-03 * q + 3.224671290700398e-01) * q
+                      + 2.445134137142996) * q + 3.754408661907416) * q + 1.0);
+        z = -num / den;
+    }
+    return kMean + kSigma * z;
+}
+
+// Per-type optical coefficients; xyz legacy shape slots are not density inputs.
+const vec4 CT_A[5] = vec4[5](
+    vec4(3.0, 0.35, 1.30, 0.12),   // 0 卷云
+    vec4(1.0, 1.00, 1.00, 1.00),   // 1 层云 (r9 锚)
+    vec4(1.2, 0.80, 1.10, 1.00),   // 2 层积云
+    vec4(0.7, 1.15, 1.35, 1.25),   // 3 积云
+    vec4(2.0, 1.50, 1.60, 1.80));
+int cloudTypeIdx() { return int(clamp(bb.band5.x, 0.0, 4.0)); }
+
+// Pure world-space density, identical to CloudField.h and cloud_volume.frag.
+// dist/observer/cloud type affect radiometry or integration quality, never matter density.
+float continuousCloudDensity(vec3 P, float base, float top, float coverage,
+                             float density, vec2 wind, float speed, float time) {
+    if (top <= base || coverage <= 0.0 || density <= 0.0) return 0.0;
+    float windLength = length(wind);
+    wind = windLength > 1.0e-6 ? wind / windLength : vec2(1.0, 0.0);
+    vec3 np = (P - vec3(wind.x, 0.0, wind.y) * time * speed) / 600.0;
+    float shape = cFbm3(np * 0.5) - 0.15 * cFbm3(np * 2.5 + 11.7);
+    float h = (P.y - base) / max(top - base, 1.0);
+    shape *= smoothstep(0.0, 0.2, h) * (1.0 - smoothstep(0.6, 1.0, h));
+    float threshold = coverageThreshold(clamp(coverage, 0.0, 1.0) * 0.55 + 0.08);
+    return smoothstep(threshold, threshold + 0.12, shape) * clamp(density * 1.6, 0.4, 1.0);
+}
+float cloudDensityCore(vec3 P, float dist) {
+#ifdef USE_VOXEL_CLOUD_FIELD
+    return voxelSensorExtinction(P);
+#else
+
+    if (bb.band2.z <= 0.0) return 0.0; // Existing BandUbo disabled-cloud sentinel.
+    return continuousCloudDensity(P, bb.band2.z, bb.band3.x, bb.band3.y, bb.band3.z,
+                                  bb.band4.xy, bb.band3.w, bb.band4.z);
+
+#endif
+}
+float cloudDensity(vec3 P, float dist) {
+    return cloudDensityCore(P, dist);
+}
+/// 视线-云 slab 交段 (pos 起点, dir 方向; t0/t1 为段端点 m, 相机前方)
+bool cloudSlab(vec3 pos, vec3 dir, out float t0, out float t1) {
+#ifdef USE_VOXEL_CLOUD_FIELD
+    return voxelSensorSlab(pos,dir,t0,t1);
+#else
+
+    t0 = 0.0; t1 = -1.0;
+    const float base = bb.band2.z, top = bb.band3.x;
+    if (base <= 0.0 || top <= base) return false;
+    float tn = 0.0, tf = 4.0e4;   // r10: 远端 30→40km (与 stepLen 上限 2000×24 匹配, 低仰角段尾漏云修复)
+    if (abs(dir.y) > 1.0e-4) {
+        const float ta = (base - pos.y) / dir.y, tb = (top - pos.y) / dir.y;
+        tn = max(tn, min(ta, tb));
+        tf = min(tf, max(ta, tb));
+    } else {
+        if (pos.y < base || pos.y > top) return false;        // 水平视线且层外
+    }
+    if (tf <= max(tn, 0.0)) return false;
+    t0 = max(tn, 0.0);
+    t1 = tf;
+    return t1 > t0;
+
+#endif
+}
+/// 云内消光系数 (1/km, 随密度系数缩放): r9 3.0→8.0 —— 真实积云/层积云
+/// 10-30/km 量级, 旧值使仰视薄层 OD~0.5 云被晴空淹没 (高仰角无云主因)。
+/// r10: per 云型因子 (卷云冰晶光学薄 ×0.12 / 积雨云深厚 ×1.8)
+float cloudExtPerKm() {
+#ifdef USE_VOXEL_CLOUD_FIELD
+    return 1000.;
+#else
+ return 8.0 * CT_A[cloudTypeIdx()].w * max(bb.band3.z, 0.05); 
+#endif
+}
+/// 第九轮多次散射: 太阳方向光学深度 (采样点 → 云顶, 3 步粗 march)。
+/// 用简化密度 (Core, 无 3D 侵蚀) —— 遮蔽深度只需量级正确; 太阳低于地平
+/// 附近 / 云底未配置 → 恒 0 (照明不受遮蔽)。
+float cloudSunOD(vec3 Ps) {
+#ifdef USE_VOXEL_CLOUD_FIELD
+    return voxelSensorSunOD(Ps,normalize(ub.env2.xyz));
+#else
+
+    const float base = bb.band2.z, top = bb.band3.x;
+    if (base <= 0.0 || top <= base) return 0.0;
+    const vec3 sunDir = normalize(ub.env2.xyz);
+    if (sunDir.y < 0.05) return 0.0;
+    const float tTop = max((top - Ps.y) / max(sunDir.y, 0.05), 0.0);
+    if (tTop <= 0.0) return 0.0;
+    const float stepLen = tTop / 3.0;
+    const float kExt = cloudExtPerKm() * 1.0e-3;
+    float od = 0.0, t = 0.5 * stepLen;
+    for (int i = 0; i < 3; ++i) {
+        od += cloudDensityCore(Ps + sunDir * t, t) * stepLen;
+        t += stepLen;
+    }
+    return od * kExt;
+
+#endif
+}
+/// Wrenninge/Nubis 多次散射 3 八度: Σ a_k·exp(-b_k·od_sun), Σa=1 ——
+///   云顶 (od→0): ms≈1.0 全亮; 云底厚柱: ms→0.22 地板 (r9: 0.15→0.22 + 三次
+///   八度权重 0.50/0.28/0.22 —— 光学厚云内源函数饱和, 阴天灰云底 ≈ 0.3-0.5×
+///   晴空而非黑压压; 多八度让深部能量衰减慢于单 exp → 云底灰白不塌黑。
+float cloudMultiScatter(float odSun) {
+    return 0.50 * exp(-odSun) + 0.28 * exp(-odSun * 0.20) + 0.22 * exp(-odSun * 0.05);
+}
+/// 视线 march: 返回 vec2(透射率 τ_c, 云量积累 C)。
+///   τ_c: 沿 dir 穿云后的透射率 (1=无云/全透) —— 衰减晴空背景与太阳盘。
+///   C:   Σ (1-τs)·τ·相位 (0..1) —— 云内亮度积累, 消费端按波段换算辐亮度:
+///        TV 乘太阳散射白光锚 (天顶晴空 × 2.5), IR 乘云发射辐亮度 band4.w。
+void cloudMarch(vec3 pos, vec3 dir, int steps, float maxDistance, out float tauC, out float cloud) {
+    tauC = 1.0; cloud = 0.0;
+    float t0, t1;
+    if (!cloudSlab(pos, dir, t0, t1)) return;
+    t1 = min(t1, maxDistance);
+    if (steps <= 0 || t1 <= t0) return;
+    // r9: 步长上限 800→1200 —— 低仰角段 (t1-t0 可达 25km+) 24 步 × 800m 仅
+    // 覆盖 19km, 段尾晴空漏进 τ_c (云虚/暗成因之一)。
+    // r10: 1200→2000 + 远端 40km —— 24 步 × 2km = 48km 全段覆盖; 远场密度
+    // 已收敛为平滑场 (高频被 w 压掉), 大步长无高频积分误差。
+    // r10d: 恒定步长 → 近密远疏几何级数 (比率 1.15) —— 低仰角射线恒定
+    // 1.25-2km 步长把 8-20km 段 (w 尚未收敛, 600m 形态特征仍在) 欠采样成
+    // speckle, 是低仰角"密密麻麻"的直接成因。几何级数使近场步长 ≤ span/170
+    // (40km span → 首步 217m, 2.5km span → 首步 14m), 形态特征恒有 ≥2 采样;
+    // 远场步长放宽到 3-6km 由 w 收敛的平滑场兜底 (无混叠需求)。照明积分按
+    // 步长加权 (恒定步长时与旧式等价; 分级后物理正确 —— 每段发光 ∝ 长度)。
+    const float span = t1 - t0;
+    const float ratio = 1.15;
+    const float stepBase = span * (ratio - 1.0) / (pow(ratio, float(steps)) - 1.0);
+    const vec3 sunDir = normalize(ub.env2.xyz);
+    // HG(g=0.6) 前向位相归一 + 多次散射饱和底座 (0.5): 单次散射 HG 背向
+    // 衰减至 ~0.05, 光学厚云柱内散射饱和值过低 (cl→0.3×锚) → 积雨云云柱
+    // 比雨幕天空还暗 (9.6-① 平黑主因之一)。物理: 光学厚保守散射介质源
+    // 函数饱和, 云底亮度与天空同量级 —— 底座 0.5 使厚云收敛于 0.5×锚,
+    // 前向银边 (1.6) 不变。
+    const float g = 0.6;
+    // r9 修复: mu = dot(dir, sunDir) —— 散射角 θ = angle(太阳方向, 视线)。
+    // 旧式 -sunDir 符号反: 朝太阳看 (薄云遮日银边) 落在 HG 背向 clamp 底座,
+    // 朝背阳看反而前向增亮 —— 云永远无阳面亮部 (r9 朝太阳 max 3.06 实证)。
+    const float mu = dot(dir, sunDir);
+    // r9: 底座 0.5→0.62 (侧向多次散射拉平更强; 侧向云亮度 ≈ 1.5-2×晴空真实量级)
+    const float ph = clamp((1.0 - g * g) / (4.0 * PI * pow(1.0 + g * g - 2.0 * g * mu, 1.5))
+                           / 0.24, 0.62, 1.6);
+    const float kExt = cloudExtPerKm() * 1e-3;
+    // 太阳散射波段 (TV/SWIR 白天): 云内照明随入柱深度上升 —— 云底被上方
+    // 云层遮蔽 (暗), 越往上直射/天空照明越强 (9.6-① 结构修复)。
+    const bool solarBand = ub.env.z > 0.0;
+    const float baseM = bb.band2.z, topM = bb.band3.x;
+    // r9 亮度语义重构: cloud = 路径平均照明 × 总遮挡 (1-τC)。
+    // 旧式把照明权重乘进积累, 光学厚云柱 cl 被 ph·illum·powder (~0.25) 二次
+    // 削减 → 白云锚 (cl=1 标定) 永远达不到, 全灰无阳面。新语义: 遮挡与照明
+    // 解耦 —— 厚云底 = 1.0×低照明 (灰), 阳面前向 = 1.0×HG 银边 (白)。
+    float litW = 0.0, wsum = 0.0;
+    float stepLen = stepBase;
+    float segmentBegin = t0;
+    for (int i = 0; i < steps; ++i) {
+        const float t = segmentBegin + 0.5 * stepLen;
+        const vec3 Ps = pos + dir * t;
+        const float d = cloudDensity(Ps, t);
+        if (d > 1e-8) {
+            const float tauS = exp(-d * stepLen * kExt);
+            // 第九轮多次散射 (Wrenninge 3 八度): 太阳方向 3 步遮蔽深度 →
+            // 多八度衰减替代旧高度权重 illum —— 暗底/亮顶随真实遮蔽产生,
+            // 云体结构从"高度线性近似"升级为几何驱动 (银边/暗底/层内纹理)。
+            float illum = 1.0;
+            if (solarBand && topM > baseM)
+                illum = cloudMultiScatter(cloudSunOD(Ps));
+            // Beer-Powder 糖霜 (第八轮): 入柱光学深度小 (受光边缘/薄云) 直射
+            // 散射被压暗, 光学厚内部 powder→1 —— 亮核暗缘轮廓对比。
+            // r9: 底座 0.35→0.45 (边缘薄云亮度抬升, 与 ph 底座配套)
+            const float odS = -log(max(tauC, 1.0e-3));
+            const float powder = 0.5 + 0.5 * (1.0 - exp(-2.0 * odS));
+            const float occ = (1.0 - tauS) * tauC;
+            // r9: 天空环境散射项 (各向同性, 不乘 HG) —— 真实云亮度大头来自
+            // 多次散射+天空半球环境光 (云反照率 0.6-0.9), 只算太阳直射项使
+            // 全云系统性偏暗 (暗灰乌云感)。入柱浅 (云缘/薄云) 0.35 全额,
+            // 深柱指数衰减 (云底 ~0.08)。
+            const float amb = 0.35 * exp(-odS * 0.5);
+            litW += occ * stepLen * (ph * illum * (0.45 + 0.55 * powder) + amb);
+            wsum += occ * stepLen;
+            tauC *= tauS;
+            if (tauC < 0.01) break;
+        }
+        segmentBegin += stepLen;
+        stepLen *= ratio;
+    }
+    if (wsum > 1.0e-4) cloud = litW / wsum * (1.0 - tauC);
+    // r10 大气透视 (远场平板感修复之三): 远云贡献按入云距离衰减。起点 8km
+    // (近中场不衰减) 长度 30km: t0=15km→0.78, 20km→0.61, 30km→0.37。
+    // r10b 黑线修复: 消光必须与发射同步淡出 —— 旧式只压 cloud (发光) 而
+    // tauC 不变, 远场厚云柱 τ→0 遮死晴空亮背景、自身发光又被 fade 砍 →
+    // 净输出趋 0 = 低仰角"远处一条黑线" (遮光不发光)。mix(tauC,1,1-f) 使
+    // 远云透明化露出晴空 —— 大气透视正确语义 (远云趋于天空色而非黑)。
+    // 近场 t0<8km f=1 恒等 (tauC/cl 均不动, 逐位一致)。
+    // r10c: 45000→30000 —— 远场深柱 litW/wsum 塌低 (powder→1/amb→0/ms→地板)
+    // 暗褐密集感, 45000 时 t0=20km 才 ×0.77 透明化不足; 30km 尺度下远云更快
+    // 趋天空色 (τ 同步淡出无黑线风险)。
+    const float fade = exp(-max(t0 - 8000.0, 0.0) / 30000.0);
+    cloud *= fade;
+    tauC = mix(tauC, 1.0, 1.0 - fade);
+    cloud = clamp(cloud, 0.0, 1.0);
+}
+/// #3→#5 云影: 地面点 P 沿太阳方向在云 slab 内积分光学厚度 (低步数 march)。
+/// 云体厚度自然产生软影/半影; 云底未配置 / 太阳低于地平线附近 → 恒等 1.0。
+float cloudShadow(vec3 P, vec3 Ldir) {
+    if (bb.band2.z <= 0.0 || bb.band2.w <= 0.0 || Ldir.y <= 0.05) return 1.0;
+    float t0, t1;
+    if (!cloudSlab(P, Ldir, t0, t1)) return 1.0;
+    const int N = 8;
+    const float stepLen = (t1 - t0) / float(N);
+    const float kExt = cloudExtPerKm() * 1e-3;
+    float od = 0.0;
+    float t = t0 + 0.5 * stepLen;
+    for (int i = 0; i < N; ++i) {
+        od += cloudDensity(P + Ldir * t, t) * stepLen;
+        t += stepLen;
+    }
+    const float tauS = exp(-od * kExt);
+    return 1.0 - bb.band2.w * (1.0 - tauS);   // 无云=1, 云核=1-strength
+}
+
+// ---------------------------------------------------------------------------
+// #4: 海面逐像素波场 (与 CPU WaveField / ocean.vert 严格同源): 解析 Gerstner
+//     法线 + 雅可比白沫。波面几何为 128×128 冻结快照 (批次3, 47m 格元), 本层
+//     在命中点重建连续波场 —— 恢复短波细节 (太阳耀斑/LWIR 亮带纹理) 并随
+//     band4.z 时间轴逐帧动画。谐波视距滤波: k·dist·kAng>1 的短波贡献衰减
+//     (亚像素欠采样抗混叠; 远海退化为几何 facet 法线兜底)。
+// ---------------------------------------------------------------------------
+const float kGWave = 9.80665;
+const float kPxAng = 1.2e-3;   // 回退近似像素角 rad/px (真值 fov/宽度 经 oceanOpt.z 下发)
+/// 谐波初相 (与 CPU WaveField::generate wavePhase0 同公式, index-hash 确定性):
+/// 打破零初相波列在原点对齐形成的规则交叉网纹 (UBO 不传初相, 同 index 同值)。
+float wavePhase0(int i) {
+    return fract(sin((float(i) + 1.0) * 12.9898) * 43758.5453) * 2.0 * PI;
+}
+
+/// 波场累加: slope=Σ w·kA·d·cosφ (法线斜率, CPU waveNormal 同式),
+///           jxx/jzz/jxz=P2 完整 2×2 雅可比累加项 (CPU WaveField::jacobian 同式
+///           sxx/szz/sxz, 含剪切; J=(1-sxx)(1-szz)-sxz²)
+///           varTotal/varKept = 斜率方差 Σk²A²/2 全量 / 亚像素滤波保留量
+///           —— 滤波删除的方差经 slopeVar 以噪声法线随机采样回归 (方差守恒)
+void waveAccum(vec2 xz, float t, float dist, out vec2 slope,
+               out float jxx, out float jzz, out float jxz,
+               out float varTotal, out float varKept) {
+    slope = vec2(0.0); jxx = 0.0; jzz = 0.0; jxz = 0.0; varTotal = 0.0; varKept = 0.0;
+    const float Q = clamp(bb.oceanOpt.x, 0.0, 1.0);
+    if (Q <= 0.0) return;
+    const float pxAng = bb.oceanOpt.z > 0.0 ? bb.oceanOpt.z : kPxAng;   // 像素角真值
+    for (int i = 0; i < 16; ++i) {
+        const float L = bb.oceanWave[i].x, A = bb.oceanWave[i].y;
+        if (L <= 0.0 || A <= 0.0) continue;
+        const float k = 2.0 * PI / L;
+        const float vH = 0.5 * k * k * A * A;   // 单谐波斜率方差 (kA)²/2
+        varTotal += vH;
+        const float w = exp(-k * dist * pxAng);   // 亚像素谐波滤波
+        if (w < 0.02) continue;
+        varKept += w * vH;
+        const vec2 d = bb.oceanWave[i].zw;
+        const float ph = k * dot(d, xz) - sqrt(kGWave * k) * t + wavePhase0(i);
+        const float c = cos(ph), s = sin(ph);
+        slope += w * k * A * d * c;
+        const float qkas = w * Q * k * A * s;
+        jxx += qkas * d.x * d.x;
+        jzz += qkas * d.y * d.y;
+        jxz += qkas * d.x * d.y;
+    }
+}
+
+/// 海面命中点着色细节: 法线替换 + 白沫值 + 亚像素残差方差 (非水/禁用 → 恒等 0)。
+/// N 就地更新为解析波法线 (远场向 facet 几何法线回收), foam 返回白沫覆盖率,
+/// slopeVar 返回被滤波删除的斜率方差 (供 IR Cox-Munk 记账)。
+/// isWater = 材质水标记 (specB.z, 打包自 dielectric_model==1 海水 Debye)。
+float seaShade(inout vec3 N, vec3 pos, float isWater, out float slopeVar) {
+    slopeVar = 0.0;
+    if (isWater <= 0.5 || bb.oceanOpt.x <= 0.0) return 0.0;
+    const float dist = length(pos - cb.cam.xyz);
+    vec2 slope; float jxx, jzz, jxz, vT, vK;
+    waveAccum(pos.xz, bb.band4.z, dist, slope, jxx, jzz, jxz, vT, vK);
+    slopeVar = max(vT - vK, 0.0);
+    const vec3 Nw = normalize(vec3(-slope.x, 1.0, -slope.y));
+    N = normalize(mix(Nw, N, smoothstep(8000.0, 25000.0, dist)));
+    // 亚像素残差 (方差守恒): 滤波删除的高频谐波方差以确定性噪声法线扰动回归
+    // (RMS=√slopeVar, cNoise 值噪声分量 RMS≈0.2 → 标定 ×3.5), 远场纹理/耀斑
+    // 闪烁不塌缩; 每像素独立采样 = 未解析斜率分布的随机抽样, 无时间闪烁。
+    // 方差记账: 总展开 σ² = Cox-Munk 风驱项 (入 lobe) + slopeVar (入此扰动)。
+    if (slopeVar > 1.0e-7) {
+        const float sR = 3.5 * sqrt(slopeVar);
+        N = normalize(vec3(N.x + sR * (cNoise(pos.xz * 0.11) - 0.5), N.y,
+                           N.z + sR * (cNoise(pos.xz * 0.11 + vec2(37.7, 19.3)) - 0.5)));
+    }
+    // 白沫覆盖率 (CPU WaveField::foamCoverage 同式, P2 完整 2×2 雅可比):
+    // J=(1-jxx)(1-jzz)-jxz² 平静≈1 / 收敛<1 / 折叠<0; 阈值 0.62..0.82
+    // (与 ocean.frag 同标定) × cNoise 43m 噪声 breakup (去波相锁定条带)
+    // + Monahan 风成覆盖率 (U10>6.5 m/s 增长, 不加噪声)
+    const float J = (1.0 - jxx) * (1.0 - jzz) - jxz * jxz;
+    float foam = 1.0 - clamp((J - 0.62) / (0.82 - 0.62), 0.0, 1.0);
+    foam *= 0.75 + 0.5 * cNoise(pos.xz / 43.0);
+    if (bb.band3.w > 6.5) foam += 0.0035 * (bb.band3.w - 6.5);
+    return clamp(foam, 0.0, 1.0);
+}
+
+/// 太阳盘因子 (盘界 0.85ω..1.4ω soft smoothstep; 盘外 0)
+float sunDisk(vec3 dir) {
+    if (ub.env.z <= 0.0) return 0.0;
+    const float cosSun = dot(normalize(dir), normalize(ub.env2.xyz));
+    if (cosSun <= cos(SUN_ANG_RAD * 1.4)) return 0.0;
+    return smoothstep(cos(SUN_ANG_RAD * 1.4), cos(SUN_ANG_RAD * 0.85), cosSun);
+}
+
+/// 方向化天空辐亮度 (天图采样 + 太阳盘解析叠加; 盘内辐亮度 Esun/Ω_sun ≈ Esun×1.47e4)
+float skyRadiance(vec3 dir) {
+    return skyMapL(dir) + ub.env.z * sunDisk(dir) * 1.47e4;   // Ω_sun = 2π(1-cosω) ≈ 6.8e-5 sr
+}
+
+/// 云量积累 → 波段云辐亮度: MWIR/LWIR = 热发射 band4.w; SWIR = 热发射尾 +
+/// 太阳散射锚 (云滴 SWIR 反照率 ~0.4, Esun 已含云遮蔽/雨衰减/夜门控 →
+/// 夜间自动归零)。修复 (9.6-②): SWIR 云旧式仅热发射 (250K 在 1-3μm≈0),
+/// 白天云体纯剪影近黑。TV 白光锚由调用端单独处理 (band.w<0.5 不进入)。
+float cloudBandL(float cl) {
+    return cl * (bb.band.w < 1.5 ? (bb.band4.w + ub.env.z * (0.4 / PI)) : bb.band4.w);
+}
+
+/// #5 IR 方向辐射 (云底混合): 晴空+太阳盘 × τ_c + 云辐亮度 cloudBandL
+/// (pos 为 march 起点: 相机→视线 / 目标点→反射方向)
+float skyCloudL(vec3 pos, vec3 dir, int steps) {
+    float tauC, cl;
+    cloudMarch(pos, dir, steps, 1.0e6, tauC, cl);
+    return skyRadiance(dir) * tauC + cloudBandL(cl);
+}
+
+/// TV albedo: 贴图槽采样 (hasTex → 数组层=槽-1) / Kd 纯色回退
+vec3 tvAlbedo(vec2 uv, uint slot) {
+    const vec4 kd = texSlots[slot];
+    if (kd.a > 0.5)
+        return clamp(texture(albedoTex, vec3(uv, float(slot) - 1.0)).rgb, vec3(0.02), vec3(1.0));
+    return clamp(kd.rgb, vec3(0.02), vec3(1.0));
+}
+
+/// GGX 镜面太阳耀斑 (Smith-Hammon 可见性近似, F0=0.02 介电; 轻量保留主耀斑带形态)
+float ggxSun(vec3 N, vec3 L, vec3 V, float rough, float strength, float esun) {
+    if (strength <= 0.0 || esun <= 0.0) return 0.0;
+    const vec3 H = normalize(L + V);
+    const float NdotL = max(dot(N, L), 0.0);
+    const float NdotV = max(dot(N, V), 1.0e-4);
+    const float NdotH = max(dot(N, H), 0.0);
+    const float VdotH = max(dot(V, H), 0.0);
+    const float a  = max(rough * rough, 1.0e-3);
+    const float a2 = a * a;
+    const float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    const float D = a2 / (PI * d * d);
+    const float Vis = 0.5 / max(mix(2.0 * NdotL * NdotV, NdotL + NdotV, 0.5), 1.0e-4);
+    const float F = 0.02 + 0.98 * pow(1.0 - VdotH, 5.0);
+    return D * Vis * F * NdotL * esun * strength;
+}
+
+void main() {
+    const ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+    const ivec2 size = imageSize(outP0);
+    if (px.x >= size.x || px.y >= size.y) return;
+
+    const vec4 g0 = imageLoad(inG0, px);
+
+    if (g0.w < 0.5) {
+        // 批次2: 方向化天空背景 (视线方向来自 rmiss 写入的 G2) + 解析太阳盘
+        const vec3 viewDir = imageLoad(inG2, px).xyz;
+        const vec3 dir = length(viewDir) > 0.5 ? normalize(viewDir) : vec3(0.0, 1.0, 0.0);
+        // #5 天空段体积云 march: τ_c 衰减晴空背景与太阳盘 (云遮日), 云量积累
+        // cl 按波段换算云辐亮度 (TV=散射白光锚, IR=云发射 band4.w)
+        float tauC, cl;
+        cloudMarch(cb.cam.xyz, dir, 24, 1.0e6, tauC, cl);
+        if (bb.band.w < 0.5) {
+            // #1/#5 TV 彩色: 晴空 RGB × τ_c + 云散射白光 (HG 相位) + 太阳盘穿云
+            // 衰减 (晴空下与旧式逐位一致: τ_c=1, cl=0)。
+            // 白云锚 (第八轮 ×4.5 → r10d ×9.5): 色度 = 太阳白光。r10d 依据:
+            // 实测厚云侧亮 P0 luma ≈6.4, 仅为太阳直射面 (雪 30) 的 1/5 ——
+            // 真实云反照率 0.6-0.9 与雪同量级, 且地平天空 ≈ 天顶×2-3 使低仰角
+            // 云比天空还暗 (黑灰/棕观感 + 远场暗团主因)。×9.5 使厚云侧亮
+            // (cl≈0.5) ≈ 26 ≈ 雪×0.87, 云/天顶 ≈ 4.7× (真实正午量级); 银边
+            // cl 1.2-1.6 饱和白由 AGC 压缩。AGC P95 自归一, 相对对比保持。
+            const float diskL = sunDisk(dir) * ub.env.z * 1.47e4;
+            const vec3 white = SUN_WHITE * (dot(skyRGB(vec3(0.0, 1.0, 0.0)), LUMA_W) * 9.5);
+            const vec3 Lrgb = skyRGB(dir) * tauC + cl * white
+                            + diskL * tauC * vec3(1.0, 0.96, 0.88);
+            imageStore(outP0, px, vec4(Lrgb, 1.0e6));
+        } else {
+            // #5 IR 天空: 晴空辐射+太阳盘 × τ_c + 云辐亮度 (SWIR 太阳散射锚 /
+            // MWIR、LWIR 热发射, 见 cloudBandL)
+            imageStore(outP0, px, vec4(skyRadiance(dir) * tauC + cloudBandL(cl), 0.0, 0.0, 1.0e6));
+        }
+        return;
+    }
+
+    const float T      = g0.x;
+    float eps = g0.y;
+    const float rangeM = g0.z;
+    const float rangeKm = rangeM * 1e-3;
+    const float tau = exp(-ub.env.x * rangeKm);            // τ = exp(-σ·R_km)
+
+    // ---- 批次1/2: 路径方向 (相机→目标, 供方向化路径辐射) + 目标面太阳反射 ----
+    const vec4 g1 = imageLoad(inG1, px);
+    if (bb.band.w >= 1.5) {
+        const vec4 spectral = mats[uint(g1.w + 0.5) * 2];
+        const float overrideEps = bb.band.w < 2.5 ? spectral.z : spectral.w;
+        if (overrideEps >= 0.0) eps = clamp(overrideEps, 0.0, 1.0);
+    }
+    const vec3 pathDir = normalize(g1.xyz - cb.cam.xyz);       // 相机 → 目标
+
+    if (bb.band.w < 0.5) {
+        // ---- TV 彩色路径: P0 = (Lr, Lg, Lb, range_km), 下游彩色 AGC 消费 ----
+        const vec4 g3 = imageLoad(inG3, px);
+        vec3 albedo = tvAlbedo(g3.xy, uint(g3.z + 0.5));
+        const vec3 N0 = imageLoad(inG2, px).xyz;
+        const vec3 Nraw = length(N0) > 0.5 ? normalize(N0) : vec3(0.0, 1.0, 0.0);
+        const vec3 V = -pathDir;                        // 目标点 → 相机
+        vec3 N = dot(Nraw, V) < 0.0 ? -Nraw : Nraw;   // 两面着色 (CCW 绕序保障)
+        const vec3 Ldir = normalize(ub.env2.xyz);
+        const uint matId = uint(g1.w + 0.5);
+        const vec4 specB = mats[matId * 2 + 1];
+        // #4 海面逐像素细节: 解析波法线 + 白沫值 (非水 foam=0 恒等)。
+        // 水体 TV 反照率用谱材质 ρ_tv (海水 0.02 真值) 而非槽表 Kd —— 程序化
+        // 海面无贴图槽 → Kd=0.5 灰, 朗伯漫反射主导即"面粉海"根因
+        float sVarTv;
+        const float foam = seaShade(N, g1.xyz, specB.z, sVarTv);
+        const float specStr = specB.x * (1.0 - foam);
+        const float NdotL = max(dot(N, Ldir), 0.0);
+        // #5 环境天空光: 目标点朝天 march —— 晴空 × τ_c + 云散射 (HG 相位随
+        // 朝天角自适应, 云底阴天环境自然变暗) (skyZen 提前: 水面反射展开混合
+        // 复用; 非水路径与旧式逐位一致)
+        float zTau, zCl;
+        cloudMarch(g1.xyz, vec3(0.0, 1.0, 0.0), 24, 1.0e6, zTau, zCl);
+        const vec3 white = SUN_WHITE * (dot(skyRGB(vec3(0.0, 1.0, 0.0)), LUMA_W) * 4.5);
+        const vec3 skyZen = skyRGB(vec3(0.0, 1.0, 0.0)) * zTau + zCl * white;
+        vec3 Ltarget;
+        if (specB.z > 0.5) {
+            // 水面: 菲涅尔天空反射主导 (Schlick n=1.33, ρ0=0.02) + Cox-Munk
+            // 展宽 GGX 耀斑 (粗糙度=风驱 RMS 斜率, 随风速) + 白沫漫反射 ——
+            // 真实海面 TV 辐亮度主体是天空镜像, 离水辐射可忽略
+            const vec4 specA = mats[matId * 2 + 0];
+            const vec3 diffRho = mix(vec3(max(specA.x, 0.0)),           // 水体离水反照率
+                                     vec3(0.25, 0.26, 0.28), foam);     // 白沫面组同值
+            const float cosV = max(dot(N, V), 0.0);
+            const float rhoSky = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
+            const float specR = sqrt(0.003 + 5.12e-3 * max(bb.band3.w, 0.0));  // Cox-Munk σ_rms
+            const float smoothW = clamp(1.0 / (1.0 + specR * 1.24), 0.0, 1.0); // 镜像权重 (IR 同式)
+            const vec3 R = reflect(pathDir, N);
+            float rTau, rCl;
+            cloudMarch(g1.xyz, R, 16, 1.0e6, rTau, rCl); // reflected sky path
+            const vec3 LskyR = mix(skyZen, skyRGB(R) * rTau + rCl * white, smoothW);
+            vec3 Ls = ggxSun(N, Ldir, V, specR, specStr, ub.env.z) * vec3(1.0, 0.97, 0.90);
+            Ls = (Ls + diffRho * ub.env.z * NdotL / PI)   // 直射 = 耀斑 + 离水/白沫漫反射
+               * cloudShadow(g1.xyz, Ldir);
+            const vec3 Lb = diffRho * skyZen * (0.5 + 0.5 * N.y)   // 环境天空光
+                          + rhoSky * LskyR * (1.0 - foam);          // 天空反射 (白沫压制)
+            Ltarget = Ls + Lb;
+        } else {
+            // Spectral rho_tv scales linear source color/imagery. Previously
+            // only SWIR/IR consumed the material table and TV silently ignored it.
+            const float rhoTv = mats[matId * 2].x;
+            if (rhoTv >= 0.0) albedo *= clamp(rhoTv, 0.0, 1.0);
+            // 非水: 太阳直射漫反射 (白光) + GGX 镜面耀斑 (暖白; 光滑面)
+            vec3 Lsolar = albedo * ub.env.z * NdotL / PI;
+            if (specStr > 0.0 && ub.env.z > 0.0)
+                Lsolar += ggxSun(N, Ldir, V, specB.y, specStr, ub.env.z) * vec3(1.0, 0.97, 0.90);
+            Lsolar *= cloudShadow(g1.xyz, Ldir);   // #3/#5: 云影软影 march 调制直射
+            Ltarget = Lsolar + albedo * skyZen * (0.5 + 0.5 * N.y);
+        }
+        // TV 热发射可忽略 (M_tv(300K) ~ 1e-9 W/m²/sr); 路径辐射沿视线物理取色
+        const vec3 Lpath = (1.0 - tau) * skyRGB(pathDir);
+        // #5 视线穿云 (相机→目标): 云体衰减目标 + 叠加云散射 —— seeker 穿云
+        // 看目标的核心语义 (晴空下 τ_c=1/cl=0 退化与旧式逐位一致)
+        float vTau, vCl;
+        cloudMarch(cb.cam.xyz, pathDir, 24, rangeM, vTau, vCl);
+        imageStore(outP0, px, vec4(vCl * white + vTau * (Ltarget * tau + Lpath), rangeKm));
+        return;
+    }
+
+    float L_solar = 0.0;
+    float NdotL = 0.0;
+    float NdotLc = 0.0;    // Teff 太阳项 N·L: 水体=波场平均(竖直) / 陆地=几何法线
+    float shadowF = 1.0;   // #6: 直射云影因子 (L_solar 与云影降温同源复用)
+    // B2/C1: 法线上提 (太阳朝向温差与天空反射共用; 两面着色 CCW 绕序保障)
+    const vec3 N0 = imageLoad(inG2, px).xyz;
+    const vec3 Nraw = length(N0) > 0.5 ? normalize(N0) : vec3(0.0, 1.0, 0.0);
+    const vec3 V = -pathDir;                        // 目标点 → 相机
+    vec3 N = dot(Nraw, V) < 0.0 ? -Nraw : Nraw;
+    const uint matId = uint(g1.w + 0.5);
+    const vec4 specB = mats[matId * 2 + 1];
+    // #4 海面逐像素细节: 解析波法线 (LWIR 亮带/天空镜像纹理 + 朝向温差随波面
+    // 起伏) + 白沫 (发射率向 1.0 靠拢, 与批次3 白沫面组同值; 非水 foam=0 恒等)
+    float slopeVar;
+    const float foam = seaShade(N, g1.xyz, specB.z, slopeVar);
+    const float epsE = mix(eps, 1.0, foam);
+    // Cox-Munk 风驱斜率统计 (水面): σ²_cm = 0.003 + 5.12e-3·U10 —— 太阳耀斑
+    // 带宽度与天空反射展开随风速展宽 (旧 specB.y=0.18 材质标签恒定, 不随风速,
+    // 修 IR 海况"不准确"); 亚像素方差 slopeVar 已入 seaShade 法线随机采样,
+    // 此处不重复计入 (方差记账: σ²_total = σ²_cm + slopeVar)。
+    const bool isSea = specB.z > 0.5; // explicit water material, not high emissivity
+    // Cox-Munk 风速真值 = bb.band3.w (band3=[云顶,覆盖率,密度,风速], 此前误用
+    // band3.y=覆盖率 → 展宽从不随风速)
+    const float specR = isSea ? sqrt(0.003 + 5.12e-3 * max(bb.band3.w, 0.0)) : specB.y;
+    if (ub.env.z > 0.0) {
+        const vec3 Ldir = normalize(ub.env2.xyz);
+        const vec4 specA = mats[matId * 2 + 0];
+        // ρ_band 列选择: TV→ρ_tv / SWIR→ρ_swir / MWIR|LWIR→0 (热主导, Esun≈0 双保险)
+        const float rho = bb.band.w < 0.5 ? specA.x : (bb.band.w < 1.5 ? specA.y : 0.0);
+        NdotL = max(dot(N, Ldir), 0.0);
+        // Teff 热项 N·L: 水体用波场平均法线 (竖直, E[坡度]=0) —— 波面朝向吸热差
+        // 被水体热混合抹平 (真实海面热纹理来自反射物理而非波相温度, 波相锁定
+        // 假热条纹根除); 陆地用几何法线 (解析朝向吸热差保留)
+        NdotLc = isSea ? max(Ldir.y, 0.0) : NdotL;
+        L_solar = rho * ub.env.z * NdotL / PI
+                + ggxSun(N, Ldir, V, specR, specB.x, ub.env.z);
+        shadowF = cloudShadow(g1.xyz, Ldir);   // #3: 云影调制直射 (SWIR 受益; MWIR/LWIR 本块不进入)
+        L_solar *= shadowF;
+    }
+
+    // B2 朝向温差 + #6 热演化 (一阶热惯性工程式):
+    //   面组烘焙 T 代表城市平均朝向吸热 (N·L≈band2.y 基准), 阳面偏暖/背阴面偏冷。
+    //   T_eff = T + kSun·(N·L − 基准)·dayRelax        —— 日出后向日晒平衡渐进
+    //         − nightDrop·nightRelax·(水? 0.15 : 1)   —— 日落后辐射冷却 (水体热
+    //             惯量大, 降温减缓; 昼间 nightRelax=0 恒等)
+    //         − cloudDrop·(1−shadowF)·dayRelax        —— 白天云影内表面散热
+    //   夜间 kSun=0 且 dayRelax=0 → 只剩夜冷项; thermal 全 0 → 与 B2 静态式一致。
+    const float waterT = isSea ? 0.15 : 1.0;
+    //   水面太阳加热项同乘 waterT: 开阔水体热惯性大 + 波面混合, 波面朝向温差
+    //   被强烈阻尼 (旧式全额生效 → 假热条纹随波相锁定, 修 IR 海况"不准确");
+    //   海面 IR 纹理对比度改由反射物理 (ρ(θ)·Lsky + 耀斑) 承担 —— 真实热像
+    //   的海面对比来源。
+    const float Teff = T
+                     + waterT * bb.band2.x * (NdotLc - bb.band2.y) * bb.thermal.x
+                     - bb.thermal.z * bb.thermal.y * waterT
+                     - bb.thermal.w * (1.0 - shadowF) * bb.thermal.x;
+    // C1 天空反射 (Kirchhoff 能量守恒): ρ(θ)=ρ0+(1-ρ0)·(1-cosθ)^5 (Schlick,
+    // ρ0=1-ε) —— 掠射反射增强, 海面 LWIR 地平线亮带/天空镜像来源; 反射方向按
+    // GGX 粗糙度混合 (光滑面→镜像天图方向, 粗糙面→朝天半球均值近似)。
+    // 发射项相应降为 (1-ρSky) 保持能量守恒; 夜间天空图仍有效 (大气热辐射)。
+    const float r0 = clamp(1.0 - epsE, 0.0, 1.0);   // #4: 白沫 ε→1 ⇒ ρ0→0 (反射减弱)
+    const float cosV = max(dot(N, V), 0.0);
+    const float rhoSky = r0 + (1.0 - r0) * pow(1.0 - cosV, 5.0);
+    // 反射展开权重: 水面由 Cox-Munk α 映射 1/(1+1.24α) (α=0.18 → 0.82 与旧
+    // 材质标签行为标定一致; α 随风速增大 → 混入更多朝天均值 = 展开变宽),
+    // 非水材质仍用 specB.y (恒等回归)。
+    const float smoothW = isSea ? clamp(1.0 / (1.0 + specR * 1.24), 0.0, 1.0)
+                                : clamp(1.0 - specB.y, 0.0, 1.0);
+    // #5 天空反射混合云体 (march 起点=目标点, 反射射线离面向上): 晴空 × τ_c
+    //    + 云发射 band4.w —— 海面 LWIR 云底镜像/亮带随云态变化
+    const float LskyR = mix(skyCloudL(g1.xyz, vec3(0.0, 1.0, 0.0), 10),
+                            skyCloudL(g1.xyz, reflect(pathDir, N), 10), smoothW);
+    const float L_target = (1.0 - rhoSky) * bandExitance(Teff) / PI
+                         + L_solar + rhoSky * LskyR;   // 目标辐亮度
+    // 批次2: 路径辐射沿视线方向采样天图 (均匀天图时退化为旧标量 (1-τ)·sky)
+    const float L_path = (1.0 - tau) * skyRadiance(pathDir);
+    // #5 视线穿云 (相机→目标): 云体衰减目标 + 云发射叠加 (热像穿云语义;
+    // 晴空 τ_c=1/cl=0 与旧式逐位一致)
+    float vTau, vCl;
+    cloudMarch(cb.cam.xyz, pathDir, 12, rangeM, vTau, vCl);
+    imageStore(outP0, px, vec4(vCl * bb.band4.w + vTau * (L_target * tau + L_path), Teff, epsE, rangeKm));
+}

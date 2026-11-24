@@ -1,0 +1,55 @@
+{
+  "schema": "vsgraysim.earth.map",
+  "version": 1,
+  "name": "Default Earth: Taipei public GLO-30 DSM / Sentinel-2, global coarse fallback",
+  "earth": {
+    "grid_size": 257,
+    "strict": true,
+    "vertical_datum": "ellipsoidal",
+    "provenance_assumed": true,
+    "coverage": {
+      "min_x": -30000,
+      "max_x": 30000,
+      "min_z": -30000,
+      "max_z": 30000
+    },
+    "imagery_size": 2048,
+    "preview_context_scale": 3,
+    "data_provenance": {
+      "manifest": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/provenance.json",
+      "elevation": "Copernicus GLO-30 DSM, 2021 release; EGM2008 H+N converted to WGS84 ellipsoidal height",
+      "imagery": "Contains modified Copernicus Sentinel data (2024); Sentinel-2B L2A TCI, 2024-02-14, native 10 m",
+      "sources": [
+        "https://registry.opendata.aws/copernicus-dem/",
+        "https://registry.opendata.aws/sentinel-2-l2a-cogs/"
+      ],
+      "ocean": "zero orthometric water surface, no bathymetry"
+    }
+  },
+  "layers": [
+    {
+      "name": "Earth Imagery",
+      "type": "TMSImage",
+      "uri": "${VSGRAYSIM_EARTH_DATA_ROOT}/worldTexture_tiff/{z}/{x}/{-y}.tif",
+      "profile": "global-geodetic",
+      "maxLevel": 3
+    },
+    {
+      "name": "Earth Elevation",
+      "type": "TMSElevation",
+      "uri": "${VSGRAYSIM_EARTH_DATA_ROOT}/worldHeight/{z}/{x}/{-y}.tif",
+      "profile": "global-geodetic",
+      "maxLevel": 5
+    },
+    {
+      "type": "GDALElevation",
+      "name": "GLO-30 ellipsoidal DSM",
+      "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/taipei-dsm30-ellipsoid.tif"
+    },
+    {
+      "type": "GDALImage",
+      "name": "Sentinel-2B 10 m RGB",
+      "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/taipei-sentinel2-20240214-rgb10.tif"
+    }
+  ]
+}

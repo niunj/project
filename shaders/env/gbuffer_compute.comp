@@ -1,0 +1,79 @@
+#version 460
+// Software GPU ray traversal. Same G-buffer contract as the hardware RT path;
+// immutable mesh-local BVHs and per-measurement instance matrices.
+layout(local_size_x=8,local_size_y=8) in;
+layout(binding=1,rgba32f) uniform image2D outG0;
+layout(binding=2,rgba32f) uniform image2D outG1;
+layout(binding=7,rgba32f) uniform image2D outG2;
+layout(binding=12,rgba32f) uniform image2D outG3;
+layout(std430,binding=3) readonly buffer Positions { float positions[]; };
+layout(std430,binding=4) readonly buffer Indices { uint indices[]; };
+layout(std430,binding=5) readonly buffer Properties { vec2 props[]; };
+layout(std430,binding=6) readonly buffer Materials { uint materialIds[]; };
+layout(std430,binding=10) readonly buffer UVs { vec2 uvs[]; };
+layout(std430,binding=11) readonly buffer Slots { uint slots[]; };
+struct BvhNode { vec4 lo; vec4 hi; uvec4 links; };
+struct Instance { mat4 objectToWorld; mat4 worldToObject; uvec4 meta; };
+layout(std430,binding=13) readonly buffer Nodes { BvhNode nodes[]; };
+layout(std430,binding=14) readonly buffer Primitives { uint primitives[]; };
+layout(std430,binding=15) readonly buffer Instances { Instance instances[]; };
+layout(push_constant) uniform Push { mat4 viewInv; mat4 projInv; } pc;
+vec3 vertex(uint index) { return vec3(positions[3*index],positions[3*index+1],positions[3*index+2]); }
+bool box(vec3 origin,vec3 direction,vec3 lo,vec3 hi,float limit) {
+    float near=0,far=limit;
+    for(int axis=0;axis<3;++axis) {
+        if(abs(direction[axis])<1e-20) { if(origin[axis]<lo[axis] || origin[axis]>hi[axis]) return false; }
+        else {
+            float a=(lo[axis]-origin[axis])/direction[axis],b=(hi[axis]-origin[axis])/direction[axis];
+            near=max(near,min(a,b)); far=min(far,max(a,b)); if(near>far) return false;
+        }
+    }
+    return true;
+}
+bool triangle(vec3 origin,vec3 direction,uint primitive,out vec3 bary,out float distance) {
+    uvec3 i=uvec3(indices[3*primitive],indices[3*primitive+1],indices[3*primitive+2]);
+    vec3 a=vertex(i.x),e1=vertex(i.y)-a,e2=vertex(i.z)-a,p=cross(direction,e2);
+    float det=dot(e1,p); if(abs(det)<1e-10) return false;
+    vec3 s=origin-a; float u=dot(s,p)/det; if(u<0 || u>1) return false;
+    vec3 q=cross(s,e1); float v=dot(direction,q)/det; if(v<0 || u+v>1) return false;
+    distance=dot(e2,q)/det; bary=vec3(1-u-v,u,v); return distance>.001;
+}
+void main() {
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy),size=imageSize(outG0);
+    if(any(greaterThanEqual(pixel,size))) return;
+    vec2 clip=(vec2(pixel)+.5)/vec2(size)*2-1;
+    vec3 origin=(pc.viewInv*vec4(0,0,0,1)).xyz;
+    vec3 direction=normalize((pc.viewInv*vec4(normalize((pc.projInv*vec4(clip,1,1)).xyz),0)).xyz);
+    float closest=1e5; uint best=0,bestInstance=0; vec3 bary=vec3(0); bool hit=false;
+    for(uint instance=0;instance<instances.length();++instance) {
+        if(instances[instance].meta.y==0) continue;
+        vec3 localOrigin=(instances[instance].worldToObject*vec4(origin,1)).xyz;
+        vec3 localDirection=(instances[instance].worldToObject*vec4(direction,0)).xyz;
+        uint stack[64]; uint top=1; stack[0]=instances[instance].meta.x;
+        while(top>0) {
+            BvhNode node=nodes[stack[--top]];
+            if(!box(localOrigin,localDirection,node.lo.xyz,node.hi.xyz,closest)) continue;
+            if(node.links.w>0) {
+                for(uint i=0;i<node.links.w;++i) {
+                    uint primitive=primitives[node.links.z+i]; vec3 candidate; float distance;
+                    if(triangle(localOrigin,localDirection,primitive,candidate,distance) && distance<closest) {
+                        closest=distance; best=primitive; bestInstance=instance; bary=candidate; hit=true;
+                    }
+                }
+            } else { stack[top++]=node.links.x; stack[top++]=node.links.y; }
+        }
+    }
+    if(!hit) {
+        imageStore(outG0,pixel,vec4(0,0,1e6,0)); imageStore(outG1,pixel,vec4(0));
+        imageStore(outG2,pixel,vec4(direction,0)); imageStore(outG3,pixel,vec4(0)); return;
+    }
+    uvec3 i=uvec3(indices[3*best],indices[3*best+1],indices[3*best+2]);
+    vec2 property=props[i.x]*bary.x+props[i.y]*bary.y+props[i.z]*bary.z;
+    vec3 localNormal=cross(vertex(i.y)-vertex(i.x),vertex(i.z)-vertex(i.x));
+    vec3 normal=normalize(transpose(mat3(instances[bestInstance].worldToObject))*localNormal);
+    if(dot(normal,direction)>0) normal=-normal;
+    vec2 uv=uvs[i.x]*bary.x+uvs[i.y]*bary.y+uvs[i.z]*bary.z;
+    imageStore(outG0,pixel,vec4(property,closest,1));
+    imageStore(outG1,pixel,vec4(origin+direction*closest,float(materialIds[i.x])));
+    imageStore(outG2,pixel,vec4(normal,0)); imageStore(outG3,pixel,vec4(uv,float(slots[i.x]),0));
+}

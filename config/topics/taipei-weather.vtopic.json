@@ -1,0 +1,35 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北昼夜与区域天气",
+  "scene": "../earth/taipei-weather.vscene.json",
+  "earth_map": "../earth/default.map.json",
+  "sky": {
+    "show_atmosphere": true,
+    "turbidity": 1.15
+  },
+  "clouds": {
+    "cover": 0.55,
+    "volume": true,
+    "cumulus_count": 36,
+    "cumulus_altitude": 1200,
+    "stratus_altitude": 1800,
+    "wind_speed": 6,
+    "wind_az": 70
+  },
+  "earth": {
+    "dense_regional_clouds": true
+  },
+  "camera": {
+    "eye_m": [
+      160,
+      58,
+      200
+    ],
+    "target_m": [
+      0,
+      10,
+      0
+    ]
+  },
+  "paused": true
+}

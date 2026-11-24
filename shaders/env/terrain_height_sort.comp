@@ -1,0 +1,61 @@
+#version 450
+// GPU counting sort of the global orbital voxel columns by descending
+// ellipsoidal top height. A draw-time sorted index buffer lets the vertex
+// shader emit low columns first and tall continental/volcanic columns last,
+// so the fragment early-depth test rejects hidden high-column fills instead
+// of shading them; the resulting overdraw saving is what keeps the voxel
+// globe interactive at full orbital zoom.
+layout(local_size_x=256) in;
+layout(set=0,binding=0) buffer Heights { double heights[]; };
+layout(set=0,binding=1) buffer Counts { uint count[]; };
+layout(set=0,binding=2) buffer Offsets { uint offset[]; };
+layout(set=0,binding=3) buffer Indices { uint index[]; };
+layout(set=0,binding=4) buffer Scratch { uint scratch[]; };
+
+layout(push_constant) uniform SortPush {
+    uint side;       // grid rows; columns = 2*side
+    float maxHeight; // clamp used for the histogram range (metres)
+    uint bucketCount;
+    uint pass;       // 0 = clear+count, 1 = prefix sum, 2 = scatter
+} pc;
+
+uint columnIndex() {
+    // Flatten a 2-D column id from the 1-D invocation id.
+    return gl_GlobalInvocationID.x;
+}
+uint bucketOf(double h) {
+    if (h != h) return pc.bucketCount - 1u;                 // NaN -> last bucket
+    float t = clamp(float(h) / max(pc.maxHeight, 1.0), 0.0, 1.0);
+    return min(uint(t * float(pc.bucketCount - 1u)), pc.bucketCount - 1u);
+}
+
+void main() {
+    const uint columns = 2u * pc.side * pc.side;
+    const uint gid = gl_GlobalInvocationID.x;
+    if (pc.pass == 0u) {
+        if (gid < pc.bucketCount) { count[gid] = 0u; offset[gid] = 0u; }
+        barrier();
+        if (gid < columns) {
+            uint b = bucketOf(heights[gid]);
+            atomicAdd(count[b], 1u);
+        }
+        return;
+    }
+    if (pc.pass == 1u) {
+        // Single-invocation exclusive prefix sum over the bucket counts.
+        if (gid == 0u) {
+            uint sum = 0u;
+            for (uint b = 0; b < pc.bucketCount; ++b) {
+                offset[b] = sum;
+                sum += count[b];
+            }
+        }
+        return;
+    }
+    // pass 2: stable scatter into the sorted index buffer.
+    if (gid >= columns) return;
+    double h = heights[gid];
+    uint b = bucketOf(h);
+    uint slot = atomicAdd(scratch[b], 1u);
+    index[offset[b] + slot] = gid;
+}

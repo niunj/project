@@ -1,0 +1,68 @@
+/**
+ * rocky c++
+ * Copyright 2026 Pelican Mapping
+ * MIT License
+ */
+#define SSBOS_ARE_WRITABLE
+
+#pragma include "rocky.frustumgrid.h.glsl"
+#pragma include "rocky.decal.h.glsl"
+
+layout(local_size_x = FRUSTUM_GRID_TILES_PER_THREAD_GROUP,
+    local_size_y = FRUSTUM_GRID_TILES_PER_THREAD_GROUP) in;
+
+
+// test for intersection between decal and frustum
+// by testing the decal's BS against all four frustum boundaries
+bool intersects(in Decal decal, in Frustum frustum)
+{
+    float radius;
+    vec3 posVS;
+
+    if (decal.distance > 0.0) // perspective
+    {
+        radius = decal.cullingRadius; // precomputed bounding sphere radius
+        float midZ = (decal.zMin + decal.zMax) * 0.5; // center of near..far range
+        posVS = (decal.mvm * vec4(0.0, 0.0, midZ, 1.0)).xyz;
+    }
+    else // orthographic
+    {
+        // extract scale from mvm:
+        float sx = length(decal.mvm[0].xyz);
+        float sy = length(decal.mvm[1].xyz);
+        float sz = length(decal.mvm[2].xyz);
+        radius = 0.5 * length(vec3(sx, sy, sz));
+        posVS = (decal.mvm * vec4(0, 0, 0, 1)).xyz;
+    }
+
+    return intersectsFrustum(frustum, posVS, radius);
+}
+
+void main()
+{
+    if (gl_GlobalInvocationID.x >= u_numTiles.x || gl_GlobalInvocationID.y >= u_numTiles.y)
+        return;
+
+    uint tile = gl_GlobalInvocationID.y * u_numTiles.x + gl_GlobalInvocationID.x;
+
+    // Defensive bounds checks in case frustum/decal-tile buffers lag a resize.
+    uint frustumCount = uint(b_frustums.frustum.length());
+    uint decalTileCount = uint(b_decalTiles.tile.length());
+    if (tile >= frustumCount || tile >= decalTileCount)
+        return;
+
+    Frustum frustum = b_frustums.frustum[tile];
+
+    uint total = uint(b_decals.decal[0].textureIndex); // first decal just holds the count in its texture index field
+    uint found = 0;
+
+    for (uint i = 1; i < total + 1 && found < MAX_DECALS_PER_TILE; ++i)
+    {
+        if (intersects(b_decals.decal[i], frustum))
+        {
+            b_decalTiles.tile[tile].indices[found++] = i;
+        }
+    }
+
+    b_decalTiles.tile[tile].count = found;
+}

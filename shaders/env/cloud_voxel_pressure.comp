@@ -1,0 +1,19 @@
+#version 450
+layout(local_size_x=4,local_size_y=4,local_size_z=4) in;
+layout(set=0,binding=5,rgba32f) uniform image3D pressure0;
+layout(set=0,binding=6,rgba32f) uniform image3D pressure1;
+layout(set=0,binding=7,rgba32f) readonly uniform image3D divergenceMap;
+layout(std140,set=0,binding=4) uniform CloudParams {
+    vec4 originCell; vec4 gridDt; vec4 windHumidity; vec4 thermo;
+    vec4 phase; vec4 flow; vec4 colliderMeta;
+    vec4 colliderCentre[32]; vec4 colliderVelocity[32];
+} p;
+layout(push_constant) uniform PressurePush { uint source; } pc;
+ivec3 bound(ivec3 c){return clamp(c,ivec3(0),ivec3(p.gridDt.xyz)-1);}
+float loadP(ivec3 c){return pc.source==0u?imageLoad(pressure0,bound(c)).r:imageLoad(pressure1,bound(c)).r;}
+void main(){
+    ivec3 c=ivec3(gl_GlobalInvocationID.xyz),n=ivec3(p.gridDt.xyz);if(any(greaterThanEqual(c,n)))return;
+    float sum=loadP(c+ivec3(1,0,0))+loadP(c-ivec3(1,0,0))+loadP(c+ivec3(0,1,0))+loadP(c-ivec3(0,1,0))+loadP(c+ivec3(0,0,1))+loadP(c-ivec3(0,0,1));
+    float result=(sum-imageLoad(divergenceMap,c).r*p.originCell.w*p.originCell.w)/6.0;
+    if(pc.source==0u)imageStore(pressure1,c,vec4(result,0,0,0));else imageStore(pressure0,c,vec4(result,0,0,0));
+}

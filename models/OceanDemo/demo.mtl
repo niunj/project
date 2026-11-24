@@ -1,0 +1,13 @@
+newmtl hull
+Kd 0.15 0.24 0.31
+newmtl deck
+Kd 0.76 0.72 0.61
+newmtl cabin
+Kd 0.86 0.89 0.86
+newmtl glass
+Kd 0.07 0.22 0.28
+newmtl orange
+Kd 0.91 0.28 0.035
+newmtl sand
+Kd 0.75 0.69 0.47
+map_Kd sand.png

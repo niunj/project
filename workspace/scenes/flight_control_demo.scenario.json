@@ -1,0 +1,43 @@
+{
+  "scenario_name": "飞机与无人机飞控闭环",
+  "description": "固定翼控制操作示例。初始化后启动显控，选择飞机或无人机模板，在真实遥测出现后接管。使用简化质点/姿态控制模型，参数用于交互验证，未经具体机型标定。",
+  "version": "1.0",
+  "geo_anchor": {"lat": 25.078, "lon": 121.772, "alt": 0.0, "heading_deg": 0.0},
+  "simulation": {"sensor_backend": "auto", "frame_dt": 0.02, "physics_step": 0.005, "history_seconds": 2.0},
+  "atmosphere": {"wind_speed": 0.0, "air_density": 1.225},
+  "objects": [
+    {
+      "object_id": "demo_aircraft", "name": "demo_aircraft", "type": "aircraft",
+      "tags": ["platform", "aircraft"], "mesh_path": "models/F-16/F-16.obj",
+      "physics": {"mass": 12000, "initial_position": [-500, 1500, 0], "initial_velocity": [0, 0, -200], "convex_hull": true},
+      "motion_params": {"motion_authority": "dynamic", "flight_control_enabled": true,
+        "min_speed": 50, "cruise_speed": 200, "max_speed": 300, "min_altitude": 50, "max_altitude": 15000,
+        "max_integration_step": 0.01, "altitude_hold": true, "hold_altitude": 1500},
+      "route_plan": {"category": 1, "loop": true, "waypoints": [
+        {"time": 0, "pos": [-500, 1500, 0], "speed": 200},
+        {"time": 30, "pos": [-500, 1500, -6000], "speed": 200},
+        {"time": 60, "pos": [5500, 1500, -6000], "speed": 200},
+        {"time": 90, "pos": [5500, 1500, 0], "speed": 200}
+      ]}
+    },
+    {
+      "object_id": "demo_uav", "name": "demo_uav", "type": "uav",
+      "tags": ["platform", "uav"], "mesh_path": "models/MQ-9/MQ-9.obj",
+      "physics": {"mass": 4500, "initial_position": [500, 1000, 0], "initial_velocity": [0, 0, -70], "convex_hull": true},
+      "motion_params": {"motion_authority": "dynamic", "flight_control_enabled": true,
+        "min_speed": 25, "cruise_speed": 70, "max_speed": 130, "min_altitude": 50, "max_altitude": 12000,
+        "max_integration_step": 0.01, "max_roll_angle": 45, "max_pitch_rate": 10,
+        "altitude_hold": true, "hold_altitude": 1000}
+    }
+  ],
+  "sensors": {"sensor_list": [
+    {"sensor_id": 7101, "type": "vis", "band": "VIS", "platform_object": "demo_aircraft",
+      "tx_params": {"power": 0, "wavelength": 5.5e-7},
+      "signal_params": {"image_width": 64, "image_height": 48, "frame_interval_s": 0.1, "integration_time": 0.005},
+      "aperture": {"position_offset": [0, 0, -2], "direction": [0, 0, -1], "fov_horizontal": 60}},
+    {"sensor_id": 7201, "type": "vis", "band": "VIS", "platform_object": "demo_uav",
+      "tx_params": {"power": 0, "wavelength": 5.5e-7},
+      "signal_params": {"image_width": 64, "image_height": 48, "frame_interval_s": 0.1, "integration_time": 0.005},
+      "aperture": {"position_offset": [0, -1, 0], "direction": [0, -1, 0], "fov_horizontal": 60}}
+  ]}
+}

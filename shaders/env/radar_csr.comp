@@ -1,0 +1,31 @@
+// radar_csr.comp —— P2.1 回波合成两 pass 改造 · 散布 pass (3/3)。
+// 按 bmin 桶序散布散射体索引: idx[cursor[b]++] = k → scatterIdx 的桶区间
+// [offs[b], offs[b+1]) 内散射体 bmin 均为 b (桶内无序, 不影响求和正确性)。
+// P2.1 性能: 散布时同步重排散射体载荷 (pos/sig/meta → 桶序数组), 合成 pass
+// 按 CSR 顺序访问全程 coalesced —— 若仅散布索引, 合成 pass 需按 k 随机回读
+// 原数组, 散射体集中桶时随机流量剧增 (实测 103ms vs 重排后数量级改善)。
+#version 460
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer ScatterMeta { uint meta[]; };
+layout(set = 0, binding = 1) buffer BucketCursor { uint cursor[]; };
+layout(set = 0, binding = 2) buffer ScatterIdx { uint sidx[]; };
+layout(set = 0, binding = 3) buffer ScatterPos { vec4 scatterPos[]; };
+layout(set = 0, binding = 4) buffer ScatterSig { vec4 scatterSig[]; };
+layout(set = 0, binding = 5) buffer PosSorted { vec4 posSorted[]; };
+layout(set = 0, binding = 6) buffer SigSorted { vec4 sigSorted[]; };
+layout(set = 0, binding = 7) buffer MetaSorted { uint metaSorted[]; };
+
+layout(push_constant) uniform PC { uvec4 u; } pc;    // (nScat, 0, 0, 0)
+
+void main() {
+    const uint k = gl_GlobalInvocationID.x;
+    if (k >= pc.u.x) return;
+    const uint m = meta[k];
+    if (m == 0xFFFFFFFFu) return;                    // 天空槽 / 全程出窗
+    const uint e = atomicAdd(cursor[m & 0xFFFu], 1u);
+    sidx[e] = k;
+    posSorted[e] = scatterPos[k];                    // 桶序载荷重排 (合成 pass 顺序读)
+    sigSorted[e] = scatterSig[k];
+    metaSorted[e] = m;
+}

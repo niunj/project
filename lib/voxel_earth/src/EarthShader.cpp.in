@@ -1,0 +1,15 @@
+#include "EarthShader.h"
+#include <iterator>
+#include <stdexcept>
+@shader_includes@
+namespace vsgraysim::earth {
+namespace {
+template<size_t N>
+vsg::ref_ptr<vsg::ShaderStage> makeStage(VkShaderStageFlagBits stage, const uint32_t (&code)[N]) {
+    return vsg::ShaderStage::create(stage, "main", vsg::ShaderModule::SPIRV(std::begin(code),std::end(code)));
+}
+}
+vsg::ref_ptr<vsg::ShaderStage> earthShader(std::string_view name) {
+@shader_cases@    throw std::invalid_argument("unknown Earth shader: " + std::string(name));
+}
+}

@@ -1,0 +1,29 @@
+/build/
+/build-*/
+/CMakeUserPresets.json
+/compile_commands.json
+__pycache__/
+*.pyc
+
+# Local IDE and agent state
+/.box-agent/
+/.box-agent-scratch/
+/.qtcreator/
+/.trae/
+/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*/
+
+# Local captures, diagnostics and generated files
+/results/
+/*.log
+/comp.spv
+/imgui.ini
+/_launcher.png
+/dlg_shot.png
+/launcher_shot.png
+/smoke_launcher.png
+/terrain_shot.xwd
+
+# Large local terrain package. Keep its small configuration and location records.
+/models/JLG/*
+!/models/JLG/materials.json
+!/models/JLG/模型中心点经纬度.txt

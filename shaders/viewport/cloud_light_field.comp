@@ -1,0 +1,27 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#define CLOUD_COMPUTE
+#define CLOUD_LIGHT_FIELD_WRITE
+#include "planet_cloud_shadow.glsl"
+#include "cloud_light_cache.glsl"
+#include "cloud_light_field.glsl"
+layout(set=0,binding=0) uniform Weather {vec4 p[15];} weather;
+layout(local_size_x=8,local_size_y=8,local_size_z=4)in;
+void main(){
+    int tile=int(cloudLightField.data[1].y),axis=int(cloudLightField.data[1].z);
+    ivec3 pixel=ivec3(gl_GlobalInvocationID),cell=pixel/tile;
+    if(any(greaterThanEqual(pixel,ivec3(tile*axis,tile*axis,tile*4))))return;
+    int index=cell.x+axis*cell.y+axis*axis*cell.z;
+    if(index>=int(cloudLightField.data[2].x))return;
+    vec3 q=OBJECT_SHAPE_LO+(vec3(pixel%tile)+.5-1.)/cloudLightField.data[1].x*(OBJECT_SHAPE_HI-OBJECT_SHAPE_LO);
+    vec4 c=sparseCloud.objects[index*3],r=sparseCloud.objects[index*3+1],s=sparseCloud.objects[index*3+2];
+    vec2 horizontal=s.xy*((q.x-.20*q.y)*r.x)+vec2(-s.y,s.x)*(q.z*r.z);
+    vec3 p=c.xyz+vec3(horizontal.x,q.y*r.y,horizontal.y);
+    vec3 up=sparseCloud.objectUpBase.xyz;
+    float sunMu=dot(up,weather.p[2].xyz);
+    bool lunar=sunMu<-.057&&weather.p[9].w>0.&&dot(up,weather.p[9].xyz)>-.035;
+    vec3 key=objectAxes(lunar?weather.p[9].xyz:weather.p[2].xyz);
+    vec3 side=normalize(vec3(key.x*2.,1.,key.z*2.));
+    imageStore(cloudLighting,pixel,vec4(bulkLightDepths(p,key,side,weather.p[8].x),1));
+    if(all(equal(pixel,ivec3(0))))cloudLightKeys.keys[144]=cloudLightField.data[0];
+}

@@ -1,0 +1,2 @@
+# Keep the exact bytes recorded by the vendored source manifests.
+/third_party/** -text

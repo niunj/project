@@ -1,0 +1,303 @@
+{
+  "format": "voxel-equipment-v1",
+  "topic": "../topics/taipei-receiver-suite.vtopic.json",
+  "visibility_m": 30000,
+  "equipment": [
+    {
+      "id": 7101,
+      "name": "可见光广角",
+      "band": "TV",
+      "period_seconds": 0.2,
+      "width": 128,
+      "height": 96,
+      "fov_deg": 36,
+      "output": "P4",
+      "optics": {
+        "f_number": 4,
+        "psf_sigma_px": 0.8,
+        "transmission": 0.85,
+        "vignetting": 0.15
+      },
+      "detector": {
+        "integration_ms": 4
+      },
+      "platform_id": 71,
+      "platform_name": "台北多参数观测站",
+      "platform_kind": "sensor_site",
+      "aperture": {
+        "position_m": [
+          12,
+          1850,
+          16
+        ],
+        "look_at_m": [
+          0,
+          1800,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "id": 7102,
+      "name": "中波红外",
+      "band": "MWIR",
+      "period_seconds": 0.2,
+      "width": 112,
+      "height": 84,
+      "fov_deg": 26,
+      "output": "P4",
+      "optics": {
+        "f_number": 3,
+        "psf_sigma_px": 1.0,
+        "transmission": 0.85,
+        "vignetting": 0.15
+      },
+      "detector": {
+        "integration_ms": 6
+      },
+      "platform_id": 71,
+      "platform_name": "台北多参数观测站",
+      "platform_kind": "sensor_site",
+      "aperture": {
+        "position_m": [
+          12,
+          1850,
+          16
+        ],
+        "look_at_m": [
+          0,
+          1800,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "id": 7103,
+      "name": "长波红外",
+      "band": "LWIR",
+      "period_seconds": 0.24,
+      "width": 112,
+      "height": 84,
+      "fov_deg": 26,
+      "output": "P4",
+      "optics": {
+        "f_number": 5.6,
+        "psf_sigma_px": 1.3,
+        "transmission": 0.85,
+        "vignetting": 0.15
+      },
+      "detector": {
+        "integration_ms": 0.4
+      },
+      "platform_id": 71,
+      "platform_name": "台北多参数观测站",
+      "platform_kind": "sensor_site",
+      "aperture": {
+        "position_m": [
+          12,
+          1850,
+          16
+        ],
+        "look_at_m": [
+          0,
+          1800,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "id": 7104,
+      "name": "脉冲雷达 A · I/Q",
+      "band": "RADAR",
+      "period_seconds": 0.16,
+      "width": 25,
+      "height": 19,
+      "fov_deg": 32,
+      "output": "P0",
+      "detector": {
+        "integration_ms": 3
+      },
+      "radar": {
+        "prf_hz": 50.0,
+        "cpi_pulses": 8,
+        "n_fast": 64,
+        "bandwidth_hz": 20000000.0,
+        "sample_rate_hz": 20000000.0,
+        "receiver_noise_iq_rms": 0.035,
+        "beam_width_rad": 0.44,
+        "range_min_m": 0,
+        "range_max_m": 160
+      },
+      "platform_id": 71,
+      "platform_name": "台北多参数观测站",
+      "platform_kind": "sensor_site",
+      "aperture": {
+        "position_m": [
+          12,
+          1850,
+          16
+        ],
+        "look_at_m": [
+          0,
+          1800,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "id": 7105,
+      "name": "可见光窄视场",
+      "band": "TV",
+      "period_seconds": 0.24,
+      "width": 128,
+      "height": 96,
+      "fov_deg": 24,
+      "output": "P4",
+      "optics": {
+        "f_number": 5.6,
+        "psf_sigma_px": 1.4,
+        "transmission": 0.85,
+        "vignetting": 0.15
+      },
+      "detector": {
+        "integration_ms": 8
+      },
+      "platform_id": 71,
+      "platform_name": "台北多参数观测站",
+      "platform_kind": "sensor_site",
+      "aperture": {
+        "position_m": [
+          12,
+          1850,
+          16
+        ],
+        "look_at_m": [
+          0,
+          1800,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "id": 7106,
+      "name": "脉冲雷达 B · I/Q",
+      "band": "RADAR",
+      "period_seconds": 0.2,
+      "width": 21,
+      "height": 15,
+      "fov_deg": 26,
+      "output": "P0",
+      "detector": {
+        "integration_ms": 3
+      },
+      "radar": {
+        "prf_hz": 80.0,
+        "cpi_pulses": 16,
+        "n_fast": 128,
+        "bandwidth_hz": 30000000.0,
+        "sample_rate_hz": 30000000.0,
+        "receiver_noise_iq_rms": 0.025,
+        "beam_width_rad": 0.3,
+        "range_min_m": 0,
+        "range_max_m": 160
+      },
+      "platform_id": 71,
+      "platform_name": "台北多参数观测站",
+      "platform_kind": "sensor_site",
+      "aperture": {
+        "position_m": [
+          12,
+          1850,
+          16
+        ],
+        "look_at_m": [
+          0,
+          1800,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "id": 7107,
+      "name": "SAR 回波接口 · 固定孔径",
+      "band": "SAR",
+      "period_seconds": 0.16,
+      "width": 19,
+      "height": 15,
+      "fov_deg": 34,
+      "output": "P0",
+      "detector": {
+        "integration_ms": 3
+      },
+      "radar": {
+        "prf_hz": 50.0,
+        "cpi_pulses": 8,
+        "n_fast": 64,
+        "bandwidth_hz": 18000000.0,
+        "sample_rate_hz": 18000000.0,
+        "beam_width_rad": 0.4,
+        "range_min_m": 0,
+        "range_max_m": 160
+      },
+      "platform_id": 71,
+      "platform_name": "台北多参数观测站",
+      "platform_kind": "sensor_site",
+      "aperture": {
+        "position_m": [
+          12,
+          1850,
+          16
+        ],
+        "look_at_m": [
+          0,
+          1800,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      }
+    }
+  ],
+  "platforms": [
+    {
+      "id": 72,
+      "object": "aircraft",
+      "name": "F-16 体素平台",
+      "kind": "aircraft",
+      "model_heading_deg": 180
+    }
+  ]
+}

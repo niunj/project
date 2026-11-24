@@ -1,0 +1,42 @@
+#version 450
+layout(local_size_x=4,local_size_y=4,local_size_z=4) in;
+layout(set=0,binding=1,rgba32f) readonly uniform image3D state1;
+layout(set=0,binding=3,rgba32f) readonly uniform image3D velocity1;
+layout(set=0,binding=8,rgba32f) writeonly uniform image3D backwardState;
+layout(set=0,binding=9,rgba32f) writeonly uniform image3D backwardVelocity;
+layout(std140,set=0,binding=4) uniform CloudParams {
+    vec4 originCell; vec4 gridDt; vec4 windHumidity; vec4 thermo;
+    vec4 phase; vec4 flow; vec4 colliderMeta;
+    vec4 colliderCentre[32]; vec4 colliderVelocity[32];
+} p;
+
+vec4 sampleState(vec3 at) {
+    at=clamp(at,vec3(0.),p.gridDt.xyz-vec3(1.));
+    ivec3 n=ivec3(p.gridDt.xyz),i0=ivec3(floor(at));vec3 f=fract(at);
+    i0=clamp(i0,ivec3(0),n-1);ivec3 i1=min(i0+1,n-1);
+    vec4 a=mix(imageLoad(state1,ivec3(i0.x,i0.y,i0.z)),imageLoad(state1,ivec3(i1.x,i0.y,i0.z)),f.x);
+    vec4 b=mix(imageLoad(state1,ivec3(i0.x,i1.y,i0.z)),imageLoad(state1,ivec3(i1.x,i1.y,i0.z)),f.x);
+    vec4 c=mix(imageLoad(state1,ivec3(i0.x,i0.y,i1.z)),imageLoad(state1,ivec3(i1.x,i0.y,i1.z)),f.x);
+    vec4 d=mix(imageLoad(state1,ivec3(i0.x,i1.y,i1.z)),imageLoad(state1,ivec3(i1.x,i1.y,i1.z)),f.x);
+    return mix(mix(a,b,f.y),mix(c,d,f.y),f.z);
+}
+vec4 sampleVelocity(vec3 at) {
+    at=clamp(at,vec3(0.),p.gridDt.xyz-vec3(1.));
+    ivec3 n=ivec3(p.gridDt.xyz),i0=ivec3(floor(at));vec3 f=fract(at);
+    i0=clamp(i0,ivec3(0),n-1);ivec3 i1=min(i0+1,n-1);
+    vec4 a=mix(imageLoad(velocity1,ivec3(i0.x,i0.y,i0.z)),imageLoad(velocity1,ivec3(i1.x,i0.y,i0.z)),f.x);
+    vec4 b=mix(imageLoad(velocity1,ivec3(i0.x,i1.y,i0.z)),imageLoad(velocity1,ivec3(i1.x,i1.y,i0.z)),f.x);
+    vec4 c=mix(imageLoad(velocity1,ivec3(i0.x,i0.y,i1.z)),imageLoad(velocity1,ivec3(i1.x,i0.y,i1.z)),f.x);
+    vec4 d=mix(imageLoad(velocity1,ivec3(i0.x,i1.y,i1.z)),imageLoad(velocity1,ivec3(i1.x,i1.y,i1.z)),f.x);
+    return mix(mix(a,b,f.y),mix(c,d,f.y),f.z);
+}
+void main() {
+    ivec3 c=ivec3(gl_GlobalInvocationID.xyz),n=ivec3(p.gridDt.xyz);
+    if(any(greaterThanEqual(c,n)))return;
+    float scale=p.gridDt.w/p.originCell.w;
+    vec3 v=imageLoad(velocity1,c).xyz;
+    vec3 midpoint=vec3(c)+.5*v*scale;
+    vec3 future=vec3(c)+sampleVelocity(midpoint).xyz*scale;
+    imageStore(backwardState,c,sampleState(future));
+    imageStore(backwardVelocity,c,sampleVelocity(future));
+}

@@ -1,0 +1,130 @@
+#version 450
+layout(local_size_x=4,local_size_y=4,local_size_z=4) in;
+layout(set=0,binding=0,rgba32f) writeonly uniform image3D state0;
+layout(set=0,binding=1,rgba32f) readonly uniform image3D state1;
+layout(set=0,binding=2,rgba32f) writeonly uniform image3D velocity0;
+layout(set=0,binding=3,rgba32f) readonly uniform image3D velocity1;
+layout(std140,set=0,binding=4) uniform CloudParams {
+    vec4 originCell; vec4 gridDt; vec4 windHumidity; vec4 thermo;
+    vec4 phase; vec4 flow; vec4 colliderMeta;
+    vec4 colliderCentre[32]; vec4 colliderVelocity[32];
+    vec4 impulseMeta; vec4 impulse[48];
+} p;
+
+ivec3 bound(ivec3 c){return clamp(c,ivec3(0),ivec3(p.gridDt.xyz)-1);}
+vec3 velAt(ivec3 c){return imageLoad(velocity1,bound(c)).xyz;}
+vec3 curlAt(ivec3 c) {
+    float h=2.0*p.originCell.w;
+    vec3 xp=velAt(c+ivec3(1,0,0)),xm=velAt(c-ivec3(1,0,0));
+    vec3 yp=velAt(c+ivec3(0,1,0)),ym=velAt(c-ivec3(0,1,0));
+    vec3 zp=velAt(c+ivec3(0,0,1)),zm=velAt(c-ivec3(0,0,1));
+    return vec3((yp.z-ym.z)-(zp.y-zm.y),(zp.x-zm.x)-(xp.z-xm.z),(xp.y-xm.y)-(yp.x-ym.x))/h;
+}
+float saturationMixingRatio(float temperatureK,float pressurePa) {
+    float tc=temperatureK-273.15;
+    float es=610.94*exp(17.625*tc/(tc+243.04));
+    return .622*es/max(pressurePa-es,1000.0);
+}
+void main() {
+    ivec3 c=ivec3(gl_GlobalInvocationID.xyz), n=ivec3(p.gridDt.xyz);
+    if(any(greaterThanEqual(c,n)))return;
+    float dt=p.gridDt.w, h=p.originCell.w;
+    vec3 world=p.originCell.xyz+(vec3(c)+.5)*h;
+    vec4 s=imageLoad(state1,c);
+    // Vapour, cloud water and rain are non-negative, but temperature
+    // perturbation is signed. Clamping B to zero erased evaporative cooling,
+    // cold pools and the descending branch of real convective circulation.
+    s.r=max(s.r,0.0);s.g=max(s.g,0.0);s.a=max(s.a,0.0);
+    vec3 v=imageLoad(velocity1,c).xyz;
+    float relativeHeight=max(world.y-p.originCell.y,0.0);
+    float ambientT=max(p.thermo.x-p.thermo.w*relativeHeight,190.0);
+    float pressure=p.thermo.y*exp(-p.thermo.z*relativeHeight/(287.05*p.thermo.x));
+    float qs=saturationMixingRatio(ambientT+s.b,pressure);
+    float rho=pressure/(287.05*ambientT);
+    float condense=min(max(s.r-qs,0.0)*p.phase.x*dt,s.r);
+    float evaporate=min(s.g/rho,max(qs-s.r,0.0)*p.phase.y*dt);
+    s.r+=evaporate-condense;
+    s.g=max(0.0,s.g+(condense-evaporate)*rho);
+    s.b+=(condense-evaporate)*2490.0;
+    // Warm air rises; condensed/rain water supplies the correct negative load.
+    float accel=p.phase.z*p.thermo.z*(s.b/ambientT)-p.phase.w*p.thermo.z*(s.g+s.a)/max(rho,.2);
+    v.y+=accel*dt;
+    v+= (p.windHumidity.xyz-v)*(1.0-exp(-p.flow.y*dt));
+    // Vorticity confinement restores sub-grid rolling without inventing density.
+    vec3 omega=curlAt(c);
+    float wx=length(curlAt(c+ivec3(1,0,0)))-length(curlAt(c-ivec3(1,0,0)));
+    float wy=length(curlAt(c+ivec3(0,1,0)))-length(curlAt(c-ivec3(0,1,0)));
+    float wz=length(curlAt(c+ivec3(0,0,1)))-length(curlAt(c-ivec3(0,0,1)));
+    vec3 grad=vec3(wx,wy,wz);
+    if(length(grad)>1e-5)v+=p.flow.x*cross(normalize(grad),omega)*dt;
+    s.b+=p.flow.z*dt*exp(-max(s.g,0.0)*450.0);
+
+    int colliderCount=clamp(int(p.colliderMeta.x+.5),0,32);
+    for(int i=0;i<colliderCount;++i) {
+        vec3 centre=p.colliderCentre[i].xyz; float radius=max(p.colliderCentre[i].w,h*.5);
+        vec3 bodyVelocity=p.colliderVelocity[i].xyz; float coupling=clamp(p.colliderVelocity[i].w,0.0,2.0);
+        vec3 rel=world-centre; float inside=1.0-smoothstep(radius*.72,radius,length(rel));
+        if(inside>0.0) {
+            v=mix(v,bodyVelocity,clamp(inside*p.colliderMeta.z*coupling,0.0,1.0));
+            s.g*=1.0-inside*p.colliderMeta.z; s.a*=1.0-inside*p.colliderMeta.z;
+            s.r=mix(s.r,p.windHumidity.w,inside*p.colliderMeta.z);
+        }
+        float speed=length(bodyVelocity-p.windHumidity.xyz);
+        if(speed>1.0) {
+            vec3 axis=(bodyVelocity-p.windHumidity.xyz)/speed;
+            float aft=dot(rel,-axis), radial=length(rel+axis*aft);
+            float wakeLength=max(radius*3.0,speed*p.colliderMeta.y);
+            float wake=(1.0-smoothstep(0.0,wakeLength,aft))*(1.0-smoothstep(radius*.7,radius*3.0,radial))*step(0.0,aft);
+            vec3 radialDir=radial>1e-3?(rel+axis*aft)/radial:vec3(0,1,0);
+            v+=wake*coupling*(bodyVelocity-v)*min(dt*1.8,1.0);
+            v+=wake*coupling*cross(axis,radialDir)*min(speed*.18,12.0)*dt;
+        }
+    }
+    // Autoconversion preserves water; a separate conservative sedimentation
+    // pass transports rain relative to air without accelerating the air.
+    float rainGain=max(s.g-.0014,0.0)*(1.0-exp(-.08*dt)); s.g-=rainGain; s.a+=rainGain;
+
+    // Destructive impulses (explosions, engine plumes, weapon blasts).
+    // Unlike collider wakes these carry energy: a hot core that evaporates
+    // liquid+rain, a radial shock that displaces voxel air outward, and a
+    // direct dissipation of condensate in the blast core. The hot plume also
+    // entrains environmental vapour, so a real hole opens and only refills
+    // slowly through the resolved advection/microphysics.
+    int impulseCount=clamp(int(p.impulseMeta.x+.5),0,16);
+    for(int k=0;k<impulseCount;++k) {
+        vec3 centre=p.impulse[3*k+0].xyz; float radius=max(p.impulse[3*k+0].w,.5);
+        float temperatureKick=p.impulse[3*k+1].x; float dissipation=clamp(p.impulse[3*k+1].y,0.0,1.0);
+        float lifetime=max(p.impulse[3*k+1].z,.05); float shockSpeed=max(p.impulse[3*k+1].w,0.0);
+        // Expanding front: the blast acts on a shell that grows with time.
+        // impulseMeta.y carries the step dt; the shell radius expands by
+        // shockSpeed * (elapsed within this step) as a first-order nudge —
+        // the host drives expansion by re-submitting the impulse each frame
+        // with a growing radius, so here the effect is the current sphere.
+        vec3 rel=world-centre; float dist=length(rel);
+        float core=1.0-smoothstep(radius*.55,radius,dist);
+        float shell=1.0-smoothstep(radius,radius*2.2,dist);
+        if(core+shell>0.0) {
+            // 1) Hot core: evaporate condensate, heat air, kill rain.
+            float heat=temperatureKick*core*min(dt/.25,1.0);
+            s.b+=heat;
+            float evaporated=min(s.g,dissipation*core*s.g*min(dt*6.0,1.0));
+            s.g-=evaporated;
+            // Evaporated liquid returns to vapour (mass conservation) but the
+            // hot plume pushes local air below saturation so it stays clear.
+            s.r+=evaporated/max(rho,.2);
+            float rainEvaporated=s.a*core*min(dt*8.0,1.0);
+            s.a-=rainEvaporated;s.r+=rainEvaporated/max(rho,.2);
+            s.b-=(evaporated+rainEvaporated)/max(rho,.2)*2490.0;
+            // 2) Radial shock: displace air outward inside the shell.
+            vec3 radialDir=dist>1e-3?rel/dist:vec3(0,1,0);
+            float shock=shockSpeed*shell*min(dt*4.0,1.0);
+            v+=radialDir*shock;
+            // 3) Buoyant rise from the heated core (fireball updraft).
+            v.y+=heat*1.8*core;
+        }
+    }
+
+    s.r=max(s.r,0.0);s.g=max(s.g,0.0);s.a=max(s.a,0.0);
+    imageStore(state0,c,s);
+    imageStore(velocity0,c,vec4(v,0));
+}

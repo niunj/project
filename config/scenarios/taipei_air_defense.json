@@ -1,0 +1,1034 @@
+{
+ "scenario_name": "台北区域防空作战推演",
+ "description": "蓝方 3 枚导弹 + 3 架无人机构成进攻轴线 (飞向台北地形多个目标点); 红方 1 部地面防空雷达值守探测, 引导发射基地地对空导弹拦截。用于仿真软件全过程推演与装备探测处理。",
+ "version": "1.0",
+ "terrain_ref": "models/Taipei/Taipei.obj",
+ "factions": {
+  "blue": "蓝方 (进攻)",
+  "red": "红方 (防御)"
+ },
+ "objects": [
+  {
+   "object_id": "taipei_terrain",
+   "mesh_path": "models/Taipei/Taipei.obj",
+   "face_count": 120000,
+   "physics": {
+    "mass": 0
+   },
+   "face_groups": [
+    {
+     "group_id": "terrain_surface",
+     "face_range": [
+      0,
+      120000
+     ],
+     "vis_params": {
+      "brdf_type": "diffuse",
+      "albedo": 0.5,
+      "roughness": 0.9
+     },
+     "lwir_params": {
+      "emissivity": 0.92,
+      "base_temp": 305.15
+     },
+     "radar_x_params": {
+      "sigma0_db": -18.0,
+      "surface_rough": 0.6
+     },
+     "sar_c_params": {
+      "sigma0_db": -16.0,
+      "polar_couple": 0.02
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "red_radar_site",
+   "mesh_path": "models/M1A2/M1A2.obj",
+   "face_count": 5000,
+   "temp_update_rate": 10,
+   "physics": {
+    "mass": 2000,
+    "initial_position": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "initial_rotation_deg": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "convex_hull": true
+   },
+   "face_groups": [
+    {
+     "group_id": "radar_antenna",
+     "face_range": [
+      0,
+      2500
+     ],
+     "vis_params": {
+      "brdf_type": "roughmetal",
+      "albedo": 0.4,
+      "roughness": 0.5
+     },
+     "lwir_params": {
+      "emissivity": 0.9,
+      "base_temp": 320.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 1,
+      "dielectric_real": 18.0,
+      "dielectric_imag": 5.0
+     }
+    },
+    {
+     "group_id": "radar_truck",
+     "face_range": [
+      2501,
+      5000
+     ],
+     "vis_params": {
+      "brdf_type": "diffuse",
+      "albedo": 0.55
+     },
+     "lwir_params": {
+      "emissivity": 0.86,
+      "base_temp": 318.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 2,
+      "dielectric_real": 12.0,
+      "dielectric_imag": 2.0
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "red_sam_base",
+   "mesh_path": "models/M1A2/M1A2.obj",
+   "face_count": 5000,
+   "physics": {
+    "mass": 0,
+    "initial_position": [
+     180.0,
+     0.5,
+     70.0
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "launcher",
+     "face_range": [
+      0,
+      5000
+     ],
+     "vis_params": {
+      "brdf_type": "diffuse",
+      "albedo": 0.45
+     },
+     "lwir_params": {
+      "emissivity": 0.88,
+      "base_temp": 315.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 3,
+      "dielectric_real": 10.0,
+      "dielectric_imag": 2.0
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "blue_missile_1",
+   "name": "blue_missile_1",
+   "mesh_path": "models/AGM-114/AGM-114.obj",
+   "face_count": 3500,
+   "type": "missile",
+   "tags": [
+    "platform",
+    "missile"
+   ],
+   "faction": "blue",
+   "physics": {
+    "mass": 500,
+    "initial_position": [
+     200.0,
+     2500.0,
+     3000.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "convex_hull": true
+   },
+   "motion_params": {
+    "max_speed": 800.0,
+    "boost_accel": 50.0,
+    "max_lateral_accel": 200.0,
+    "guidance_law": 3,
+    "nav_constant": 4.0,
+    "seeker_range": 20000.0,
+    "boost_duration": 3.0,
+    "max_flight_time": 120.0,
+    "enable_terminal_maneuver": true
+   },
+   "route_plan": {
+    "platform": "blue_missile_1",
+    "category": 3,
+    "type": 3,
+    "type_name": "Intercept",
+    "loop": false,
+    "start_delay_s": 0.0,
+    "waypoints": [
+     {
+      "time": 0,
+      "pos": [
+       200.0,
+       2500.0,
+       3000.0
+      ],
+      "speed": 400
+     },
+     {
+      "time": 10,
+      "pos": [
+       120.0,
+       1600.0,
+       1400.0
+      ],
+      "speed": 600
+     },
+     {
+      "time": 20,
+      "pos": [
+       -40.0,
+       900.0,
+       400.0
+      ],
+      "speed": 750
+     },
+     {
+      "time": 30,
+      "pos": [
+       -120.0,
+       200.0,
+       -180.0
+      ],
+      "speed": 700
+     }
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "missile_body",
+     "face_range": [
+      0,
+      3500
+     ],
+     "lwir_params": {
+      "emissivity": 0.7,
+      "base_temp": 500.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 4,
+      "dielectric_real": 8.0,
+      "dielectric_imag": 1.5
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "blue_missile_2",
+   "name": "blue_missile_2",
+   "mesh_path": "models/AGM-114/AGM-114.obj",
+   "face_count": 3500,
+   "type": "missile",
+   "tags": [
+    "platform",
+    "missile"
+   ],
+   "faction": "blue",
+   "physics": {
+    "mass": 500,
+    "initial_position": [
+     700.0,
+     2700.0,
+     3400.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "convex_hull": true
+   },
+   "motion_params": {
+    "max_speed": 800.0,
+    "boost_accel": 50.0,
+    "max_lateral_accel": 200.0,
+    "guidance_law": 3,
+    "nav_constant": 4.0,
+    "seeker_range": 20000.0,
+    "boost_duration": 3.0,
+    "max_flight_time": 120.0,
+    "enable_terminal_maneuver": true
+   },
+   "route_plan": {
+    "platform": "blue_missile_2",
+    "category": 3,
+    "type": 3,
+    "type_name": "Intercept",
+    "loop": false,
+    "start_delay_s": 0.0,
+    "waypoints": [
+     {
+      "time": 0,
+      "pos": [
+       700.0,
+       2700.0,
+       3400.0
+      ],
+      "speed": 400
+     },
+     {
+      "time": 10,
+      "pos": [
+       560.0,
+       1800.0,
+       1600.0
+      ],
+      "speed": 600
+     },
+     {
+      "time": 20,
+      "pos": [
+       300.0,
+       1000.0,
+       400.0
+      ],
+      "speed": 750
+     },
+     {
+      "time": 32,
+      "pos": [
+       180.0,
+       200.0,
+       -250.0
+      ],
+      "speed": 700
+     }
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "missile_body",
+     "face_range": [
+      0,
+      3500
+     ],
+     "lwir_params": {
+      "emissivity": 0.7,
+      "base_temp": 495.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 4,
+      "dielectric_real": 8.0,
+      "dielectric_imag": 1.5
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "blue_missile_3",
+   "name": "blue_missile_3",
+   "mesh_path": "models/AGM-114/AGM-114.obj",
+   "face_count": 3500,
+   "type": "missile",
+   "tags": [
+    "platform",
+    "missile"
+   ],
+   "faction": "blue",
+   "physics": {
+    "mass": 500,
+    "initial_position": [
+     -420.0,
+     2100.0,
+     3100.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "convex_hull": true
+   },
+   "motion_params": {
+    "max_speed": 800.0,
+    "boost_accel": 50.0,
+    "max_lateral_accel": 200.0,
+    "guidance_law": 3,
+    "nav_constant": 4.0,
+    "seeker_range": 20000.0,
+    "boost_duration": 3.0,
+    "max_flight_time": 120.0,
+    "enable_terminal_maneuver": true
+   },
+   "route_plan": {
+    "platform": "blue_missile_3",
+    "category": 3,
+    "type": 3,
+    "type_name": "Intercept",
+    "loop": false,
+    "start_delay_s": 0.0,
+    "waypoints": [
+     {
+      "time": 0,
+      "pos": [
+       -420.0,
+       2100.0,
+       3100.0
+      ],
+      "speed": 400
+     },
+     {
+      "time": 10,
+      "pos": [
+       -330.0,
+       1300.0,
+       1300.0
+      ],
+      "speed": 600
+     },
+     {
+      "time": 20,
+      "pos": [
+       -180.0,
+       700.0,
+       300.0
+      ],
+      "speed": 750
+     },
+     {
+      "time": 31,
+      "pos": [
+       60.0,
+       200.0,
+       -150.0
+      ],
+      "speed": 700
+     }
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "missile_body",
+     "face_range": [
+      0,
+      3500
+     ],
+     "lwir_params": {
+      "emissivity": 0.7,
+      "base_temp": 490.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 4,
+      "dielectric_real": 8.0,
+      "dielectric_imag": 1.5
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "blue_uav_1",
+   "name": "blue_uav_1",
+   "mesh_path": "models/AGM-114/AGM-114.obj",
+   "face_count": 1500,
+   "type": "uav",
+   "tags": [
+    "platform",
+    "uav"
+   ],
+   "faction": "blue",
+   "physics": {
+    "mass": 500,
+    "initial_position": [
+     900.0,
+     1400.0,
+     4000.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "convex_hull": true
+   },
+   "motion_params": {
+    "max_speed": 300.0,
+    "cruise_speed": 180.0,
+    "max_load_factor": 6.0,
+    "max_altitude": 6000.0,
+    "min_altitude": 100.0,
+    "altitude_hold": true,
+    "hold_altitude": 350.0
+   },
+   "route_plan": {
+    "platform": "blue_uav_1",
+    "category": 1,
+    "type": 2,
+    "type_name": "Cruise",
+    "loop": false,
+    "start_delay_s": 0.0,
+    "waypoints": [
+     {
+      "time": 0,
+      "pos": [
+       900.0,
+       1400.0,
+       4000.0
+      ],
+      "speed": 180
+     },
+     {
+      "time": 20,
+      "pos": [
+       600.0,
+       600.0,
+       1800.0
+      ],
+      "speed": 190
+     },
+     {
+      "time": 40,
+      "pos": [
+       100.0,
+       350.0,
+       500.0
+      ],
+      "speed": 180
+     },
+     {
+      "time": 62,
+      "pos": [
+       -250.0,
+       350.0,
+       -220.0
+      ],
+      "speed": 160
+     }
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "uav_body",
+     "face_range": [
+      0,
+      1500
+     ],
+     "lwir_params": {
+      "emissivity": 0.8,
+      "base_temp": 320.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 5,
+      "dielectric_real": 6.0,
+      "dielectric_imag": 1.2
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "blue_uav_2",
+   "name": "blue_uav_2",
+   "mesh_path": "models/AGM-114/AGM-114.obj",
+   "face_count": 1500,
+   "type": "uav",
+   "tags": [
+    "platform",
+    "uav"
+   ],
+   "faction": "blue",
+   "physics": {
+    "mass": 500,
+    "initial_position": [
+     -1000.0,
+     1600.0,
+     3800.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "convex_hull": true
+   },
+   "motion_params": {
+    "max_speed": 280.0,
+    "cruise_speed": 170.0,
+    "max_load_factor": 6.0,
+    "max_altitude": 6000.0,
+    "min_altitude": 100.0,
+    "altitude_hold": true,
+    "hold_altitude": 320.0
+   },
+   "route_plan": {
+    "platform": "blue_uav_2",
+    "category": 1,
+    "type": 2,
+    "type_name": "Cruise",
+    "loop": false,
+    "start_delay_s": 0.0,
+    "waypoints": [
+     {
+      "time": 0,
+      "pos": [
+       -1000.0,
+       1600.0,
+       3800.0
+      ],
+      "speed": 170
+     },
+     {
+      "time": 22,
+      "pos": [
+       -700.0,
+       700.0,
+       1600.0
+      ],
+      "speed": 180
+     },
+     {
+      "time": 44,
+      "pos": [
+       -300.0,
+       360.0,
+       400.0
+      ],
+      "speed": 170
+     },
+     {
+      "time": 66,
+      "pos": [
+       260.0,
+       360.0,
+       -300.0
+      ],
+      "speed": 150
+     }
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "uav_body",
+     "face_range": [
+      0,
+      1500
+     ],
+     "lwir_params": {
+      "emissivity": 0.8,
+      "base_temp": 318.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 5,
+      "dielectric_real": 6.0,
+      "dielectric_imag": 1.2
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "blue_uav_3",
+   "name": "blue_uav_3",
+   "mesh_path": "models/AGM-114/AGM-114.obj",
+   "face_count": 1500,
+   "type": "uav",
+   "tags": [
+    "platform",
+    "uav"
+   ],
+   "faction": "blue",
+   "physics": {
+    "mass": 500,
+    "initial_position": [
+     150.0,
+     1200.0,
+     4500.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "convex_hull": true
+   },
+   "motion_params": {
+    "max_speed": 300.0,
+    "cruise_speed": 180.0,
+    "max_load_factor": 6.0,
+    "max_altitude": 6000.0,
+    "min_altitude": 100.0,
+    "altitude_hold": true,
+    "hold_altitude": 300.0
+   },
+   "route_plan": {
+    "platform": "blue_uav_3",
+    "category": 1,
+    "type": 2,
+    "type_name": "Cruise",
+    "loop": false,
+    "start_delay_s": 0.0,
+    "waypoints": [
+     {
+      "time": 0,
+      "pos": [
+       150.0,
+       1200.0,
+       4500.0
+      ],
+      "speed": 180
+     },
+     {
+      "time": 25,
+      "pos": [
+       100.0,
+       600.0,
+       2200.0
+      ],
+      "speed": 190
+     },
+     {
+      "time": 50,
+      "pos": [
+       -40.0,
+       300.0,
+       600.0
+      ],
+      "speed": 180
+     },
+     {
+      "time": 73,
+      "pos": [
+       0.0,
+       300.0,
+       -120.0
+      ],
+      "speed": 150
+     }
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "uav_body",
+     "face_range": [
+      0,
+      1500
+     ],
+     "lwir_params": {
+      "emissivity": 0.8,
+      "base_temp": 321.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 5,
+      "dielectric_real": 6.0,
+      "dielectric_imag": 1.2
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "red_sam_1",
+   "name": "red_sam_1",
+   "mesh_path": "models/AGM-114/AGM-114.obj",
+   "face_count": 3500,
+   "type": "missile",
+   "tags": [
+    "platform",
+    "missile"
+   ],
+   "faction": "red",
+   "physics": {
+    "mass": 500,
+    "initial_position": [
+     200.0,
+     2.0,
+     80.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "convex_hull": true
+   },
+   "motion_params": {
+    "max_speed": 1000.0,
+    "boost_accel": 70.0,
+    "max_lateral_accel": 250.0,
+    "guidance_law": 3,
+    "nav_constant": 4.0,
+    "seeker_range": 30000.0,
+    "boost_duration": 4.0,
+    "max_flight_time": 90.0,
+    "enable_terminal_maneuver": false
+   },
+   "route_plan": {
+    "platform": "red_sam_1",
+    "category": 3,
+    "type": 5,
+    "type_name": "Hold",
+    "loop": false,
+    "start_delay_s": 0.0,
+    "waypoints": [
+     {
+      "time": 0,
+      "pos": [
+       200.0,
+       2.0,
+       80.0
+      ],
+      "speed": 0
+     }
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "missile_body",
+     "face_range": [
+      0,
+      3500
+     ],
+     "lwir_params": {
+      "emissivity": 0.7,
+      "base_temp": 300.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 4,
+      "dielectric_real": 8.0,
+      "dielectric_imag": 1.5
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "red_sam_2",
+   "name": "red_sam_2",
+   "mesh_path": "models/AGM-114/AGM-114.obj",
+   "face_count": 3500,
+   "type": "missile",
+   "tags": [
+    "platform",
+    "missile"
+   ],
+   "faction": "red",
+   "physics": {
+    "mass": 500,
+    "initial_position": [
+     225.0,
+     2.0,
+     90.0
+    ],
+    "initial_velocity": [
+     0,
+     0,
+     0
+    ],
+    "convex_hull": true
+   },
+   "motion_params": {
+    "max_speed": 1000.0,
+    "boost_accel": 70.0,
+    "max_lateral_accel": 250.0,
+    "guidance_law": 3,
+    "nav_constant": 4.0,
+    "seeker_range": 30000.0,
+    "boost_duration": 4.0,
+    "max_flight_time": 90.0,
+    "enable_terminal_maneuver": false
+   },
+   "route_plan": {
+    "platform": "red_sam_2",
+    "category": 3,
+    "type": 5,
+    "type_name": "Hold",
+    "loop": false,
+    "start_delay_s": 0.0,
+    "waypoints": [
+     {
+      "time": 0,
+      "pos": [
+       225.0,
+       2.0,
+       90.0
+      ],
+      "speed": 0
+     }
+    ]
+   },
+   "face_groups": [
+    {
+     "group_id": "missile_body",
+     "face_range": [
+      0,
+      3500
+     ],
+     "lwir_params": {
+      "emissivity": 0.7,
+      "base_temp": 300.15
+     },
+     "radar_x_params": {
+      "rcs_lut_id": 4,
+      "dielectric_real": 8.0,
+      "dielectric_imag": 1.5
+     }
+    }
+   ]
+  }
+ ],
+ "sensors": {
+  "sensor_list": [
+   {
+    "sensor_id": 1,
+    "type": "radar",
+    "band": "X",
+    "resolution": "ground",
+    "role": "search",
+    "tx_params": {
+     "power": 12000.0,
+     "beam_width": 0.03,
+     "wavelength": 0.03,
+     "pulse_rate": 4000.0,
+     "duty_cycle": 0.08
+    },
+    "aperture": {
+     "direction": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "fov_horizontal": 60.0,
+     "fov_vertical": 30.0,
+     "position_offset": [
+      0.0,
+      6.0,
+      5.0
+     ],
+     "range_m": 15000.0
+    },
+    "rx_cross_sensors": [],
+    "platform_object": "red_radar_site"
+   },
+   {
+    "sensor_id": 6,
+    "type": "ir",
+    "band": "MWIR",
+    "tx_params": {
+     "wavelength": 4e-06
+    },
+    "aperture": {
+     "direction": [
+      0.0,
+      0.15,
+      1.0
+     ],
+     "fov_horizontal": 40.0,
+     "fov_vertical": 30.0,
+     "position_offset": [
+      10.0,
+      8.0,
+      0.0
+     ],
+     "range_m": 25000.0
+    },
+    "rx_cross_sensors": [],
+    "platform_object": "red_sam_base",
+    "role": "guidance"
+   }
+  ],
+  "cross_priority": {}
+ },
+ "atmosphere": {
+  "layers": [
+   {
+    "height_min": 0,
+    "height_max": 11000,
+    "temp": 302.15,
+    "pressure": 101325.0,
+    "humidity": 0.6,
+    "density": 1.2,
+    "aerosol": 0.0002,
+    "ext_coeff": [
+     0.0015,
+     0.003,
+     5e-05,
+     5e-05
+    ],
+    "scatter_coeff": [
+     0.0004,
+     0.0008,
+     5e-07,
+     5e-07
+    ],
+    "absorb_coeff": [
+     6e-05,
+     0.00012,
+     4e-07,
+     4e-07
+    ],
+    "refract_index": 1.0003,
+    "turbulence": 2e-13,
+    "cloud_density": 0.0,
+    "visibility_km": 20.0
+   },
+   {
+    "height_min": 11000,
+    "height_max": 20000,
+    "temp": 216.65,
+    "pressure": 22632.0,
+    "humidity": 0.0,
+    "density": 0.364,
+    "aerosol": 1e-07,
+    "ext_coeff": [
+     5e-06,
+     1e-05,
+     5e-07,
+     5e-07
+    ],
+    "scatter_coeff": [
+     1e-06,
+     2e-06,
+     1e-08,
+     1e-08
+    ],
+    "absorb_coeff": [
+     5e-07,
+     1e-06,
+     1e-08,
+     1e-08
+    ],
+    "refract_index": 1.0001,
+    "turbulence": 1e-16,
+    "cloud_density": 0.0
+   }
+  ],
+  "weather_scenario": "clear",
+  "weather_severity": 0.2
+ },
+ "simulation": {
+  "frame_dt": 0.01667,
+  "total_duration": 90.0,
+  "max_frames": 5400,
+  "window_width": 1920,
+  "window_height": 1080
+ }
+}

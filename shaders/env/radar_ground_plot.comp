@@ -1,0 +1,45 @@
+#version 460
+
+// Sample the same visible scatterers as the echo chain. Each projected tile
+// retains one actual hit, the strongest modeled terrain contribution.
+layout(local_size_x=64) in;
+layout(set=0,binding=0) readonly buffer Position { vec4 positions[]; };
+layout(set=0,binding=1) readonly buffer Signal { vec4 signals[]; };
+layout(set=0,binding=2) writeonly buffer Ground { vec4 ground[]; };
+layout(set=0,binding=3) uniform Params {
+    vec4 ant[256];
+    vec4 beam[256];
+    vec4 m0;
+    vec4 m1;
+    vec4 m2;
+} pr;
+layout(push_constant) uniform Grid { uvec4 size; }; // width, height, tile width, tile height
+
+void main() {
+    const uint pulse=uint(pr.m1.x)/2u;
+    const uint selected=uint(pr.m2.w);
+    if(pr.m1.z<.5 || (selected!=0u && selected!=pulse+1u))return;
+    const uvec2 tiles=(size.xy+size.zw-1u)/size.zw;
+    const uint id=gl_GlobalInvocationID.x;
+    if(id>=tiles.x*tiles.y)return;
+
+    const uvec2 first=uvec2(id%tiles.x,id/tiles.x)*size.zw;
+    const uvec2 last=min(first+size.zw,size.xy);
+    const vec4 origin=pr.ant[pulse];
+    vec4 best=vec4(0.0);
+    for(uint y=first.y;y<last.y;++y)for(uint x=first.x;x<last.x;++x){
+        const uint index=y*size.x+x;
+        const vec4 p=positions[index];
+        if(p.w<.5)continue;
+        const vec4 s=signals[index];
+        if(s.w<.5)continue;
+        const vec3 delta=p.xyz-origin.xyz;
+        const float range=length(delta);
+        if(range<=0.0||range<pr.m0.z||range>origin.w)continue;
+        float voltageGain=1.0;
+        if(pr.m2.z>.5)voltageGain=pow(max(dot(delta/range,pr.beam[pulse].xyz),0.0),pr.m2.y);
+        const float power=dot(s.xy,s.xy)*voltageGain*voltageGain;
+        if(power>best.w)best=vec4(delta,power);
+    }
+    ground[id]=best;
+}

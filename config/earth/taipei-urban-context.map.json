@@ -1,0 +1,22 @@
+{
+  "schema": "vsgraysim.earth.map",
+  "version": 1,
+  "name": "Taipei urban context: GLO-30 DSM and Sentinel-2B",
+  "earth": {
+    "grid_size": 769,
+    "imagery_size": 2048,
+    "strict": true,
+    "vertical_datum": "ellipsoidal",
+    "preview_context_scale": 1,
+    "coverage": {"min_x": -40000, "max_x": 40000, "min_z": -40000, "max_z": 40000},
+    "data_provenance": {
+      "manifest": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/provenance.json",
+      "elevation": "Copernicus GLO-30 DSM, converted to WGS84 ellipsoidal height",
+      "imagery": "Contains modified Copernicus Sentinel data (2024), Sentinel-2B L2A TCI at 10 m"
+    }
+  },
+  "layers": [
+    {"type": "GDALElevation", "name": "GLO-30 DSM", "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/taipei-dsm30-ellipsoid.tif"},
+    {"type": "GDALImage", "name": "Sentinel-2B RGB", "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/taipei-sentinel2-20240214-rgb10.tif"}
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VSGRaySimulation scene package v1",
+  "type": "object",
+  "required": ["format", "version", "codec", "coordinates", "units", "topic", "checkpoint", "objects", "assets", "earth_patches", "surface_appearances", "residency"],
+  "properties": {
+    "format": {"const": "vsgraysim-scene-package-v1"},
+    "version": {"const": 1},
+    "codec": {"const": "cbor-zlib"},
+    "coordinates": {"const": "east-up-south-metres"},
+    "units": {"type": "object"},
+    "topic": {"type": "object", "required": ["format", "scene", "earth_map"], "properties": {"format": {"const": "earth-scene-topic-v1"}}},
+    "checkpoint": {"type": "object", "required": ["format", "geo_anchor", "tick", "revision"], "properties": {"format": {"const": "voxel-scene-checkpoint-v1"}}},
+    "objects": {
+      "type": "array", "maxItems": 256,
+      "items": {"type": "object", "required": ["id", "role", "material", "physics", "grid", "state", "volume"], "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "role": {"enum": ["terrain", "target", "structure"]},
+        "state": {"$ref": "#/$defs/digest"}, "volume": {"$ref": "#/$defs/digest"}, "sensor_materials": {"$ref": "#/$defs/digest"},
+        "grid": {"type": "object", "required": ["origin_m", "dimensions", "cell_size_m", "base_pose"]}
+      }}
+    },
+    "assets": {"type": "object", "maxProperties": 4096, "propertyNames": {"$ref": "#/$defs/digest"}, "additionalProperties": {
+      "type": "object", "required": ["uri", "stored_bytes", "expanded_bytes"], "properties": {
+        "uri": {"type": "string", "minLength": 1},
+        "stored_bytes": {"type": "integer", "minimum": 1, "maximum": 268435456},
+        "expanded_bytes": {"type": "integer", "minimum": 1, "maximum": 268435456}
+      }
+    }},
+    "earth_patches": {"$ref": "#/$defs/table"}, "surface_appearances": {"$ref": "#/$defs/table"},
+    "residency": {"type": "object", "required": ["mode"], "properties": {"mode": {"const": "bounded-authoritative-checkpoint"}}}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "table": {"type": "object", "maxProperties": 256, "additionalProperties": {"$ref": "#/$defs/digest"}}
+  }
+}

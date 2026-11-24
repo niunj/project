@@ -1,0 +1,80 @@
+#version 460
+/// ocean_fft_spectrum.comp —— P3 频域谱演化 (对标 Triton FFTWaterModel.cu):
+///   H(k,t) = h0(k)·e^{iωt} + h0*(-k)·e^{-iωt},  ω = √(g·k·tanh(k·d))
+/// 同时输出 5 路时域谱 (供 IFFT):
+///   H   (高度),  i·kx/|k|·H (chopX 梯度),  i·kz/|k|·H (chopZ),
+///   i·kx·H (slopeX = ∂h/∂x 谱),  i·kz·H (slopeZ)
+/// h0 由 CPU 按 JONSWAP + Mitsuyasu 方向谱预计算 (复振幅 RG32F 纹理传入),
+/// 与 WaveField 谱参数同源 (同一 jonswapHs/jonswapPeakFreq/mitsuyasuWeight)。
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D h0Tex;        // RG32F: h0(k) 复振幅
+layout(set = 0, binding = 1, rg32f) uniform writeonly image2D Ht;      // H(k,t)
+layout(set = 0, binding = 2, rg32f) uniform writeonly image2D ChopX;
+layout(set = 0, binding = 3, rg32f) uniform writeonly image2D ChopZ;
+layout(set = 0, binding = 4, rg32f) uniform writeonly image2D SlopeX;
+layout(set = 0, binding = 5, rg32f) uniform writeonly image2D SlopeZ;
+
+layout(push_constant) uniform Push {
+    float time;        // 仿真时刻 (s)
+    float patchSize;   // 平铺边长 Lx (m), k 网格 = 2π/L
+    float gravity;     // 9.80665
+    float depth;       // 代表水深 (m); <=0 → 深水 (tanh→1)
+    float chopScale;   // Gerstner 水平收缩 Q
+    float heightScale; // 高度幅值缩放 (Hs 归一后整体标定)
+} pc;
+
+const float TWO_PI = 6.28318530718;
+
+void main() {
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 N = imageSize(Ht);
+    if (xy.x >= N.x || xy.y >= N.y) return;
+
+    // 波数网格: k = 2π·(i - N/2) / L  (i ∈ [0,N)), 中心为 DC
+    vec2 kn = vec2(xy - N / 2);
+    vec2 K = kn * (TWO_PI / pc.patchSize);
+    float kLen = length(K);
+
+    // h0(k) 与 h0*(-k) (共轭对称保证 IFFT 输出实数)
+    vec2 h0   = texelFetch(h0Tex, xy, 0).rg;
+    ivec2 xn = (N - xy) % N;
+    vec2 h0n  = texelFetch(h0Tex, xn, 0).rg;
+    vec2 h0nc = vec2(h0n.x, -h0n.y);   // 共轭
+
+    // 色散: ω = √(g·k·tanh(k·d)); 深水 tanh→1
+    float w = 0.0;
+    if (kLen > 1e-6) {
+        float kd = (pc.depth > 0.0) ? kLen * pc.depth : 1e3;  // 大值 → tanh≈1
+        w = sqrt(pc.gravity * kLen * tanh(kd));
+    }
+    float wt = w * pc.time;
+    float cw = cos(wt), sw = sin(wt);
+
+    // H(k,t) = h0·e^{iωt} + h0*(-k)·e^{-iωt}
+    // e^{iwt}=(cw,sw), e^{-iwt}=(cw,-sw); 复乘 (a+bi)(c+di)=(ac-bd, ad+bc)
+    vec2 t1 = vec2(h0.x * cw - h0.y * sw, h0.x * sw + h0.y * cw);
+    vec2 t2 = vec2(h0nc.x * cw + h0nc.y * sw, -h0nc.x * sw + h0nc.y * cw);
+    vec2 H = (t1 + t2) * pc.heightScale;
+
+    imageStore(Ht, xy, vec4(H, 0.0, 0.0));
+
+    if (kLen > 1e-6) {
+        vec2 kHat = K / kLen;
+        // chopX/Z: i·(kx/|k|)·H·Q  →  i·c·H = (-c·H.y, c·H.x)
+        vec2 cx = (-kHat.x * pc.chopScale) * vec2(-H.y, H.x);
+        vec2 cz = (-kHat.y * pc.chopScale) * vec2(-H.y, H.x);
+        // slopeX/Z: i·kx·H (无 Q; 直接给 ∂h/∂x 谱, 精确法线)
+        vec2 sx = K.x * vec2(-H.y, H.x);
+        vec2 sz = K.y * vec2(-H.y, H.x);
+        imageStore(ChopX, xy, vec4(cx, 0.0, 0.0));
+        imageStore(ChopZ, xy, vec4(cz, 0.0, 0.0));
+        imageStore(SlopeX, xy, vec4(sx, 0.0, 0.0));
+        imageStore(SlopeZ, xy, vec4(sz, 0.0, 0.0));
+    } else {
+        imageStore(ChopX, xy, vec4(0.0));
+        imageStore(ChopZ, xy, vec4(0.0));
+        imageStore(SlopeX, xy, vec4(0.0));
+        imageStore(SlopeZ, xy, vec4(0.0));
+    }
+}

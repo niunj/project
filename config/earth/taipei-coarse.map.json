@@ -1,0 +1,35 @@
+{
+  "schema": "vsgraysim.earth.map",
+  "version": 1,
+  "name": "Taipei regional DEM and imagery context for an 80 x 80 km voxel working set",
+  "earth": {
+    "grid_size": 385,
+    "strict": true,
+    "vertical_datum": "ellipsoidal",
+    "provenance_assumed": true,
+    "coverage": {
+      "min_x": -60000,
+      "max_x": 60000,
+      "min_z": -60000,
+      "max_z": 60000
+    },
+    "imagery_size": 1024,
+    "preview_context_scale": 1
+  },
+  "layers": [
+    {
+      "name": "Earth Imagery",
+      "type": "TMSImage",
+      "uri": "${VSGRAYSIM_EARTH_DATA_ROOT}/worldTexture_tiff/{z}/{x}/{-y}.tif",
+      "profile": "global-geodetic",
+      "maxLevel": 3
+    },
+    {
+      "name": "Earth Elevation",
+      "type": "TMSElevation",
+      "uri": "${VSGRAYSIM_EARTH_DATA_ROOT}/worldHeight/{z}/{x}/{-y}.tif",
+      "profile": "global-geodetic",
+      "maxLevel": 5
+    }
+  ]
+}

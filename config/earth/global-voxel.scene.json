@@ -1,0 +1,7 @@
+{
+  "scenario_name": "全球体素 · DEM 与影像",
+  "geo_anchor": {"lat":25.078,"lon":121.772,"alt":0},
+  "earth": {"backend":"voxel","map":"global-voxel.map.json"},
+  "objects": [],
+  "sensors": {"sensor_list":[]}
+}

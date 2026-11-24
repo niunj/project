@@ -1,0 +1,114 @@
+// radar_fft.comp —— P1: 雷达段处理 GPU 化 (脉压/慢时间 FFT, 设计文档 §7.1)。
+// Stockham radix-2 auto-sort (免位反转): 每线程 j∈[0,N/2) 蝶形
+//   k = j & (span-1);  i = 2*(j-k)+k;  tw = exp(sign·2πi·k/(2·span))
+//   y[i] = x[j] + tw·x[j+N/2];   y[i+span] = x[j] - tw·x[j+N/2]
+// ping-pong 双缓冲, log2(N) 级后奇偶定输出侧。一个工作组一次变换:
+//   行变换 (快时间, N=n_fast):      count=cpi_pulses 组, 元素地址 (t*W+e)
+//   列变换 (慢时间, N=cpi_pulses):  count=n_fast 组, 转置地址 (e*W+t)
+//     —— 回波布局行=脉冲/列=快时间, 列变换跨脉冲步长为 W=n_fast;
+//        若仍用行寻址则退化为"每行前 cpi 个 bin 的 FFT" (P7 交叉对比实证)
+// 与 CPU 基准 (RadarStages::fft) 同一约定: 正变换 sign=-1 无缩放,
+// 逆变换 sign=+1 末级乘 1/N (经 f.x scale 传入)。
+// push: u = (N, count, W, multRef)   f = (scale, sign, transpose, N)
+// 寻址模式 (f.z): 0 行 addr(i)=t*W+i / 1 列转置 addr(i)=i*W+t /
+//   2 分段子变换 (P2.2 行变换 512·F 扩容): 工作组 t=行·F+子序号,
+//   addr(i) = (t/F)·N + (t%F) + i·F —— N (整行长) 由 f.w 下发, F=u.z。
+//   A(k1,n2) = Σ_{n1} x[n1·F+n2]·W_512^{n1·k1} 自然序落位 k1·F+n2 (连续 quad),
+//   由 radar_fft_tail.comp 做 twiddle (W_N^{n2·k1}) + 外层 F 点 DFT。
+#version 460
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer Src     { float src[]; };      // 交错 re,im
+layout(set = 0, binding = 1) buffer Dst     { float dst[]; };      // 交错 re,im
+layout(set = 0, binding = 2) buffer RefSpec { vec2 refSpec[]; };   // 脉压共轭参考谱 (multRef=1 时乘)
+
+layout(push_constant) uniform PC { uvec4 u; vec4 f; } pc;
+
+shared vec2 sa[512];
+shared vec2 sb[512];
+
+void main() {
+    const uint N  = pc.u.x;             // 变换长度 (2 的幂, ≤512)
+    const uint N2 = N / 2u;
+    const uint W  = pc.u.z;             // 矩阵行宽 (元素数; 模式 2 下=F)
+    const uint t  = gl_WorkGroupID.x;   // 变换序号 (行=脉冲 / 列=快时间 bin)
+    const uint tid = gl_LocalInvocationID.x;
+
+    const float fz = pc.f.z;
+    const bool trans = fz > 0.5 && fz < 1.5;
+    const bool mode2 = fz > 1.5;        // P2.2 分段子变换
+    const uint bigN = uint(pc.f.w + 0.5);
+
+    // 模式 2 寻址辅助: t → (行, 子序号), 元素 i 位于 行·N + 子 + i·F
+    const uint m2row = t / W, m2sub = t % W;
+
+    // 载入 (每线程 2 元素: tid 与 tid+N/2); multRef=1 时乘共轭参考谱
+    // (频域匹配滤波逐元素乘在线性链上, 载入预乘与正变换后乘等价)
+    if (tid < N2) {
+        uint e0, e1;
+        if (mode2) {
+            e0 = m2row * bigN + m2sub + tid * W;
+            e1 = m2row * bigN + m2sub + (tid + N2) * W;
+        } else if (trans) {
+            e0 = tid * W + t;
+            e1 = (tid + N2) * W + t;
+        } else {
+            e0 = t * W + tid;
+            e1 = t * W + tid + N2;
+        }
+        vec2 v0 = vec2(src[2u * e0], src[2u * e0 + 1u]);
+        vec2 v1 = vec2(src[2u * e1], src[2u * e1 + 1u]);
+        if (pc.u.w > 0u) {
+            // P2.2: 模式 2 载入元素的全局频域 bin = m2sub + i·W (i=tid),
+            // 参考谱须按全局 bin 取 —— 内段索引 tid 直接取会错误重采样参考谱
+            // (R1B 逆变换链 2048 路径交叉对比偏差根因之一)。
+            uint g0 = tid, g1 = tid + N2;
+            if (mode2) { g0 = m2sub + tid * W; g1 = m2sub + (tid + N2) * W; }
+            const vec2 r0 = refSpec[g0], r1 = refSpec[g1];
+            v0 = vec2(v0.x * r0.x - v0.y * r0.y, v0.x * r0.y + v0.y * r0.x);
+            v1 = vec2(v1.x * r1.x - v1.y * r1.y, v1.x * r1.y + v1.y * r1.x);
+        }
+        sa[tid] = v0;
+        sa[tid + N2] = v1;
+    }
+    barrier();
+
+    bool inA = true;
+    for (uint span = 1u; span < N; span <<= 1u) {
+        if (tid < N2) {
+            const uint k = tid & (span - 1u);
+            const uint i = 2u * (tid - k) + k;
+            const float ang = pc.f.y * 6.28318530718 * float(k) / float(2u * span);
+            const vec2 tw = vec2(cos(ang), sin(ang));
+            const vec2 a = inA ? sa[tid] : sb[tid];
+            const vec2 b = inA ? sa[tid + N2] : sb[tid + N2];
+            const vec2 tb = vec2(tw.x * b.x - tw.y * b.y, tw.x * b.y + tw.y * b.x);
+            if (inA) { sb[i] = a + tb; sb[i + span] = a - tb; }
+            else     { sa[i] = a + tb; sa[i + span] = a - tb; }
+        }
+        barrier();
+        inA = !inA;
+    }
+
+    if (tid < N2) {
+        const float s = pc.f.x;
+        uint e0, e1;
+        if (mode2) {
+            e0 = m2row * bigN + m2sub + tid * W;
+            e1 = m2row * bigN + m2sub + (tid + N2) * W;
+        } else if (trans) {
+            e0 = tid * W + t;
+            e1 = (tid + N2) * W + t;
+        } else {
+            e0 = t * W + tid;
+            e1 = t * W + tid + N2;
+        }
+        if (inA) {
+            dst[2u * e0]      = sa[tid].x * s;        dst[2u * e0 + 1u] = sa[tid].y * s;
+            dst[2u * e1]      = sa[tid + N2].x * s;   dst[2u * e1 + 1u] = sa[tid + N2].y * s;
+        } else {
+            dst[2u * e0]      = sb[tid].x * s;        dst[2u * e0 + 1u] = sb[tid].y * s;
+            dst[2u * e1]      = sb[tid + N2].x * s;   dst[2u * e1 + 1u] = sb[tid + N2].y * s;
+        }
+    }
+}

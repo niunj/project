@@ -1,0 +1,135 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "cloud_temporal.glsl"
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0) uniform sampler2D currentColor;
+layout(set=0,binding=1) uniform sampler2D currentDepth;
+layout(set=0,binding=2) uniform sampler2D previousColor;
+layout(set=0,binding=3) uniform sampler2D previousDepth;
+layout(set=0,binding=4,rgba16f) uniform writeonly image2D resolvedColor;
+layout(set=0,binding=5,rgba32f) uniform writeonly image2D resolvedDepth;
+layout(set=0,binding=11) uniform CloudMotions {vec4 rows[433];} cloudMotions;
+vec4 cubicWeights(float f){
+    float f2=f*f,f3=f2*f;
+    return vec4(-.5*f+f2-.5*f3,1.-2.5*f2+1.5*f3,
+                .5*f+2.*f2-1.5*f3,-.5*f2+.5*f3);
+}
+bool depthAgrees(vec2 depth,vec2 expected,vec2 tolerance){
+    return all(greaterThan(depth,vec2(0)))&&all(lessThan(abs(depth-expected),tolerance));
+}
+vec4 reconstructCloud(vec2 uv,out vec3 depth,out vec4 low,out vec4 high){
+    ivec2 size=textureSize(currentColor,0);
+    vec2 p=uv*vec2(size)-.5,f=fract(p);ivec2 base=ivec2(floor(p));
+    vec4 wx=cubicWeights(f.x),wy=cubicWeights(f.y),value=vec4(0);
+    low=vec4(1e30);high=vec4(-1e30);
+    vec3 sourceLow=vec3(1e30),sourceHigh=vec3(-1e30);
+    vec3 taps[4];float weights[4];int dominant=0;float largestWeight=-1.;
+    for(int y=0;y<4;++y)for(int x=0;x<4;++x){
+        ivec2 pixel=clamp(base+ivec2(x-1,y-1),ivec2(0),size-1);
+        vec4 s=texelFetch(currentColor,pixel,0);
+        value+=s*wx[x]*wy[y];
+        if(x>=1&&x<=2&&y>=1&&y<=2){
+            low=min(low,s);high=max(high,s);
+            int i=(y-1)*2+x-1;
+            vec3 raw=texelFetch(currentDepth,pixel,0).xyz;
+            taps[i]=vec3(raw.xy/max(s.a,.001),raw.z);
+            float weight=s.a*(x==1?1.-f.x:f.x)*(y==1?1.-f.y:f.y);
+            weights[i]=weight;
+            if(weight>largestWeight){largestWeight=weight;dominant=i;}
+            if(s.a>.001){sourceLow=min(sourceLow,s.rgb/s.a);sourceHigh=max(sourceHigh,s.rgb/s.a);}
+        }
+    }
+    // Bound cubic lobes in premultiplied HDR and alpha: no invented bright rim.
+    value=clamp(value,low,high);
+    if(sourceHigh.x>=sourceLow.x)value.rgb=clamp(value.rgb,sourceLow*value.a,sourceHigh*value.a);
+    // RGB and alpha can interpolate across the silhouette, but the depth used
+    // for occlusion and motion has to belong to a single visible cloud layer.
+    depth=taps[dominant];
+    vec2 sum=vec2(0),tolerance=max(vec2(35.),.045*depth.xy);float support=0.;
+    for(int i=0;i<4;++i)if(taps[i].z==depth.z&&depthAgrees(taps[i].xy,depth.xy,tolerance)){
+        sum+=weights[i]*taps[i].xy;
+        support+=weights[i];
+    }
+    if(support>0.)depth.xy=sum/support;
+    return value;
+}
+
+float reprojectedHistory(vec2 uv,vec2 expected,out vec4 color,out float age){
+    ivec2 size=textureSize(previousDepth,0);
+    vec2 p=uv*vec2(size)-.5,f=fract(p);
+    ivec2 base=ivec2(floor(p));
+    vec4 weights=vec4(0);
+    vec2 tolerance=max(vec2(25.,35.),expected*vec2(.025,.04));
+    age=0.;color=vec4(0);
+    for(int i=0;i<4;++i){
+        ivec2 offset=ivec2(i%2,i/2);
+        ivec2 pixel=clamp(base+offset,ivec2(0),size-1);
+        vec3 sampleDepth=texelFetch(previousDepth,pixel,0).xyz;
+        if(depthAgrees(sampleDepth.xy,expected,tolerance)){
+            vec2 weight=mix(vec2(1.)-f,f,vec2(offset));
+            weights[i]=weight.x*weight.y;
+            age+=weights[i]*sampleDepth.z;
+        }
+    }
+    // A linear texture lookup could otherwise average a foreground and a
+    // background depth into one apparently valid history sample.
+    float support=dot(weights,vec4(1.));
+    if(support<=.001)return 0.;
+    if(support>=.9999)color=texture(previousColor,uv);
+    else for(int i=0;i<4;++i)if(weights[i]>0.){
+        ivec2 pixel=clamp(base+ivec2(i%2,i/2),ivec2(0),size-1);
+        color+=weights[i]*texelFetch(previousColor,pixel,0);
+    }
+    if(support<.9999)color/=support;
+    age/=support;
+    return support;
+}
+
+void main(){
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy),size=imageSize(resolvedColor);
+    if(any(greaterThanEqual(pixel,size)))return;
+    vec2 uv=(vec2(pixel)+.5)/vec2(size),rawUV=uv-temporal.control.zw/temporal.resolution.xy;
+    vec4 sampled=texture(currentColor,rawUV);
+    if(sampled.a<.001){imageStore(resolvedColor,pixel,vec4(0));imageStore(resolvedDepth,pixel,vec4(0));return;}
+    vec3 moments;vec4 low,high;
+    vec4 current=reconstructCloud(rawUV,moments,low,high);
+    if(current.a<.001){imageStore(resolvedColor,pixel,vec4(0));imageStore(resolvedDepth,pixel,vec4(0));return;}
+    float depth=moments.x,front=moments.y;
+    vec3 ray=normalize((temporal.rayMatrix*vec4(uv*2.-1.,1.,1.)).xyz);
+    vec3 move=-temporal.motion.xyz;
+    int cloud=int(round(moments.z))-1;
+    bool motionRejected=false;
+    if(cloudMotions.rows[0].x>.5&&cloud>=0&&cloud<int(cloudMotions.rows[0].y)){
+        int row=1+cloud*3;vec4 a=cloudMotions.rows[row],b=cloudMotions.rows[row+1],c=cloudMotions.rows[row+2];
+        if(dot(a.xyz,a.xyz)>1e-10){
+            ray=vec3(dot(a.xyz,ray),dot(b.xyz,ray),dot(c.xyz,ray));
+            move=vec3(a.w,b.w,c.w);
+        }
+        else motionRejected=true;
+    }
+    vec3 point=ray*depth+move;
+    vec4 clip=temporal.previousClip*vec4(point,1.);
+    vec2 oldUV=clip.xy/max(clip.w,1e-8)*.5+.5;
+    bool valid=!motionRejected&&temporal.screen.z>.5&&clip.w>0.&&all(greaterThan(oldUV,vec2(0)))&&all(lessThan(oldUV,vec2(1)));
+    vec4 history=vec4(0);float blend=0.,age=0.;
+    if(valid){
+        vec3 origin=move+temporal.eyeDelta.xyz;
+        vec2 expected=vec2(length(ray*depth+origin),length(ray*front+origin));
+        float support=reprojectedHistory(oldUV,expected,history,age);
+        valid=support>.001&&abs(history.a-current.a)<.17;
+        if(valid){
+            vec3 newSource=current.rgb/max(current.a,.001),oldSource=history.rgb/max(history.a,.001);
+            float sourceChange=length(newSource-oldSource)/max(.10,max(length(newSource),length(oldSource)));
+            // Clamp premultiplied radiance and alpha together; no old cloud may
+            // leak into a newly clear pixel or a disoccluded cloud boundary.
+            history=clamp(history,low,high);
+            float agreement=1.-smoothstep(.025,.17,abs(history.a-current.a));
+            agreement*=1.-smoothstep(.10,.35,sourceChange);
+            blend=min(temporal.control.x,age/(age+1.))*agreement*support;
+        }
+    }
+    vec4 result=mix(current,history,blend);
+    imageStore(resolvedColor,pixel,max(result,vec4(0)));
+    // Occlusion depth always comes from this frame, never an old silhouette.
+    imageStore(resolvedDepth,pixel,vec4(depth,front,valid?min(age+1.,16.):1.,blend));
+}

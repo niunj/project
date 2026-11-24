@@ -1,0 +1,171 @@
+#include <vsgraysim/earth/SurfaceMesh.h>
+#include <vsgraysim/earth/TerrainDisplay.h>
+#include <vsg/utils/Builder.h>
+#include <vsg/utils/GraphicsPipelineConfigurator.h>
+#include <vsg/utils/ShaderSet.h>
+#include <vsg/state/material.h>
+#include <vsg/core/Array2D.h>
+#include <cstring>
+#include <stdexcept>
+#include <vsg/core/Array.h>
+#include <vsg/maths/transform.h>
+#include <limits>
+
+namespace vsgraysim::earth {
+namespace {
+vsg::ref_ptr<vsg::vec3Array> surfaceNormals(const EarthSurfaceSnapshot& surface) {
+    const auto& vertices=surface.vertices();
+    const auto& indices=surface.indices();
+    auto normals=vsg::vec3Array::create(vertices.size(),vsg::vec3(0,0,0));
+    if(!surface.surface_normals.empty()) {
+        if(surface.surface_normals.size()!=vertices.size())throw std::invalid_argument("surface normal count mismatch");
+        std::copy(surface.surface_normals.begin(),surface.surface_normals.end(),normals->begin());
+        return normals;
+    }
+    for(size_t i=0;i<indices.size();i+=3) {
+        const auto a=indices[i],b=indices[i+1],c=indices[i+2];
+        const auto area=vsg::cross(vertices[b]-vertices[a],vertices[c]-vertices[a]);
+        if(vsg::dot(area,area)<1e-24)continue;
+        for(auto vertex:{a,b,c})(*normals)[vertex]+=vsg::vec3(area);
+    }
+    for(auto& normal:*normals)if(vsg::dot(normal,normal)>0)normal=vsg::normalize(normal);
+    return normals;
+}
+}
+
+vsg::ref_ptr<vsg::VertexIndexDraw> makeSurfaceDraw(const EarthSurfaceSnapshot& surface, bool shaded) {
+    const auto& vertices = surface.vertices();
+    const auto& indices = surface.indices();
+    auto positions = vsg::vec3Array::create(vertices.size());
+    auto elements = vsg::uintArray::create(indices.size());
+    for (size_t i = 0; i < vertices.size(); ++i) (*positions)[i] = vsg::vec3(vertices[i]);
+    std::copy(indices.begin(), indices.end(), elements->begin());
+    vsg::DataList arrays{positions};
+    if (shaded) {
+        arrays.push_back(surfaceNormals(surface));
+        auto uv = vsg::vec2Array::create(vertices.size(), vsg::vec2(0,0));
+        if (!surface.imagery_uv.empty()) std::copy(surface.imagery_uv.begin(),surface.imagery_uv.end(),uv->begin());
+        arrays.push_back(uv);
+        arrays.push_back(vsg::vec4Array::create(1, surface.imagery_rgba.empty() ? vsg::vec4(.54f,.49f,.37f,1.f) : vsg::vec4(1,1,1,1)));
+    }
+    auto draw = vsg::VertexIndexDraw::create();
+    draw->assignArrays(arrays);
+    draw->assignIndices(elements);
+    draw->indexCount = static_cast<uint32_t>(indices.size());
+    draw->instanceCount = 1;
+    return draw;
+}
+
+vsg::ref_ptr<vsg::StateGroup> makeTerrainDisplay(const EarthSurfaceSnapshot& surface) {
+    vsg::StateInfo state;
+    state.lighting=true;
+    if (!surface.imagery_rgba.empty()) {
+        if (!surface.imagery_width || !surface.imagery_height ||
+            surface.imagery_rgba.size()/4/surface.imagery_width!=surface.imagery_height ||
+            surface.imagery_rgba.size()!=4ULL*surface.imagery_width*surface.imagery_height)
+            throw std::invalid_argument("invalid voxel imagery dimensions");
+        auto image=vsg::ubvec4Array2D::create(surface.imagery_width,surface.imagery_height);
+        std::memcpy(image->dataPointer(),surface.imagery_rgba.data(),surface.imagery_rgba.size());
+        image->properties.format=VK_FORMAT_R8G8B8A8_SRGB;
+        state.image=image;
+    }
+    if(!surface.mr_rgba.empty()) {
+        auto pipeline=vsg::GraphicsPipelineConfigurator::create(vsg::createPhysicsBasedRenderingShaderSet());
+        pipeline->enableArray("vsg_Vertex",VK_VERTEX_INPUT_RATE_VERTEX,12);pipeline->enableArray("vsg_Normal",VK_VERTEX_INPUT_RATE_VERTEX,12);
+        pipeline->enableArray("vsg_TexCoord0",VK_VERTEX_INPUT_RATE_VERTEX,8);pipeline->enableArray("vsg_Color",VK_VERTEX_INPUT_RATE_INSTANCE,16);
+        auto sampler=vsg::Sampler::create();sampler->addressModeU=sampler->addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        auto image=[&](const std::vector<uint8_t>& bytes,VkFormat format){if(bytes.size()!=size_t(surface.imagery_width)*surface.imagery_height*4)throw std::invalid_argument("PBR atlas size mismatch");auto data=vsg::ubvec4Array2D::create(surface.imagery_width,surface.imagery_height);std::memcpy(data->dataPointer(),bytes.data(),bytes.size());data->properties.format=format;return data;};
+        pipeline->assignTexture("diffuseMap",state.image,sampler);pipeline->assignTexture("mrMap",image(surface.mr_rgba,VK_FORMAT_R8G8B8A8_UNORM),sampler);
+        if(!surface.normal_rgba.empty())pipeline->assignTexture("normalMap",image(surface.normal_rgba,VK_FORMAT_R8G8B8A8_UNORM),sampler);
+        auto material=vsg::PbrMaterialValue::create();material->value().metallicFactor=1;material->value().roughnessFactor=1;
+        pipeline->assignDescriptor("material",material);pipeline->init();auto group=vsg::StateGroup::create();pipeline->copyTo(group);group->addChild(makeSurfaceDraw(surface,true));return group;
+    }
+    // The stock Phong material has a narrow plastic specular highlight. Land
+    // imagery represents diffuse surface colour; adding that white highlight
+    // erases its contrast around the sun and makes mountains look polished.
+    // This is a presentation material, never a change to sensor reflectance.
+    auto builder=vsg::Builder::create();builder->shaderSet=vsg::createPhongShaderSet();
+    auto land=vsg::PhongMaterialValue::create();land->value().diffuse=vsg::vec4(1,1,1,1);
+    land->value().specular=vsg::vec4(0,0,0,1);land->value().shininess=1;
+    for(auto& binding:builder->shaderSet->descriptorBindings)if(binding.name=="material")binding.data=land;
+    auto group=builder->createStateGroup(state);
+    if (!group) throw std::runtime_error("cannot create terrain display pipeline");
+    group->addChild(makeSurfaceDraw(surface,true));
+    return group;
+}
+vsg::ref_ptr<vsg::StateGroup> makeTerrainContextDisplay(const EarthSurfaceSnapshot& source,
+    const simcore::geo::GeoAnchor& anchor,const std::vector<vsg::dbox>& windows,std::function<double(double,double)> seaLevel) {
+    struct Vertex {vsg::dvec3 p;vsg::vec2 uv;vsg::vec3 normal;};
+    struct ContextMesh final : EarthSurfaceSnapshot {
+        uint32_t vertex(const Vertex& v) {
+            if(vertices_.size()>=4'000'000)throw std::runtime_error("surrounding Earth preview exceeds 4M clipped vertices");
+            const auto index=uint32_t(vertices_.size());
+            vertices_.push_back(v.p);imagery_uv.push_back(v.uv);surface_normals.push_back(v.normal);
+            return index;
+        }
+        void triangle(uint32_t a,uint32_t b,uint32_t c){indices_.insert(indices_.end(),{a,b,c});}
+        void polygon(const std::vector<Vertex>& polygon) {
+            for(size_t i=1;i+1<polygon.size();++i) {
+                if(vsg::length(vsg::cross(polygon[i].p-polygon[0].p,polygon[i+1].p-polygon[0].p))<1e-12)continue;
+                const auto a=vertex(polygon[0]),b=vertex(polygon[i]),c=vertex(polygon[i+1]);
+                triangle(a,b,c);
+            }
+        }
+    } mesh;
+    mesh.imagery_rgba=source.imagery_rgba;mesh.imagery_width=source.imagery_width;mesh.imagery_height=source.imagery_height;
+    const auto transform=vsg::inverse(simcore::geo::makeEnuToWorldMatrix(anchor))*simcore::geo::makeEnuToWorldMatrix(source.anchor);
+    auto clip=[](const std::vector<Vertex>& input,int axis,double limit,bool greater,bool boundary=true) {
+        std::vector<Vertex> output;if(input.empty())return output;
+        auto inside=[&](const Vertex& v){return greater?(boundary?v.p[axis]>=limit:v.p[axis]>limit):(boundary?v.p[axis]<=limit:v.p[axis]<limit);};
+        auto previous=input.back();bool old=inside(previous);
+        for(const auto& v:input) {
+            const bool next=inside(v);
+            if(next!=old){const double t=(limit-previous.p[axis])/(v.p[axis]-previous.p[axis]);output.push_back({previous.p+(v.p-previous.p)*t,previous.uv+(v.uv-previous.uv)*float(t),vsg::normalize(previous.normal+(v.normal-previous.normal)*float(t))});}
+            if(next)output.push_back(v);previous=v;old=next;
+        }
+        return output;
+    };
+    const auto sourceNormals=surfaceNormals(source);
+    std::vector<Vertex> points;points.reserve(source.vertices().size());
+    for(size_t i=0;i<source.vertices().size();++i) {
+        const auto n=transform*vsg::dvec4(vsg::dvec3((*sourceNormals)[i]),0.);
+        points.push_back({transform*source.vertices()[i],source.imagery_uv.empty()?vsg::vec2{}:source.imagery_uv[i],vsg::normalize(vsg::vec3(n.x,n.y,n.z))});
+    }
+    constexpr auto unassigned=std::numeric_limits<uint32_t>::max();
+    std::vector<uint32_t> indexedVertices(points.size(),unassigned);
+    auto addShared=[&](uint32_t index) {
+        auto& vertex=indexedVertices[index];
+        if(vertex==unassigned)vertex=mesh.vertex(points[index]);
+        return vertex;
+    };
+    for(size_t i=0;i<source.indices().size();i+=3) {
+        const auto a=source.indices()[i],b=source.indices()[i+1],c=source.indices()[i+2];
+        vsg::dbox bounds;for(const auto index:{a,b,c})bounds.add(points[index].p);
+        const auto crosses=[&](const vsg::dbox& window){return bounds.min.x<=window.max.x&&bounds.max.x>=window.min.x&&bounds.min.z<=window.max.z&&bounds.max.z>=window.min.z;};
+        if(!seaLevel&&std::none_of(windows.begin(),windows.end(),crosses)) {
+            if(vsg::length(vsg::cross(points[b].p-points[a].p,points[c].p-points[a].p))<1e-12)continue;
+            const auto aa=addShared(a),bb=addShared(b),cc=addShared(c);
+            mesh.triangle(aa,bb,cc);
+            continue;
+        }
+        std::vector<Vertex> original{points[a],points[b],points[c]};
+        if(seaLevel){std::vector<Vertex> land;auto previous=original.back();double old=previous.p.y-seaLevel(previous.p.x,previous.p.z);for(const auto& v:original){const double next=v.p.y-seaLevel(v.p.x,v.p.z);if((old>0)!=(next>0)){const double t=old/(old-next);land.push_back({previous.p+(v.p-previous.p)*t,previous.uv+(v.uv-previous.uv)*float(t),vsg::normalize(previous.normal+(v.normal-previous.normal)*float(t))});}if(next>0)land.push_back(v);previous=v;old=next;}original=std::move(land);if(original.size()<3)continue;}
+        std::vector<std::vector<Vertex>> pieces{original};
+        for(const auto& window:windows) {
+            if(!crosses(window))continue;
+            std::vector<std::vector<Vertex>> next;
+            for(auto interior:pieces) {
+                for(int plane=0;plane<4&&!interior.empty();++plane) {
+                    const int axis=plane<2?0:2;const bool greater=plane%2==0;
+                    const double limit=greater?window.min[axis]:window.max[axis];
+                    auto outside=clip(interior,axis,limit,!greater,false);if(outside.size()>=3)next.push_back(std::move(outside));
+                    interior=clip(interior,axis,limit,greater);
+                }
+            }
+            pieces=std::move(next);
+        }
+        for(const auto& piece:pieces)mesh.polygon(piece);
+    }
+    return makeTerrainDisplay(mesh);
+}
+}

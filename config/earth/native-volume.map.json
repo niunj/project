@@ -1,0 +1,27 @@
+{
+  "name": "Synthetic geodetic volume with a rock shelter",
+  "format": "voxel-geodetic-volume-v1",
+  "profile": "global-geodetic",
+  "cells_per_tile": 8,
+  "texels_per_tile": 16,
+  "peripheral_lod_delta": 1,
+  "vertical_step_m": 5,
+  "tiles": {
+    "uri": "native-volume/{z}/{x}/{y}.json",
+    "max_level": 9
+  },
+  "earth": {
+    "backend": "voxel",
+    "strict": true,
+    "provenance_assumed": true,
+    "vertical_datum": "ellipsoidal",
+    "min_lod": 7,
+    "initial_lod": 9,
+    "max_lod": 12
+  },
+  "orbital_catalog": {
+    "9/858/184": 6527373509315002655,
+    "0/1/0": 6126316224047041431,
+    "0/0/0": 3196377758163954490
+  }
+}

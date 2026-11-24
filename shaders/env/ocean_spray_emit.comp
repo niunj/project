@@ -1,0 +1,57 @@
+#version 460
+/// ocean_spray_emit.comp —— P4 泡沫喷雾粒子发射 (对标 Triton GetSprays:760):
+///   扫 slopeFoamMap (P3 FFT 输出, rgba=Nx,Ny,Nz,J), J 低于折叠阈值 (泡沫强)
+///   且波面高度在波峰带的格点, 按确定性 hash 概率发射一个喷雾粒子。
+///   粒子初速 = 波面轨道速度近似 (法线偏转 + 风) + 向上初速; 重力抛物线。
+///   环形缓冲: 每帧从 emitOffset 起顺序写, 旧粒子自然覆盖 (无锁 append)。
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D displacement;  // chopX,h,chopZ,0
+layout(set = 0, binding = 1) uniform sampler2D slopeFoam;     // Nx,Ny,Nz,J
+
+struct Particle {
+    vec4 posVel;     // xyz=初位置 (世界 ENU), w=存活时长 (s)
+    vec4 velMisc;    // xyz=初速度, w=尺寸
+};
+layout(set = 0, binding = 2) buffer Particles { Particle particles[]; };
+
+layout(push_constant) uniform Push {
+    vec4 misc;       // x=time, y=patchSize, z=seaLevel, w=emitOffset
+    vec4 phys;       // x=风速, y=风向x, z=风向z, w=泡沫阈值(J 低于此值发射)
+    vec4 center;     // xyz=网格中心 ENU (相机跟随), w=发射概率
+} pc;
+
+float hash(ivec2 p, float t) {
+    return fract(sin(dot(vec2(p), vec2(127.1, 311.7)) + t * 0.173) * 43758.5453);
+}
+
+void main() {
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 N = textureSize(slopeFoam, 0);
+    if (xy.x >= N.x || xy.y >= N.y) return;
+
+    vec4 sf = texelFetch(slopeFoam, xy, 0);
+    vec4 dp = texelFetch(displacement, xy, 0);
+    float J = sf.w;
+    float h = dp.y;
+
+    // 发射判据: J < 阈值 (波面折叠破碎) 且波峰带 (h>0); 概率去密
+    if (J >= pc.phys.w || h <= 0.0) return;
+    if (hash(xy, pc.misc.x) > pc.center.w) return;
+
+    // 世界位置: 格点 → 世界 ENU (网格中心跟随相机, patch 平铺)
+    vec2 gridUv = (vec2(xy) / vec2(N) - 0.5) * pc.misc.y;
+    vec3 pos = pc.center.xyz + vec3(gridUv.x + dp.x, pc.misc.z + h, gridUv.y + dp.z);
+
+    // 初速: 轨道速度近似 (波峰向前抛) + 风推 + 向上
+    vec3 nrm = sf.xyz;
+    vec3 vel = vec3(pc.phys.y, 0.0, pc.phys.z) * (1.5 + pc.phys.x * 0.3)
+             + vec3(nrm.x, 0.0, nrm.z) * 2.0
+             + vec3(0.0, 2.0 + 2.5 * hash(xy + ivec2(7, 13), pc.misc.x), 0.0);
+
+    // 环形缓冲写入
+    uint idx = (uint(pc.misc.w) + uint(xy.y * N.x + xy.x)) % 4096u;
+    float life = 0.8 + 1.2 * hash(xy + ivec2(31, 17), pc.misc.x);
+    particles[idx].posVel = vec4(pos, life);
+    particles[idx].velMisc = vec4(vel, 0.5 + 1.0 * hash(xy + ivec2(3, 41), pc.misc.x));
+}

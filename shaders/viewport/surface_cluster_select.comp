@@ -1,0 +1,59 @@
+#version 450
+
+layout(local_size_x=64) in;
+
+struct Cluster {
+    vec4 sphere;
+    uvec4 ranges;
+    vec4 errors;
+};
+struct IndexedDraw {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+layout(std430,set=0,binding=0) readonly buffer Clusters { Cluster clusters[]; };
+layout(std430,set=0,binding=1) buffer Draws { IndexedDraw combined; IndexedDraw clustersDraws[]; };
+layout(std430,set=0,binding=2) readonly buffer SourceIndices { uint sourceIndices[]; };
+layout(std430,set=0,binding=3) writeonly buffer SelectedIndices { uint selectedIndices[]; };
+layout(push_constant) uniform View {
+    vec4 planes[6];
+    vec4 eyeAndScale;
+    vec4 forwardAndError;
+} view;
+
+IndexedDraw selectCluster(uint index) {
+    Cluster cluster=clusters[index];
+    bool visible=true;
+    for(int i=0;i<6;++i) {
+        float distance=dot(view.planes[i].xyz,cluster.sphere.xyz)+view.planes[i].w;
+        if(distance< -cluster.sphere.w)visible=false;
+    }
+    float nearestDepth=dot(cluster.sphere.xyz-view.eyeAndScale.xyz,view.forwardAndError.xyz)-cluster.sphere.w;
+    bool coarse=cluster.ranges.w>0u && nearestDepth>0.0 &&
+        cluster.errors.x*view.eyeAndScale.w<view.forwardAndError.w*nearestDepth;
+    uint first=coarse?cluster.ranges.z:cluster.ranges.x;
+    uint count=coarse?cluster.ranges.w:cluster.ranges.y;
+    return IndexedDraw(visible?count:0u,1u,first,0,0u);
+}
+
+shared uint firstIndex;
+shared uint indexCount;
+shared uint outputOffset;
+
+void main() {
+    uint index=gl_WorkGroupID.x;
+    uint lane=gl_LocalInvocationID.x;
+    if(lane==0u) {
+        IndexedDraw draw=selectCluster(index);
+        clustersDraws[index]=draw;
+        firstIndex=draw.firstIndex;
+        indexCount=draw.indexCount;
+        if(indexCount>0u)outputOffset=atomicAdd(combined.indexCount,indexCount);
+    }
+    barrier();
+    for(uint i=lane;i<indexCount;i+=gl_WorkGroupSize.x)
+        selectedIndices[outputOffset+i]=sourceIndices[firstIndex+i];
+}

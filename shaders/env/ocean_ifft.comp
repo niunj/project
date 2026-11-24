@@ -1,0 +1,64 @@
+#version 460
+/// ocean_ifft.comp —— P3 二维逆 FFT (对标 radar_fft.comp Stockham radix-2):
+///   行/列两遍 (push transpose 切换寻址), 每线程一次变换 N/2 蝶形,
+///   ping-pong 双 image; 逆变换 sign=+1, 末级乘 1/(N·N) 归一 (行/列各 1/N)。
+///   输入: 时域谱 (rg32f image, re/im); 输出: 空间场 (虚部应≈0, 取实部)。
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0, rg32f) uniform readonly  image2D srcImg;
+layout(set = 0, binding = 1, rg32f) uniform writeonly image2D dstImg;
+
+layout(push_constant) uniform PC {
+    uint N;          // 变换长度 (2 的幂, ≤512)
+    uint count;      // 变换组数 (行=N 行 / 列=N 列)
+    float scale;     // 末级缩放 (1/N)
+    float transpose; // 0=行变换 (addr=y*N+x) / 1=列变换 (addr=x*N+y)
+} pc;
+
+shared vec2 sa[512];
+shared vec2 sb[512];
+
+void main() {
+    const uint N  = pc.N;
+    const uint N2 = N / 2u;
+    const uint t  = gl_WorkGroupID.x;      // 变换序号 (行号 或 列号)
+    const uint tid = gl_LocalInvocationID.x;
+    const bool trans = pc.transpose > 0.5;
+
+    // 载入: 每线程 2 元素 (tid 与 tid+N/2)
+    if (tid < N2) {
+        ivec2 e0 = trans ? ivec2(int(t), int(tid)) : ivec2(int(tid), int(t));
+        ivec2 e1 = trans ? ivec2(int(t), int(tid + N2)) : ivec2(int(tid + N2), int(t));
+        sa[tid]      = imageLoad(srcImg, e0).rg;
+        sa[tid + N2] = imageLoad(srcImg, e1).rg;
+    }
+    barrier();
+
+    bool inA = true;
+    for (uint span = 1u; span < N; span <<= 1u) {
+        if (tid < N2) {
+            const uint k = tid & (span - 1u);
+            const uint i = 2u * (tid - k) + k;
+            // 逆变换 sign=+1
+            const float ang = 6.28318530718 * float(k) / float(2u * span);
+            const vec2 tw = vec2(cos(ang), sin(ang));
+            const vec2 a = inA ? sa[tid] : sb[tid];
+            const vec2 b = inA ? sa[tid + N2] : sb[tid + N2];
+            const vec2 tb = vec2(tw.x * b.x - tw.y * b.y, tw.x * b.y + tw.y * b.x);
+            if (inA) { sb[i] = a + tb; sb[i + span] = a - tb; }
+            else     { sa[i] = a + tb; sa[i + span] = a - tb; }
+        }
+        barrier();
+        inA = !inA;
+    }
+
+    // 写出 (缩放; 归一 1/N)
+    if (tid < N2) {
+        ivec2 o0 = trans ? ivec2(int(t), int(tid)) : ivec2(int(tid), int(t));
+        ivec2 o1 = trans ? ivec2(int(t), int(tid + N2)) : ivec2(int(tid + N2), int(t));
+        const vec2 r0 = (inA ? sa[tid] : sb[tid]) * pc.scale;
+        const vec2 r1 = (inA ? sa[tid + N2] : sb[tid + N2]) * pc.scale;
+        imageStore(dstImg, o0, vec4(r0, 0.0, 0.0));
+        imageStore(dstImg, o1, vec4(r1, 0.0, 0.0));
+    }
+}

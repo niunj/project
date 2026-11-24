@@ -1,0 +1,172 @@
+{
+  "schema": "vsgraysim.cockpit",
+  "version": 1,
+  "id": "a320",
+  "name": "A320 · 客机显控台",
+  "category": "airliner",
+  "description": "左座侧杆 / 中央双发推力外观 · PFD / ND / 发动机 / 系统屏",
+  "background": "../../assets/cockpit/a320/panel-base.png",
+  "grips": "../../assets/cockpit/a320/control-grips.png",
+  "engine_count": 2,
+  "controls": {
+    "stick": [
+      0.005,
+      0.665,
+      0.145,
+      0.31
+    ],
+    "throttle": [
+      0.476,
+      0.69,
+      0.16,
+      0.3
+    ],
+    "maximum_axis_demand": 0.5,
+    "stick_travel_x": 0.1,
+    "stick_travel_y": 0.08
+  },
+  "external_model": {
+    "kind": "airliner",
+    "up_axis": "y",
+    "maximum_dimension_m": 38,
+    "chase_distance_m": 80,
+    "label": "通用双发客机示意外观",
+    "view_azimuth_deg": 30
+  },
+  "instruments": [
+    {
+      "id": "pfd",
+      "kind": "pfd",
+      "label": "PRIMARY FLIGHT",
+      "rect": [
+        0.09,
+        0.189,
+        0.168,
+        0.28
+      ]
+    },
+    {
+      "id": "nd",
+      "kind": "mfd",
+      "label": "NAVIGATION",
+      "rect": [
+        0.292,
+        0.189,
+        0.165,
+        0.28
+      ],
+      "initial_page": "NAV"
+    },
+    {
+      "id": "eng",
+      "kind": "mfd",
+      "label": "ENGINE",
+      "rect": [
+        0.55,
+        0.189,
+        0.169,
+        0.28
+      ],
+      "initial_page": "ENG"
+    },
+    {
+      "id": "sys",
+      "kind": "mfd",
+      "label": "SYSTEM",
+      "rect": [
+        0.754,
+        0.189,
+        0.168,
+        0.28
+      ],
+      "initial_page": "SYS"
+    },
+    {
+      "id": "airspeed",
+      "kind": "dial",
+      "label": "AIRSPEED",
+      "rect": [
+        0.393,
+        0.536,
+        0.054,
+        0.094
+      ],
+      "binding": "air_data.ias_mps",
+      "unit": "KT",
+      "min": 0,
+      "max": 450,
+      "scale": 1.943844
+    },
+    {
+      "id": "adi",
+      "kind": "attitude",
+      "label": "ATTITUDE",
+      "rect": [
+        0.483,
+        0.536,
+        0.054,
+        0.094
+      ]
+    },
+    {
+      "id": "alt",
+      "kind": "dial",
+      "label": "ALT",
+      "rect": [
+        0.575,
+        0.536,
+        0.054,
+        0.094
+      ],
+      "binding": "air_data.pressure_altitude_m",
+      "unit": "FT",
+      "min": 0,
+      "max": 45000,
+      "scale": 3.28084
+    },
+    {
+      "id": "fms_left",
+      "kind": "ded",
+      "label": "FMS",
+      "rect": [
+        0.322,
+        0.677,
+        0.108,
+        0.107
+      ]
+    },
+    {
+      "id": "fms_right",
+      "kind": "ded",
+      "label": "FMS",
+      "rect": [
+        0.636,
+        0.677,
+        0.108,
+        0.107
+      ]
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "panel_light",
+      "label": "本地仪表亮度",
+      "action": "panel_light",
+      "rect": [
+        0.033,
+        0.319,
+        0.029,
+        0.047
+      ]
+    }
+  ],
+  "joystick": {
+    "roll_axis": 0,
+    "pitch_axis": 1,
+    "throttle_axis": 2,
+    "rudder_axis": 3,
+    "invert_throttle": true,
+    "deadzone": 0.04,
+    "release_button": 7
+  }
+}

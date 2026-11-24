@@ -1,0 +1,16 @@
+{
+  "scenario_name": "原生体素参考地球 · 架空岩层（合成）",
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 0
+  },
+  "earth": {
+    "backend": "voxel",
+    "map": "native-volume.map.json"
+  },
+  "objects": [],
+  "sensors": {
+    "sensor_list": []
+  }
+}

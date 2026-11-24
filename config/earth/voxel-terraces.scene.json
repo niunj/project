@@ -1,0 +1,17 @@
+{
+  "scenario_name": "体素台地",
+  "version": "1.0",
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 100
+  },
+  "earth": {
+    "backend": "voxel",
+    "map": "voxel-terraces.map.json"
+  },
+  "objects": [],
+  "sensors": {
+    "sensor_list": []
+  }
+}

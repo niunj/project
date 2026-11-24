@@ -1,0 +1,176 @@
+{
+  "format": "voxel-scene-v1",
+  "fixed_step_seconds": 0.02,
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 10,
+    "hours_utc": 4
+  },
+  "geo_anchor": {
+    "lat": 25.22,
+    "lon": 121.8,
+    "alt": 19.8389225006104
+  },
+  "ocean": {
+    "wave_height_m": 0.65,
+    "wave_length_m": 24,
+    "swell_height_m": 0.25,
+    "swell_length_m": 80,
+    "wind_speed_mps": 6,
+    "wind_azimuth_deg": 70,
+    "bottom_m": -100,
+    "half_extent_m": 16000,
+    "cell_size_m": 0.5,
+    "provenance": {
+      "sea_level": "local mean sea surface anchored to the new Taipei DSM sample; no measured tide",
+      "bed": "synthetic validation bed; NOT measured Taipei bathymetry",
+      "body_density": "assumed bulk density including enclosed volume; no flooding compartments"
+    },
+    "reference_surface": {
+      "map": "taipei-sea-level.map.json",
+      "grid_size": 513,
+      "earth": {
+        "coverage": {
+          "min_x": -100000,
+          "max_x": 100000,
+          "min_z": -100000,
+          "max_z": 100000
+        },
+        "grid_size": 513,
+        "imagery_size": 32
+      }
+    }
+  },
+  "objects": [
+    {
+      "id": "assumed-bed",
+      "role": "terrain",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/OceanDemo/assumed-seabed.osgb",
+        "max_dimension": 160,
+        "up_axis": "y",
+        "fill_interior": true
+      },
+      "physics": {
+        "motion": "static"
+      },
+      "material": {
+        "density_kg_m3": 2200,
+        "color_rgba": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "vessel",
+      "role": "target",
+      "position_m": [
+        0,
+        1,
+        0
+      ],
+      "rotation_deg": [
+        2,
+        12,
+        3
+      ],
+      "source": {
+        "type": "mesh",
+        "path": "../../models/OceanDemo/test-vessel.osgb",
+        "max_dimension": 128,
+        "up_axis": "y",
+        "fill_interior": true
+      },
+      "physics": {
+        "motion": "dynamic",
+        "fracture": true,
+        "support": "none",
+        "friction": 0.65
+      },
+      "material": {
+        "density_kg_m3": 400,
+        "temperature_k": 294,
+        "color_rgba": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "velocity_mps": [
+        -0.3,
+        0,
+        -1.5
+      ]
+    },
+    {
+      "id": "submersible",
+      "role": "target",
+      "position_m": [
+        -5,
+        -5,
+        -3
+      ],
+      "rotation_deg": [
+        0,
+        -15,
+        0
+      ],
+      "source": {
+        "type": "mesh",
+        "path": "../../models/OceanDemo/test-submersible.osgb",
+        "max_dimension": 96,
+        "up_axis": "y",
+        "fill_interior": true
+      },
+      "physics": {
+        "motion": "dynamic",
+        "fracture": true,
+        "support": "none"
+      },
+      "material": {
+        "density_kg_m3": 1025,
+        "temperature_k": 293,
+        "color_rgba": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "taipei-coast",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "taipei-region.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -10000,
+            "max_x": 10000,
+            "min_z": -10000,
+            "max_z": 10000
+          },
+          "grid_size": 501,
+          "imagery_size": 2048,
+          "strict": true
+        },
+        "cell_size_m": 80,
+        "bottom_m": -200,
+        "hd_subdivisions": 2,
+        "voxel_surface": "smooth",
+        "mode": "hd",
+        "sea_surface_mask": {
+          "map": "taipei-sea-level.map.json",
+          "epsilon_m": 0.25
+        }
+      }
+    }
+  ]
+}

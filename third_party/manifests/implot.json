@@ -1,0 +1,19 @@
+{
+  "files": {
+    ".github/CMakeLists.txt": "d88f49a83d2ae2632516862319bc4e9939994d7ef44efc667d0cbffd011e2fb9",
+    ".github/example_implot.cpp": "8279099d8972b483ff727f9602125c8f166414dc16e75acf2cf18ad114f0b360",
+    ".github/workflows/build.yml": "fc6719926b4f6445fd80cad0fdb8ae281fbfcad84f6fcb9e84f0bdea02483f76",
+    "LICENSE": "38bd30c2111fe7e3d8fb86d8607491239659eff1df1b1004b9a8349e20a91967",
+    "README.md": "f7a24cf9a56e59766fc323051b438ab8b4a9f6154fb40cd0ac76025e7c706976",
+    "TODO.md": "f9baa7a195a846c4fb002e1ae899d902bb00e509c388a80fbb7c3ef5d05a2fc1",
+    "implot.cpp": "6ccb38d8a2a375d96570c3889af17eb9b4ab7ce9f55e5fc527b19d2ab53a5619",
+    "implot.h": "bd8d707cbb09883177278f1973639fe09c68043b3401d1a14ff99290c2a1f46f",
+    "implot_demo.cpp": "1cb064cba71e8e8651b70d25969c2c098b1c91926fdd26f488d890ff95bab283",
+    "implot_internal.h": "ce7174d6641e52d5fd745ec84d6b7f2d03bb55db5ba17a5d0a78e78aa2a7d31e",
+    "implot_items.cpp": "138668283371f69631157a479d21d3310f7bef14a4ef7f6dd82b20fc1a42181f"
+  },
+  "name": "implot",
+  "schema": "vsgraysim.source.manifest",
+  "tree_sha256": "5b2305726b7f8c992c45fa8f9116e1bcc3e6d8207ddec737d355147a7ed8cfdc",
+  "version": 1
+}

@@ -1,0 +1,42 @@
+// radar_transpose.comp —— P2.2: 慢时间列变换的全局转置 pass (coalesced 化)。
+// 源矩阵 srcH 行 × srcW 列 (行主序) → 目标矩阵 srcW 行 × srcH 列。
+// 读写坐标独立生成 (P2.2 修复: 原 o=wg·32+lid.yx 写坐标由读空间 dispatch 生成,
+// 非方阵时目标矩阵仅部分覆盖 —— trans2 只写 rd 前 128 列, 残留旧帧值伪装"近似正确")。
+//   读: src(row, col), warp 内 lid.x→col 连续 (coalesced)
+//   写: dst(dstRow=col 块·32+lid.y, dstCol=row 块·32+lid.x), warp 内 dstCol 连续 (coalesced)
+// tile 经共享内存转置; [33] pad 消除写侧 tile 列读取的 32 路 bank conflict。
+// 复数 float 交错对 (re,im)。
+#version 460
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) buffer Src { float src[]; };
+layout(set = 0, binding = 1) buffer Dst { float dst[]; };
+
+layout(push_constant) uniform PC { uvec4 u; } pc;    // (srcW, srcH, 0, 0)
+
+shared vec2 tile[32][33];
+
+void main() {
+    const uint srcW = pc.u.x, srcH = pc.u.y;
+    // 读: src(行 r, 列 c) —— r 由 lid.y / c 由 lid.x 生成
+    const uint r = gl_WorkGroupID.y * 32u + gl_LocalInvocationID.y;
+    const uint c = gl_WorkGroupID.x * 32u + gl_LocalInvocationID.x;
+    if (r < srcH && c < srcW) {
+        const uint e = r * srcW + c;
+        tile[gl_LocalInvocationID.y][gl_LocalInvocationID.x] =
+            vec2(src[2u * e], src[2u * e + 1u]);
+    } else {
+        tile[gl_LocalInvocationID.y][gl_LocalInvocationID.x] = vec2(0.0);   // 边界 tile 防未初始化
+    }
+    barrier();
+    // 写: dst(行 c, 列 r) = src(r, c) —— 行由 wg.x·32+lid.y / 列由 wg.y·32+lid.x 生成
+    // (写块与读块转置对应; warp 内 lid.x → dst 列连续, coalesced)
+    const uint dstRow = gl_WorkGroupID.x * 32u + gl_LocalInvocationID.y;
+    const uint dstCol = gl_WorkGroupID.y * 32u + gl_LocalInvocationID.x;
+    if (dstRow < srcW && dstCol < srcH) {
+        const uint e = dstRow * srcH + dstCol;
+        const vec2 v = tile[gl_LocalInvocationID.x][gl_LocalInvocationID.y];
+        dst[2u * e]     = v.x;
+        dst[2u * e + 1u] = v.y;
+    }
+}

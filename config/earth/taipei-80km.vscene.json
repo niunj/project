@@ -1,0 +1,40 @@
+{
+  "format": "voxel-scene-v1",
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 0
+  },
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 26,
+    "hours_utc": 8.0
+  },
+  "objects": [
+    {
+      "id": "taipei-terrain",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "taipei-region.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -40000,
+            "max_x": 40000,
+            "min_z": -40000,
+            "max_z": 40000
+          },
+          "grid_size": 1025,
+          "imagery_size": 3072,
+          "strict": true
+        },
+        "cell_size_m": 312.5,
+        "bottom_m": -8000,
+        "hd_subdivisions": 4,
+        "voxel_surface": "smooth",
+        "mode": "voxel"
+      }
+    }
+  ]
+}

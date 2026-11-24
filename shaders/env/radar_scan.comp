@@ -1,0 +1,51 @@
+// radar_scan.comp —— P2.1 回波合成两 pass 改造 · 前缀和 pass (2/3)。
+// 单工作组对 nFast (≤4096) 个桶计数做 Hillis-Steele 包含扫描 → 排他前缀和:
+//   offs[b]  = Σ_{j<b} count[j]        (CSR 桶起始, b=nFast 处写总散射体数)
+//   cursor[b] = offs[b]                (radar_csr 的 atomicAdd 工作游标)
+#version 460
+layout(local_size_x = 1024) in;
+
+layout(set = 0, binding = 0) buffer BucketCount { uint bucketCount[]; };
+layout(set = 0, binding = 1) buffer BucketOffs  { uint offs[]; };
+layout(set = 0, binding = 2) buffer BucketCursor { uint cursor[]; };
+
+layout(push_constant) uniform PC { uvec4 u; } pc;    // (nBuckets, 0, 0, 0)
+
+shared uint s[4096];
+
+void main() {
+    const uint tid = gl_LocalInvocationID.x;
+    const uint nB = pc.u.x;                          // ≤ 4096
+
+    // 载入 (每线程 4 元素)
+    uint v[4];
+    for (uint q = 0u; q < 4u; ++q) {
+        const uint i = tid + 1024u * q;
+        v[q] = (i < nB) ? bucketCount[i] : 0u;
+        s[i] = v[q];
+    }
+    barrier();
+
+    // Hillis-Steele 包含扫描 (快照模式: 读 → barrier → 写 → barrier)
+    for (uint d = 1u; d < 4096u; d <<= 1u) {
+        uint add[4];
+        for (uint q = 0u; q < 4u; ++q) {
+            const uint i = tid + 1024u * q;
+            add[q] = (i >= d) ? s[i - d] : 0u;
+        }
+        barrier();
+        for (uint q = 0u; q < 4u; ++q) s[tid + 1024u * q] += add[q];
+        barrier();
+    }
+
+    // 排他化 + 输出 (offs[nB] = 总散射体数, 供 radar_echo 桶尾界)
+    for (uint q = 0u; q < 4u; ++q) {
+        const uint i = tid + 1024u * q;
+        if (i < nB) {
+            const uint excl = s[i] - v[q];
+            offs[i] = excl;
+            cursor[i] = excl;
+            if (i + 1u == nB) offs[nB] = s[i];       // 包含和 = 总数
+        }
+    }
+}

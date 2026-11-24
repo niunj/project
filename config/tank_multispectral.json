@@ -1,0 +1,42 @@
+{
+  "object_id": "tank_001",
+  "mesh_path": "models/ground_grid.gltf",
+  "face_count": 12560,
+  "temp_update_rate": 10,
+  "rcs_modify_factor": 1.0,
+  "physics": {
+    "mass": 2000,
+    "initial_position": [0.0, 1.0, 0.0],
+    "initial_rotation_deg": [0.0, 0.0, 0.0],
+    "initial_velocity": [5.0, 0.0, 3.0],
+    "restitution": 0.1,
+    "friction": 0.5,
+    "convex_hull": true
+  },
+  "face_groups": [
+    {
+      "group_id": "engine",
+      "face_range": [0, 2000],
+      "vis_params":   { "brdf_type": "roughmetal", "albedo": 0.25, "roughness": 0.12 },
+      "lwir_params":  { "emissivity": 0.92, "base_temp": 380.15, "temp_tex_id": 1 },
+      "radar_x_params": { "rcs_lut_id": 1, "dielectric_real": 15.2, "dielectric_imag": 3.8, "surface_rough": 0.12 },
+      "sar_c_params": { "sigma0_db": -8.5, "polar_couple": 0.05 }
+    },
+    {
+      "group_id": "body",
+      "face_range": [2001, 8000],
+      "vis_params":   { "brdf_type": "diffuse", "albedo": 0.18, "roughness": 0.35 },
+      "lwir_params":  { "emissivity": 0.85, "base_temp": 305.15 },
+      "radar_x_params": { "rcs_lut_id": 2, "dielectric_real": 12.5, "dielectric_imag": 2.1, "surface_rough": 0.35 },
+      "sar_c_params": { "sigma0_db": -12.3, "polar_couple": 0.03 }
+    },
+    {
+      "group_id": "tire",
+      "face_range": [8001, 12560],
+      "vis_params":   { "brdf_type": "rubber", "albedo": 0.10, "roughness": 0.60 },
+      "lwir_params":  { "emissivity": 0.88, "base_temp": 310.15 },
+      "radar_x_params": { "rcs_lut_id": 3, "dielectric_real": 8.7, "dielectric_imag": 1.5, "surface_rough": 0.60 },
+      "sar_c_params": { "sigma0_db": -15.6, "polar_couple": 0.02 }
+    }
+  ]
+}

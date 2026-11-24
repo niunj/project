@@ -1,0 +1,30 @@
+{
+  "format": "voxel-geodetic-v1",
+  "profile": "global-geodetic",
+  "cells_per_tile": 32,
+  "peripheral_lod_delta": 1,
+  "texels_per_tile": 128,
+  "vertical_step_m": 5,
+  "dem": {
+    "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/global-tiles/dem/{z}/{x}/{-y}.tif",
+    "max_level": 12
+  },
+  "imagery": {
+    "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/global-tiles/rgb/{z}/{x}/{-y}.tif",
+    "max_level": 13
+  },
+  "earth": {
+    "backend": "voxel",
+    "strict": true,
+    "vertical_datum": "unknown",
+    "provenance_assumed": true,
+    "min_lod": 6,
+    "max_lod": 14,
+    "initial_lod": 12,
+    "data_provenance": {
+      "regional": "Taipei GLO-30 DSM (ellipsoid) / Sentinel-2B 2024-02-14",
+      "hybrid_catalog": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/global-tiles/provenance.json",
+      "outside": "Existing coarse global TMS; unknown vertical provenance retained"
+    }
+  }
+}

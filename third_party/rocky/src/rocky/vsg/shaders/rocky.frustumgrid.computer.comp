@@ -1,0 +1,83 @@
+#version 450
+/**
+ * rocky c++
+ * Copyright 2026 Pelican Mapping
+ * MIT License
+ */
+#define SSBOS_ARE_WRITABLE
+
+ // inspired by https://github.com/zimengyang/ForwardPlus_Vulkan
+#pragma include "rocky.frustumgrid.h.glsl"
+
+layout(local_size_x = FRUSTUM_GRID_TILES_PER_THREAD_GROUP,
+       local_size_y = FRUSTUM_GRID_TILES_PER_THREAD_GROUP) in;
+
+vec4 screenToView(in vec4 screen)
+{
+    // screen to clip (viewport-relative):
+    vec2 uv = (screen.xy - vec2(u_viewport.xy)) / vec2(u_viewport.zw);
+    vec4 clip = vec4(uv * 2.0 - 1.0, screen.z, screen.w);
+
+    // clip to view:
+    vec4 view = u_invProjMatrix * clip;
+    view /= view.w;
+    return view;
+}
+
+void main()
+{
+    if (gl_GlobalInvocationID.x >= u_numTiles.x || gl_GlobalInvocationID.y >= u_numTiles.y)
+        return;
+
+    uint tile = gl_GlobalInvocationID.y * u_numTiles.x + gl_GlobalInvocationID.x;
+
+    // screen space corners of tile.
+    const float z = 0.0;
+    vec2 tileMin = vec2(gl_GlobalInvocationID.xy) * float(u_pixelsPerTile);
+    vec2 tileMax = min(tileMin + vec2(float(u_pixelsPerTile)), vec2(u_viewport.zw));
+    vec2 viewportOrigin = vec2(u_viewport.xy);
+
+    vec4 UL = vec4(viewportOrigin + vec2(tileMin.x, tileMin.y), z, 1.0);
+    vec4 UR = vec4(viewportOrigin + vec2(tileMax.x, tileMin.y), z, 1.0);
+    vec4 LL = vec4(viewportOrigin + vec2(tileMin.x, tileMax.y), z, 1.0);
+    vec4 LR = vec4(viewportOrigin + vec2(tileMax.x, tileMax.y), z, 1.0);
+
+    // convert to view space:
+    vec3 UL_VS = screenToView(UL).xyz;
+    vec3 UR_VS = screenToView(UR).xyz;
+    vec3 LL_VS = screenToView(LL).xyz;
+    vec3 LR_VS = screenToView(LR).xyz;
+
+    // and make the bounding data:
+    if (u_projIsOrtho == 1u)
+    {
+        // orthographic projection matrix:
+        float minX = min(min(UL_VS.x, UR_VS.x), min(LL_VS.x, LR_VS.x));
+        float maxX = max(max(UL_VS.x, UR_VS.x), max(LL_VS.x, LR_VS.x));
+        float minY = min(min(UL_VS.y, UR_VS.y), min(LL_VS.y, LR_VS.y));
+        float maxY = max(max(UL_VS.y, UR_VS.y), max(LL_VS.y, LR_VS.y));
+
+        b_frustums.frustum[tile].bounds = vec4(minX, maxX, minY, maxY);
+    }
+    else
+    {
+        // perspective projection matrix:
+        // Store slopes in terms of component / -z so left<right and bottom<top in RH view space.
+        float sx0 = UL_VS.x / -UL_VS.z;
+        float sx1 = UR_VS.x / -UR_VS.z;
+        float sx2 = LL_VS.x / -LL_VS.z;
+        float sx3 = LR_VS.x / -LR_VS.z;
+
+        float sy0 = UL_VS.y / -UL_VS.z;
+        float sy1 = UR_VS.y / -UR_VS.z;
+        float sy2 = LL_VS.y / -LL_VS.z;
+        float sy3 = LR_VS.y / -LR_VS.z;
+
+        float minSx = min(min(sx0, sx1), min(sx2, sx3));
+        float maxSx = max(max(sx0, sx1), max(sx2, sx3));
+        float minSy = min(min(sy0, sy1), min(sy2, sy3));
+        float maxSy = max(max(sy0, sy1), max(sy2, sy3));
+
+        b_frustums.frustum[tile].bounds = vec4(minSx, maxSx, minSy, maxSy);
+    }
+}

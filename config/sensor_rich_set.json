@@ -1,0 +1,92 @@
+{
+  "_comment": "Rich multi-sensor config: 3 radar (X/C/Ku) + 3 IR (SWIR/MWIR/LWIR) + 2 laser (1.064/1.55um) + 1 VIS + 1 SAR. Sensor ids 1..10. Includes cross-induction routes.",
+  "sensor_list": [
+    {
+      "sensor_id": 1,
+      "type": "radar",
+      "band": "X",
+      "tx_params": { "power": 5000.0, "beam_width": 0.040, "wavelength": 0.030, "pulse_rate": 2000.0, "duty_cycle": 0.050 },
+      "rx_cross_sensors": [
+        { "sensor_id": 10, "type": "sar",  "band": "C",    "receive_range": 0.10, "coupling_factor": 0.030, "band_match": 0.70, "is_process": true }
+      ]
+    },
+    {
+      "sensor_id": 2,
+      "type": "radar",
+      "band": "C",
+      "tx_params": { "power": 8000.0, "beam_width": 0.060, "wavelength": 0.055, "pulse_rate": 1500.0, "duty_cycle": 0.080 },
+      "rx_cross_sensors": [
+        { "sensor_id": 10, "type": "sar",  "band": "C",    "receive_range": 0.10, "coupling_factor": 0.050, "band_match": 0.90, "is_process": true }
+      ]
+    },
+    {
+      "sensor_id": 3,
+      "type": "radar",
+      "band": "Ku",
+      "tx_params": { "power": 2000.0, "beam_width": 0.025, "wavelength": 0.018, "pulse_rate": 4000.0, "duty_cycle": 0.030 },
+      "rx_cross_sensors": [
+        { "sensor_id": 10, "type": "sar",  "band": "C",    "receive_range": 0.08, "coupling_factor": 0.020, "band_match": 0.50, "is_process": true }
+      ]
+    },
+    {
+      "sensor_id": 4,
+      "type": "ir",
+      "band": "SWIR",
+      "tx_params": { "power": 0.0, "beam_width": 0.080, "wavelength": 1.55e-6, "pulse_rate": 0.0, "duty_cycle": 0.0 },
+      "rx_cross_sensors": []
+    },
+    {
+      "sensor_id": 5,
+      "type": "ir",
+      "band": "MWIR",
+      "tx_params": { "power": 0.0, "beam_width": 0.090, "wavelength": 4.5e-6,  "pulse_rate": 0.0, "duty_cycle": 0.0 },
+      "rx_cross_sensors": []
+    },
+    {
+      "sensor_id": 6,
+      "type": "ir",
+      "band": "LWIR",
+      "tx_params": { "power": 0.0, "beam_width": 0.100, "wavelength": 10.0e-6, "pulse_rate": 0.0, "duty_cycle": 0.0 },
+      "rx_cross_sensors": []
+    },
+    {
+      "sensor_id": 7,
+      "type": "laser",
+      "band": "1064nm",
+      "tx_params": { "power": 100.0, "beam_width": 0.005, "wavelength": 1.064e-6, "pulse_rate": 1000.0, "duty_cycle": 0.100 },
+      "rx_cross_sensors": [
+        { "sensor_id": 5, "type": "ir", "band": "MWIR", "receive_range": 0.08, "coupling_factor": 0.025, "band_match": 0.75, "is_process": true  },
+        { "sensor_id": 6, "type": "ir", "band": "LWIR", "receive_range": 0.10, "coupling_factor": 0.020, "band_match": 0.65, "is_process": true  },
+        { "sensor_id": 9, "type": "vis","band": "VIS",   "receive_range": 0.05, "coupling_factor": 0.010, "band_match": 0.60, "is_process": false }
+      ]
+    },
+    {
+      "sensor_id": 8,
+      "type": "laser",
+      "band": "1550nm",
+      "tx_params": { "power": 60.0,  "beam_width": 0.003, "wavelength": 1.55e-6,  "pulse_rate": 5000.0, "duty_cycle": 0.050 },
+      "rx_cross_sensors": [
+        { "sensor_id": 4, "type": "ir", "band": "SWIR", "receive_range": 0.08, "coupling_factor": 0.035, "band_match": 0.90, "is_process": true  }
+      ]
+    },
+    {
+      "sensor_id": 9,
+      "type": "vis",
+      "band": "VIS",
+      "tx_params": { "power": 0.0, "beam_width": 0.080, "wavelength": 5.5e-7, "pulse_rate": 0.0, "duty_cycle": 0.0 },
+      "rx_cross_sensors": []
+    },
+    {
+      "sensor_id": 10,
+      "type": "sar",
+      "band": "C",
+      "tx_params": { "power": 0.0, "beam_width": 0.000, "wavelength": 0.055, "pulse_rate": 0.0, "duty_cycle": 0.0 },
+      "rx_cross_sensors": []
+    }
+  ],
+  "cross_priority": {
+    "laser_to_ir":    0,
+    "radar_to_sar":   1,
+    "laser_to_vis":   2
+  }
+}

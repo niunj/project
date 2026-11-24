@@ -1,0 +1,16 @@
+// radar_clear.comp —— P1/P2.1: 链首清零 (与回读解耦)。
+// b0 echo: 回波缓冲 (B6 布局); b1 partSum: P2.1 段部分和 (S×echo 布局)。
+// 无 CPI 帧 echo compute 早退、reduce 仍执行 → partSum 须清零防旧值污染 echo。
+#version 460
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer Echo { float echo[]; };
+layout(set = 0, binding = 1) buffer PartSum { float partSum[]; };
+
+layout(push_constant) uniform PC { uvec4 u; } pc;   // u = (echo 浮点数, partSum 浮点数, 0, 0)
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i < pc.u.x) echo[i] = 0.0;
+    if (i < pc.u.y) partSum[i] = 0.0;
+}

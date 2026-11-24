@@ -1,0 +1,1 @@
+This directory contains the allocator, simplifier, spatial ordering source and shared header from [meshoptimizer v0.25](https://github.com/zeux/meshoptimizer/tree/v0.25). The included source files are unmodified. See [LICENSE.md](LICENSE.md).

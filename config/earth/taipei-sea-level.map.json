@@ -1,0 +1,27 @@
+{
+  "schema": "vsgraysim.earth.map",
+  "version": 1,
+  "name": "Taipei EGM2008 mean-sea datum (not bathymetry)",
+  "earth": {
+    "grid_size": 257,
+    "imagery_size": 32,
+    "strict": true,
+    "vertical_datum": "ellipsoidal",
+    "coverage": {
+      "min_x": -40000,
+      "max_x": 40000,
+      "min_z": -40000,
+      "max_z": 40000
+    },
+    "data_provenance": {
+      "elevation": "EGM2008 geoid undulation; zero orthometric water reference, not tide or bathymetry"
+    }
+  },
+  "layers": [
+    {
+      "type": "GDALElevation",
+      "name": "EGM2008 geoid",
+      "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/raw/us_nga_egm08_25.tif"
+    }
+  ]
+}

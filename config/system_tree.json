@@ -1,0 +1,108 @@
+{
+    "name": "MultiDomainSim",
+    "type": "ROOT",
+    "tick_strategy": "always",
+    "params": {
+        "object_config_path": "config/tank_multispectral.json",
+        "atmosphere_config_path": "config/atmosphere_layers.json",
+        "sensor_config_path": "config/sensor_rich_set.json"
+    },
+    "transport": {
+        "default": "in_process",
+        "channels": {
+            "scene.state": { "serializer": "raw" },
+            "sensor.pulse_tx": { "serializer": "raw" },
+            "rt.scatter_points": { "serializer": "binary" },
+            "signal.frames": { "serializer": "binary" },
+            "env.state": { "serializer": "json" }
+        }
+    },
+    "default_serializer": "raw",
+    "children": [
+        {
+            "name": "MasterClock",
+            "type": "TIME",
+            "tick_strategy": "always",
+            "tick_params": {
+                "frame_rate": 60
+            }
+        },
+        {
+            "name": "PhysicsSystem",
+            "type": "PHYSICS",
+            "tick_strategy": "substep",
+            "tick_params": {
+                "fixed_dt": 0.008333,
+                "max_substeps": 4
+            },
+            "compute_backend": "cpu",
+            "compute_params": {
+                "cpu_cores": [],
+                "numa_node": -1
+            },
+            "publishes": ["scene.state"]
+        },
+        {
+            "name": "EnvironmentSystem",
+            "type": "ATMOSPHERE",
+            "tick_strategy": "fixed",
+            "tick_params": {
+                "tick_rate": 10
+            },
+            "params": {
+                "day_cycle_sec": 600.0,
+                "base_temp_k": 288.15,
+                "temp_amplitude": 20.0
+            },
+            "publishes": ["env.state"]
+        },
+        {
+            "name": "SensorSystem",
+            "type": "SENSOR",
+            "tick_strategy": "fixed",
+            "tick_params": {
+                "tick_rate": 60
+            },
+            "subscribes": ["env.state"],
+            "publishes": ["sensor.pulse_tx"]
+        },
+        {
+            "name": "RTSystem",
+            "type": "RT",
+            "tick_strategy": "fixed",
+            "tick_params": {
+                "tick_rate": 60
+            },
+            "compute_backend": "cpu",
+            "params": {
+                "rays_per_sensor": 100
+            },
+            "subscribes": ["sensor.pulse_tx", "env.state"],
+            "publishes": ["rt.scatter_points"]
+        },
+        {
+            "name": "SignalSystem",
+            "type": "SIGNAL",
+            "tick_strategy": "fixed",
+            "tick_params": {
+                "tick_rate": 60
+            },
+            "subscribes": ["rt.scatter_points"],
+            "publishes": ["signal.frames"]
+        },
+        {
+            "name": "VisualSystem",
+            "type": "VISUAL",
+            "tick_strategy": "fixed",
+            "tick_params": {
+                "tick_rate": 60
+            },
+            "params": {
+                "width": 1280,
+                "height": 720
+            },
+            "compute_backend": "cpu",
+            "subscribes": ["signal.frames", "scene.state"]
+        }
+    ]
+}

@@ -1,0 +1,144 @@
+{
+  "format": "voxel-scene-v1",
+  "coordinates": "east-up-south-metres",
+  "fixed_step_seconds": 0.02,
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 10,
+    "hours_utc": 4
+  },
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 182,
+    "heading_deg": 0
+  },
+  "objects": [
+    {
+      "id": "platform",
+      "role": "terrain",
+      "position_m": [
+        -20,
+        -2,
+        -20
+      ],
+      "source": {
+        "type": "box",
+        "dimensions": [
+          40,
+          2,
+          40
+        ],
+        "cell_size_m": 1
+      },
+      "material": {
+        "density_kg_m3": 2600,
+        "temperature_k": 288.15,
+        "color_rgba": [
+          0.3,
+          0.36,
+          0.25,
+          1
+        ]
+      },
+      "physics": {
+        "motion": "static",
+        "friction": 0.8,
+        "restitution": 0.05
+      }
+    },
+    {
+      "id": "tower",
+      "role": "structure",
+      "position_m": [
+        -4,
+        0,
+        -4
+      ],
+      "source": {
+        "type": "box",
+        "dimensions": [
+          8,
+          16,
+          8
+        ],
+        "cell_size_m": 1
+      },
+      "material": {
+        "density_kg_m3": 2400,
+        "temperature_k": 295,
+        "color_rgba": [
+          0.62,
+          0.6,
+          0.56,
+          1
+        ]
+      },
+      "physics": {
+        "motion": "static",
+        "fracture": true,
+        "support": "base",
+        "fracture_energy_j_m2": 1000,
+        "friction": 0.7,
+        "restitution": 0.05
+      }
+    },
+    {
+      "id": "moving-target",
+      "role": "target",
+      "position_m": [
+        12,
+        1,
+        0
+      ],
+      "velocity_mps": [
+        -1,
+        0,
+        0
+      ],
+      "source": {
+        "type": "box",
+        "dimensions": [
+          4,
+          3,
+          6
+        ],
+        "cell_size_m": 0.5
+      },
+      "material": {
+        "density_kg_m3": 7800,
+        "temperature_k": 325,
+        "emissivity": 0.85,
+        "rho_tv": 0.35,
+        "color_rgba": [
+          0.2,
+          0.32,
+          0.42,
+          1
+        ]
+      },
+      "physics": {
+        "motion": "dynamic",
+        "fracture": true,
+        "restitution": 0.1,
+        "friction": 0.6
+      }
+    }
+  ],
+  "events": [
+    {
+      "tick": 25,
+      "kind": "damage",
+      "object": "tower",
+      "space": "object",
+      "point_m": [
+        4,
+        8,
+        4
+      ],
+      "energy_j": 100000,
+      "radius_m": 5.1
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+// radar_fft_tail.comp —— P2.2: 行变换分段扩容的外段 (twiddle + 外层 F 点 DFT)。
+// 512 点内段 (radar_fft 模式 2, 跨步 F 子序列 Stockham) 输出
+//   A(k1, n2) = Σ_{n1} x[n1·F + n2]·W_512^{n1·k1}, 自然序落位 addr k1·F + n2
+// (每 k1 连续 quad, coalesced 读)。本 pass 完成 Cooley-Tukey 外层:
+//   X[k1 + N1·k2] = Σ_{n2<F} A(k1,n2) · W_N^{n2·k1} · W_F^{n2·k2}
+// 写至 addr k1 + N1·k2 (F ≤ 8, 寄存器直算)。每线程处理一个 (行, k1)。
+// push: u = (N, N1, F, 0)   f = (scale, sign, 0, 0)
+#version 460
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer Src { float src[]; };   // 交错 re,im
+layout(set = 0, binding = 1) buffer Dst { float dst[]; };
+
+layout(push_constant) uniform PC { uvec4 u; vec4 f; } pc;
+
+void main() {
+    const uint gid = gl_GlobalInvocationID.x;
+    const uint N  = pc.u.x;          // 整行长 (512·F)
+    const uint N1 = pc.u.y;          // 512 (内段长度)
+    const uint F  = pc.u.z;          // 外段长度 (2/4/8)
+    const uint r  = gid / N1;        // 行 (脉冲)
+    const uint k1 = gid % N1;        // 内段频率序号
+    const float sign = pc.f.y, scale = pc.f.x;
+    const float PI2 = 6.28318530718;
+
+    // 载入 F 元素 (连续 quad) + twiddle W_N^{n2·k1}
+    vec2 a[8];
+    for (uint j = 0u; j < F; ++j) {
+        const uint e = r * N + k1 * F + j;
+        const vec2 v = vec2(src[2u * e], src[2u * e + 1u]);
+        const float ang = sign * PI2 * float(j) * float(k1) / float(N);
+        const vec2 w = vec2(cos(ang), sin(ang));
+        a[j] = vec2(v.x * w.x - v.y * w.y, v.x * w.y + v.y * w.x);
+    }
+    // 外层 F 点 DFT: X[k2] = Σ_j a[j]·W_F^{j·k2} (F ≤ 8, 直算免位反转)
+    for (uint k2 = 0u; k2 < F; ++k2) {
+        vec2 acc = vec2(0.0);
+        for (uint j = 0u; j < F; ++j) {
+            const float ang = sign * PI2 * float(j * k2) / float(F);
+            const vec2 w = vec2(cos(ang), sin(ang));
+            acc += vec2(a[j].x * w.x - a[j].y * w.y, a[j].x * w.y + a[j].y * w.x);
+        }
+        // 写出 k1 + N1·k2 对两方向均正确 (数值实验 3e-15):
+        //   正变换输出频域编组 X[k1+N1·k2]; 逆变换 CT 分解输出时域编组
+        //   x[m2·N1+m1] —— 外层索引 m2 在前, 与本地址恒等 (正逆编组互补)。
+        const uint e = r * N + k1 + N1 * k2;
+        dst[2u * e]     = acc.x * scale;
+        dst[2u * e + 1u] = acc.y * scale;
+    }
+}

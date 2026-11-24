@@ -1,0 +1,25 @@
+{
+  "schema": "vsgraysim.earth.map",
+  "version": 1,
+  "name": "Taipei: public Copernicus GLO-30 DSM and Sentinel-2B 2024-02-14 RGB",
+  "earth": {
+    "grid_size": 769,
+    "imagery_size": 2048,
+    "strict": true,
+    "vertical_datum": "ellipsoidal",
+    "provenance_assumed": false,
+    "preview_context_scale": 1,
+    "coverage": {"min_x": -60000, "max_x": 60000, "min_z": -60000, "max_z": 60000},
+    "data_provenance": {
+      "manifest": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/provenance.json",
+      "elevation": "Copernicus GLO-30 DSM, 2021 release; EGM2008 H+N converted to WGS84 ellipsoidal height",
+      "imagery": "Contains modified Copernicus Sentinel data (2024); Sentinel-2B L2A TCI, 2024-02-14, native 10 m",
+      "sources": ["https://registry.opendata.aws/copernicus-dem/", "https://registry.opendata.aws/sentinel-2-l2a-cogs/"],
+      "ocean": "zero orthometric water surface, no bathymetry"
+    }
+  },
+  "layers": [
+    {"type": "GDALElevation", "name": "GLO-30 ellipsoidal DSM", "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/taipei-dsm30-ellipsoid.tif"},
+    {"type": "GDALImage", "name": "Sentinel-2B 10 m RGB", "uri": "${VSGRAYSIM_TAIPEI_DATA_ROOT}/taipei-sentinel2-20240214-rgb10.tif"}
+  ]
+}

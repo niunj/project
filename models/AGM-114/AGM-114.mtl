@@ -1,0 +1,17 @@
+# 3ds Max Wavefront OBJ Exporter v0.99 - (c)2007 guruware
+# 创建的文件:01.06.2026 10:07:10
+
+newmtl AGM_114
+	Kd 0.25 0.27 0.25
+	Ks 0.15 0.15 0.15
+	Tr 0.0000
+	d 1.0000
+	Tf 1.0000 1.0000 1.0000
+	Pr 0.3500
+	Pm 0.8500
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.2500
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd AGM-114.png

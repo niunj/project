@@ -1,0 +1,11 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北地物雷达",
+  "scene": "../earth/taipei-equipment.vscene.json",
+  "earth_map": "../earth/default.map.json",
+  "sky": {"show_atmosphere": true, "time_scale": 1, "visibility": 30000},
+  "clouds": {"cover": 0, "volume": true, "cumulus_count": 0},
+  "camera": {"eye_m": [480, 940, 380], "target_m": [0, 370, -700]},
+  "paused": false,
+  "equipment": "../equipment/taipei-ground-radar.vequipment.json"
+}

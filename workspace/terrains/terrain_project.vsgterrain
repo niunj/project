@@ -1,0 +1,14 @@
+{
+  "extent": 1000.0,
+  "format": "vsgterrain-project",
+  "grid": 256,
+  "height_scale": 60.0,
+  "heightmap": "terrain_project.ter",
+  "models": [],
+  "name": "terrain_project",
+  "seed": 61012,
+  "terrain_type": 1,
+  "version": 1,
+  "water_level": -2.3713934669890406,
+  "water_type": 2
+}

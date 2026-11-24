@@ -1,0 +1,143 @@
+// radar_echo.comp —— P2.1: 分桶归约回波合成 (合成 pass, CSR 消费者)。
+// 前置: radar_bin (bmin/bmax + 桶计数) → radar_scan (排他前缀和) →
+//        radar_csr (按 bmin 桶序散布 + 载荷重排 pos/sig/meta)。
+// 工作组 = (fast bin 块 128 × 单脉冲 n × 散射体段 z): 遍历桶窗口
+// [b0−maxSpan, b0+128) 的 1/S 散射体段 (maxSpan = CPI 内 bin 漂移全局上界,
+// radar_bin 数据驱动汇聚), 先按 [bmin,bmax] 廉价预筛, 命中块才做距离/相位
+// 精确计算; 片上共享内存归约后写段部分和 partSum 槽 (每组单写者, 无原子)。
+// 段维 S 保证 GPU 并行度 (散射体集中单桶时组内迭代过长 → 分段铺满 SM)。
+// radar_echo_reduce.comp 随后无原子汇总各段 → echo。
+// E(n, fast) = Σₖ σₖ·exp(−j4πRₖ(n)/λ)·rect(fast − 2Rₖ(n)/c)   (与 B6 同式同序保护:
+//   bf/相位/波束增益表达式与原子版逐字符一致, 保证与 CPU 基准交叉对比不回归)。
+#version 460
+#extension GL_EXT_shader_atomic_float : require
+
+layout(local_size_x = 128) in;    // 每线程对应块内 1 个 fast bin (写回)
+
+layout(set = 0, binding = 0) buffer PosSorted  { vec4 posSorted[]; };   // [pos.xyz, hit] 桶序
+layout(set = 0, binding = 1) buffer SigSorted  { vec4 sigSorted[]; };   // [σ.re, σ.im, R0, 0] 桶序
+layout(set = 0, binding = 2) buffer PartSum    { float partSum[]; };    // S×nPulses×nFast 复数交错
+layout(set = 0, binding = 3) uniform Params {
+    vec4 ant[256];   // 脉冲天线位置 (xyz) ENU；w 为最大斜距
+    vec4 beam[256];  // P5: 逐脉冲波束指向 (xyz 单位向量 ENU; w 未用)
+    vec4 m0;         // (lambda, c, rangeMin, drFast)
+    vec4 m1;         // (nPulses, nFast, enable, nScat)
+    vec4 m2;         // P5: (beamWidth, gExp, hasBeam, 0)
+} pr;
+layout(set = 0, binding = 4) buffer MetaSorted { uint metaSorted[]; };   // bmin|bmax<<12 桶序
+layout(set = 0, binding = 5) buffer BucketOffs { uint offs[]; };         // 桶起始 (nFast+1)
+layout(set = 0, binding = 6) buffer MaxSpan    { uint maxSpan; };        // CPI 内漂移上界
+
+shared vec2 acc[128];   // 块内 128 个 fast bin 的复数累加 (片上原子)
+
+const float PI = 3.14159265;
+
+void main() {
+    if (pr.m1.z < 0.5) return;                       // 无待处理 CPI → 早退 (partSum 保持清零)
+    const uint b0 = gl_WorkGroupID.x * 128u;         // 块起始 fast bin
+    const uint n  = gl_WorkGroupID.y;                // 脉冲
+    if(pr.m2.w>.5 && n!=uint(pr.m2.w)-1u) return;     // dynamic scene: one actual pulse
+    const uint z  = gl_WorkGroupID.z;                // 散射体段 (S 段)
+    const uint tid = gl_LocalInvocationID.x;
+    const uint nFast = uint(pr.m1.y);
+    const uint nPulses = uint(pr.m1.x);
+
+    acc[tid] = vec2(0.0);
+    barrier();
+
+    // 桶窗口 [b0 − span, b0 + 128): 桶键 = bmin, 跨度上界 maxSpan 保证
+    // 所有能触及本块的散射体 (bb ≥ b0−1) 的桶必被扫描 (精确性论证见设计文档)
+    // Linear deposition also touches bin floor(bf)+1. Include the bucket
+    // immediately left of the block even when there is no range migration.
+    const uint span = min(maxSpan + 1u, b0);
+    const uint jLo = b0 - span;
+    const uint jHi = min(b0 + 128u, nFast);
+
+    // 段维切分: 先数窗口散射体总数, 再取本段 [s0z, s1z) —— 各段无交, 合并 = 全窗口
+    uint total = 0u;
+    for (uint j = jLo; j < jHi; ++j) total += offs[j + 1u] - offs[j];
+    const uint S = gl_NumWorkGroups.z;
+    const uint chunk = (total + S - 1u) / S;
+    const uint s0z = z * chunk;
+    const uint s1z = min(total, s0z + chunk);
+    if (s0z >= s1z) {                                // 本段空: 清槽后退出 (reduce 求和不受影响)
+        barrier();
+        const uint cell = b0 + tid;
+        if (cell < nFast) {
+            const uint idx = (z * nPulses + n) * nFast + cell;
+            partSum[2u * idx + 0u] = 0.0;
+            partSum[2u * idx + 1u] = 0.0;
+        }
+        return;
+    }
+
+    const float lambda = pr.m0.x, c = pr.m0.y;
+    const float rMin = pr.m0.z, drFast = pr.m0.w;
+    const bool hasBeam = pr.m2.z > 0.5;
+    const float gExp = pr.m2.y;
+
+    // 段 [s0z, s1z) → (桶 j, 段内偏移) 双层遍历
+    uint bucketBegin = 0u;
+    for (uint j = jLo; j < jHi && bucketBegin < s1z; ++j) {
+        const uint s0 = offs[j], s1 = offs[j + 1u];
+        const uint cnt = s1 - s0;
+        // Intersect two half-open intervals in the SAME window-relative
+        // coordinate system. Resetting the segment length at each bucket
+        // duplicates contributions when a segment crosses a bucket boundary.
+        const uint take0 = min(s0z > bucketBegin ? s0z - bucketBegin : 0u, cnt);
+        const uint take1 = min(s1z > bucketBegin ? s1z - bucketBegin : 0u, cnt);
+        bucketBegin += cnt;
+        if (take0 >= take1) continue;
+        for (uint e = s0 + take0 + tid; e < s0 + take1; e += 128u) {
+            const uint m = metaSorted[e];
+            if (m == 0xFFFFFFFFu) continue;          // 天空槽 / 全程出窗
+            const uint bmin = m & 0xFFFu, bmax = m >> 12u;
+            // 廉价预筛: 脉冲 n 的 bin ∈ [bmin,bmax] (+1 邻近分裂), 与块无交则跳过
+            if (bmin >= b0 + 128u || bmax + 1u < b0) continue;
+
+            const vec4 p = posSorted[e];             // 桶序 coalesced 读
+            const float R = distance(p.xyz, pr.ant[n].xyz);
+            const float rMax = pr.ant[n].w;
+            if (R < rMin || (rMax > rMin && R > rMax)) continue;
+            const float bf = (R - rMin) * (2.0 / c) / drFast;
+            if (bf < 0.0 || bf >= float(nFast)) continue;
+            const uint bb = uint(floor(bf));
+            if (bb + 1u < b0 || bb >= b0 + 128u) continue;              // 精确块判定
+
+            // σₖ·exp(−j4πR/λ) (复乘, 与原子版同式)
+            const vec2 sig = sigSorted[e].xy;
+            const float ph = -4.0 * PI * R / lambda;
+            const float cs = cos(ph), sn = sin(ph);
+            float re = sig.x * cs - sig.y * sn;
+            float im = sig.x * sn + sig.y * cs;
+
+            // P5 波束方向图调制 (与原子版同式)
+            if (hasBeam) {
+                const vec3 dkn = normalize(p.xyz - pr.ant[n].xyz);
+                const float cg = max(dot(dkn, pr.beam[n].xyz), 0.0);
+                const float G = pow(cg, gExp);
+                re *= G; im *= G;
+            }
+
+            // 相邻双 bin 线性分配 → 共享内存原子累加 (片上)
+            const float fr = bf - float(bb);
+            const int c0 = int(bb) - int(b0);
+            if (c0 >= 0) {
+                atomicAdd(acc[c0].x, re * (1.0 - fr));
+                atomicAdd(acc[c0].y, im * (1.0 - fr));
+            }
+            if (fr > 0.0 && c0 + 1 < 128) {
+                atomicAdd(acc[c0 + 1].x, re * fr);
+                atomicAdd(acc[c0 + 1].y, im * fr);
+            }
+        }
+    }
+
+    barrier();
+    const uint cell = b0 + tid;
+    if (cell < nFast) {
+        const uint idx = (z * nPulses + n) * nFast + cell;
+        partSum[2u * idx + 0u] = acc[tid].x;
+        partSum[2u * idx + 1u] = acc[tid].y;
+    }
+}

@@ -1,0 +1,27 @@
+#version 450
+layout(local_size_x=4,local_size_y=4,local_size_z=4) in;
+layout(set=0,binding=2,rgba32f) readonly uniform image3D velocity0;
+layout(set=0,binding=5,rgba32f) uniform image3D pressure0;
+layout(set=0,binding=6,rgba32f) uniform image3D pressure1;
+layout(set=0,binding=7,rgba32f) writeonly uniform image3D divergenceMap;
+layout(std140,set=0,binding=4) uniform CloudParams {
+    vec4 originCell; vec4 gridDt; vec4 windHumidity; vec4 thermo;
+    vec4 phase; vec4 flow; vec4 colliderMeta;
+    vec4 colliderCentre[32]; vec4 colliderVelocity[32];
+} p;
+// P0 pressure warm start: warmStart=1 keeps the previous converged pressure
+// (scaled by warmScale) as the Jacobi initial guess; warmStart=0 zeroes both
+// pressure images after a genuine reset.
+layout(push_constant) uniform DivergencePush { uint warmStart; float warmScale; vec2 pad; } pc;
+ivec3 bound(ivec3 c){return clamp(c,ivec3(0),ivec3(p.gridDt.xyz)-1);}
+vec3 v(ivec3 c){return imageLoad(velocity0,bound(c)).xyz;}
+void main(){
+    ivec3 c=ivec3(gl_GlobalInvocationID.xyz),n=ivec3(p.gridDt.xyz);if(any(greaterThanEqual(c,n)))return;
+    float div=((v(c+ivec3(1,0,0)).x-v(c-ivec3(1,0,0)).x)+(v(c+ivec3(0,1,0)).y-v(c-ivec3(0,1,0)).y)+(v(c+ivec3(0,0,1)).z-v(c-ivec3(0,0,1)).z))/(2.0*p.originCell.w*max(p.gridDt.w,1e-4));
+    imageStore(divergenceMap,c,vec4(div,0,0,0));
+    if(pc.warmStart==0u){imageStore(pressure0,c,vec4(0));imageStore(pressure1,c,vec4(0));return;}
+    // The last Jacobi pass of the previous step wrote pressure0 (the host
+    // keeps the iteration count even), so warm-start both buffers from it.
+    float warm=clamp(pc.warmScale,0.0,1.0)*imageLoad(pressure0,c).r;
+    imageStore(pressure0,c,vec4(warm,0,0,0));imageStore(pressure1,c,vec4(warm,0,0,0));
+}

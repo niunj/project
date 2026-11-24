@@ -1,0 +1,17 @@
+#version 450
+layout(local_size_x=4,local_size_y=4,local_size_z=4) in;
+layout(set=0,binding=2,rgba32f) readonly uniform image3D velocity0;
+layout(set=0,binding=3,rgba32f) writeonly uniform image3D velocity1;
+layout(set=0,binding=5,rgba32f) readonly uniform image3D pressure0;
+layout(std140,set=0,binding=4) uniform CloudParams {
+    vec4 originCell; vec4 gridDt; vec4 windHumidity; vec4 thermo;
+    vec4 phase; vec4 flow; vec4 colliderMeta;
+    vec4 colliderCentre[32]; vec4 colliderVelocity[32];
+} p;
+ivec3 bound(ivec3 c){return clamp(c,ivec3(0),ivec3(p.gridDt.xyz)-1);}
+float pressure(ivec3 c){return imageLoad(pressure0,bound(c)).r;}
+void main(){
+    ivec3 c=ivec3(gl_GlobalInvocationID.xyz),n=ivec3(p.gridDt.xyz);if(any(greaterThanEqual(c,n)))return;
+    vec3 grad=vec3(pressure(c+ivec3(1,0,0))-pressure(c-ivec3(1,0,0)),pressure(c+ivec3(0,1,0))-pressure(c-ivec3(0,1,0)),pressure(c+ivec3(0,0,1))-pressure(c-ivec3(0,0,1)))/(2.0*p.originCell.w);
+    imageStore(velocity1,c,vec4(imageLoad(velocity0,c).xyz-p.gridDt.w*grad,0));
+}

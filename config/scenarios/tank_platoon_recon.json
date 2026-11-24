@@ -1,0 +1,194 @@
+{
+  "scenario_name": "坦克编队侦察场景",
+  "description": "双坦克编队在山地地形执行侦察任务，测试多平台雷达协同与红外成像",
+  "version": "1.0",
+
+  "objects": [
+    {
+      "object_id": "tank_001",
+      "mesh_path": "models/M1A2/M1A2.obj",
+      "face_count": 12560,
+      "temp_update_rate": 10,
+      "rcs_modify_factor": 1.0,
+      "physics": {
+        "mass": 61500,
+        "initial_position": [-50.0, 0.5, 0.0],
+        "initial_rotation_deg": [0.0, 45.0, 0.0],
+        "initial_velocity": [8.0, 0.0, 8.0],
+        "restitution": 0.1,
+        "friction": 0.8,
+        "convex_hull": true
+      },
+      "face_groups": [
+        {
+          "group_id": "turret",
+          "face_range": [0, 3000],
+          "vis_params": { "brdf_type": "roughmetal", "albedo": 0.3, "roughness": 0.5 },
+          "lwir_params": { "emissivity": 0.9, "base_temp": 340.15, "temp_tex_id": 1 },
+          "radar_x_params": { "rcs_lut_id": 1, "dielectric_real": 18.0, "dielectric_imag": 5.0 }
+        },
+        {
+          "group_id": "hull",
+          "face_range": [3001, 9000],
+          "vis_params": { "brdf_type": "diffuse", "albedo": 0.2 },
+          "lwir_params": { "emissivity": 0.88, "base_temp": 320.15 }
+        },
+        {
+          "group_id": "tracks",
+          "face_range": [9001, 12560],
+          "vis_params": { "brdf_type": "rubber", "albedo": 0.1 },
+          "lwir_params": { "emissivity": 0.85, "base_temp": 330.15 }
+        }
+      ]
+    },
+    {
+      "object_id": "tank_002",
+      "mesh_path": "models/M1A2/M1A2.obj",
+      "face_count": 12560,
+      "temp_update_rate": 10,
+      "physics": {
+        "mass": 61500,
+        "initial_position": [-50.0, 0.5, -30.0],
+        "initial_rotation_deg": [0.0, 45.0, 0.0],
+        "initial_velocity": [8.0, 0.0, 8.0],
+        "friction": 0.8,
+        "convex_hull": true
+      },
+      "face_groups": [
+        {
+          "group_id": "turret",
+          "face_range": [0, 3000],
+          "vis_params": { "brdf_type": "roughmetal", "albedo": 0.3, "roughness": 0.5 },
+          "lwir_params": { "emissivity": 0.9, "base_temp": 340.15, "temp_tex_id": 1 },
+          "radar_x_params": { "rcs_lut_id": 1, "dielectric_real": 18.0, "dielectric_imag": 5.0 }
+        },
+        {
+          "group_id": "hull",
+          "face_range": [3001, 9000],
+          "vis_params": { "brdf_type": "diffuse", "albedo": 0.2 },
+          "lwir_params": { "emissivity": 0.88, "base_temp": 320.15 }
+        },
+        {
+          "group_id": "tracks",
+          "face_range": [9001, 12560],
+          "vis_params": { "brdf_type": "rubber", "albedo": 0.1 },
+          "lwir_params": { "emissivity": 0.85, "base_temp": 330.15 }
+        }
+      ]
+    },
+    {
+      "object_id": "mountain_terrain",
+      "mesh_path": "models/Mountain/mountain.obj",
+      "face_count": 50000,
+      "physics": { "mass": 0 },
+      "face_groups": [
+        {
+          "group_id": "rock_surface",
+          "face_range": [0, 50000],
+          "vis_params": { "brdf_type": "rock", "albedo": 0.25 },
+          "lwir_params": { "emissivity": 0.88, "base_temp": 295.15 },
+          "radar_x_params": { "sigma0_db": -15.0, "surface_rough": 0.4 }
+        }
+      ]
+    },
+    {
+      "object_id": "ground_plane",
+      "mesh_path": "models/ground_grid.gltf",
+      "face_count": 2,
+      "physics": { "mass": 0 }
+    }
+  ],
+
+  "sensors": {
+    "sensor_list": [
+      {
+        "sensor_id": 1,
+        "type": "radar",
+        "band": "X",
+        "platform_object": "tank_001",
+        "tx_params": {
+          "power": 5000.0,
+          "beam_width": 0.05,
+          "wavelength": 0.03,
+          "pulse_rate": 3000.0,
+          "duty_cycle": 0.05
+        },
+        "aperture": {
+          "position_offset": [0.0, 2.5, 1.0],
+          "direction": [0.0, 0.0, 1.0],
+          "fov_horizontal": 60.0,
+          "fov_vertical": 30.0
+        },
+        "rx_cross_sensors": []
+      },
+      {
+        "sensor_id": 2,
+        "type": "radar",
+        "band": "X",
+        "platform_object": "tank_002",
+        "tx_params": {
+          "power": 5000.0,
+          "beam_width": 0.05,
+          "wavelength": 0.03,
+          "pulse_rate": 3000.0,
+          "duty_cycle": 0.05
+        },
+        "aperture": {
+          "position_offset": [0.0, 2.5, 1.0],
+          "direction": [0.0, 0.0, 1.0],
+          "fov_horizontal": 60.0,
+          "fov_vertical": 30.0
+        },
+        "rx_cross_sensors": []
+      },
+      {
+        "sensor_id": 3,
+        "type": "ir",
+        "band": "LWIR",
+        "platform_object": "tank_001",
+        "tx_params": {
+          "wavelength": 10.0e-6
+        },
+        "aperture": {
+          "position_offset": [0.0, 2.0, 0.5],
+          "direction": [0.0, 0.0, 1.0],
+          "fov_horizontal": 40.0,
+          "fov_vertical": 30.0
+        },
+        "rx_cross_sensors": []
+      },
+      {
+        "sensor_id": 4,
+        "type": "sar",
+        "band": "C",
+        "platform_type": "airborne",
+        "tx_params": {
+          "power": 10000.0,
+          "wavelength": 0.055,
+          "pulse_rate": 1500.0,
+          "duty_cycle": 0.08
+        },
+        "aperture": {
+          "position": [0.0, 3000.0, 0.0],
+          "direction": [1.0, -0.3, 0.0],
+          "swath_width": 5000.0
+        },
+        "rx_cross_sensors": []
+      }
+    ],
+    "cross_priority": {}
+  },
+
+  "atmosphere": {
+    "config_path": "config/atmosphere_layers.json",
+    "weather_scenario": "clear",
+    "weather_severity": 0.0
+  },
+
+  "simulation": {
+    "frame_dt": 0.01667,
+    "max_frames": 300,
+    "window_width": 1920,
+    "window_height": 1080
+  }
+}

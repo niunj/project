@@ -1,0 +1,77 @@
+{
+  "format": "voxel-scene-v1",
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 0
+  },
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 26,
+    "hours_utc": 8.0
+  },
+  "objects": [
+    {
+      "id": "taipei-terrain",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "taipei-region.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -40000,
+            "max_x": 40000,
+            "min_z": -40000,
+            "max_z": 40000
+          },
+          "grid_size": 1025,
+          "imagery_size": 3072,
+          "strict": true
+        },
+        "cell_size_m": 312.5,
+        "bottom_m": -8000,
+        "hd_subdivisions": 4,
+        "voxel_surface": "smooth",
+        "mode": "voxel",
+        "sea_surface_mask": {
+          "map": "taipei-sea-level.map.json",
+          "epsilon_m": 0.25
+        }
+      }
+    }
+  ],
+  "ocean": {
+    "wave_height_m": 0.65,
+    "wave_length_m": 24,
+    "swell_height_m": 0.25,
+    "swell_length_m": 80,
+    "wind_speed_mps": 6,
+    "wind_azimuth_deg": 70,
+    "half_extent_m": 48000,
+    "bottom_m": -1200,
+    "sea_fog": {
+      "visibility_m": 0,
+      "height_m": 45
+    },
+    "reference_surface": {
+      "map": "taipei-sea-level.map.json",
+      "grid_size": 513,
+      "earth": {
+        "coverage": {
+          "min_x": -100000,
+          "max_x": 100000,
+          "min_z": -100000,
+          "max_z": 100000
+        },
+        "grid_size": 513,
+        "imagery_size": 32
+      }
+    },
+    "provenance": {
+      "sea_level": "EGM2008 zero-orthometric datum transformed into scene chart; no observed tide",
+      "volume_bottom": "computational lower extent, NOT measured bathymetry",
+      "terrain": "same Taipei GLO-30 DSM and 2024-02-14 Sentinel-2B imagery as Taipei80km"
+    }
+  }
+}

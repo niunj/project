@@ -1,0 +1,112 @@
+{
+  "format": "voxel-scene-v1",
+  "fixed_step_seconds": 0.02,
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 0
+  },
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 26,
+    "hours_utc": 4
+  },
+  "objects": [
+    {
+      "id": "taipei-terrain",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "taipei-region.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -2000,
+            "max_x": 2000,
+            "min_z": -2000,
+            "max_z": 2000
+          },
+          "grid_size": 257,
+          "imagery_size": 1024,
+          "radar_x_params": {"dielectric_real": 6.0, "dielectric_imag": 0.1, "surface_rough": 0.45},
+          "strict": true
+        },
+        "cell_size_m": 32,
+        "bottom_m": -300,
+        "hd_subdivisions": 2,
+        "voxel_surface": "smooth",
+        "mode": "hd"
+      }
+    },
+    {
+      "id": "aircraft",
+      "role": "target",
+      "position_m": [
+        0,
+        1800,
+        0
+      ],
+      "source": {
+        "type": "mesh",
+        "path": "../../models/F-16/F-16.obj",
+        "max_dimension": 128,
+        "fill_interior": true,
+        "surface_detail": "source_clipped"
+      },
+      "physics": {
+        "motion": "prescribed",
+        "fracture": true,
+        "support": "none"
+      },
+      "material": {
+        "density_kg_m3": 300,
+        "temperature_k": 295,
+        "eps_mwir": 0.8,
+        "eps_lwir": 0.88,
+        "radar": {
+          "dielectric_model": 2,
+          "dielectric_real": 1000000.0,
+          "sigma0_db": -12,
+          "surface_rough": 0.15,
+          "rcs_scale": 1
+        }
+      },
+      "sensor_materials": {
+        "palette": [
+          {
+            "name": "蒙皮（假设）",
+            "temperature_k": 295
+          },
+          {
+            "name": "尾部局部热源（示意、非实测）",
+            "temperature_k": 580,
+            "eps_mwir": 0.92,
+            "eps_lwir": 0.95,
+            "radar": {
+              "dielectric_model": 2,
+              "dielectric_real": 1000000.0,
+              "sigma0_db": -8,
+              "surface_rough": 0.3,
+              "rcs_scale": 1.5
+            }
+          }
+        ],
+        "regions": [
+          {
+            "min_m": [
+              -1.2,
+              -2,
+              -7
+            ],
+            "max_m": [
+              1.2,
+              1,
+              -4
+            ],
+            "material": 1
+          }
+        ]
+      }
+    }
+  ]
+}

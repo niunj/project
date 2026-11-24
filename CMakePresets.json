@@ -1,0 +1,40 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {"major": 3, "minor": 22, "patch": 0},
+  "configurePresets": [
+    {
+      "name": "source-base", "hidden": true, "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "BUILD_SHARED_LIBS": "ON", "BUILD_TESTING": "ON",
+        "VSGRAYSIM_BUILD_GUI": "ON", "VSGRAYSIM_ENABLE_USD": "OFF",
+        "VSGRAYSIM_ALLOW_LOCAL_DEPENDENCY_CHANGES": "OFF",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_FIND_USE_PACKAGE_REGISTRY": "OFF",
+        "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY": "OFF",
+        "FETCHCONTENT_FULLY_DISCONNECTED": "ON",
+        "CMAKE_INSTALL_LIBDIR": "lib",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/${presetName}/install",
+        "QT_FORCE_MIN_CMAKE_VERSION_FOR_USING_QT": "3.22",
+        "CMAKE_CUDA_ARCHITECTURES": "75;86;89;90"
+      }
+    },
+    {
+      "name": "source-release", "displayName": "Local engine sources / Release",
+      "inherits": "source-base", "binaryDir": "${sourceDir}/build/source-release",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
+    },
+    {
+      "name": "source-debug", "displayName": "Local engine sources / Debug",
+      "inherits": "source-base", "binaryDir": "${sourceDir}/build/source-debug",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug"}
+    }
+  ],
+  "buildPresets": [
+    {"name": "source-release", "configurePreset": "source-release", "jobs": 4},
+    {"name": "source-debug", "configurePreset": "source-debug", "jobs": 4}
+  ],
+  "testPresets": [
+    {"name": "source-release", "configurePreset": "source-release", "output": {"outputOnFailure": true}, "execution": {"noTestsAction": "error"}},
+    {"name": "source-debug", "configurePreset": "source-debug", "output": {"outputOnFailure": true}, "execution": {"noTestsAction": "error"}}
+  ]
+}

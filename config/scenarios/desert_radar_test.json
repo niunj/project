@@ -1,0 +1,162 @@
+{
+  "scenario_name": "沙漠环境雷达测试",
+  "description": "测试雷达在沙尘环境下的杂波抑制与穿透性能",
+  "version": "1.0",
+
+  "objects": [
+    {
+      "object_id": "tank_target",
+      "mesh_path": "models/M1A2/M1A2.obj",
+      "face_count": 12560,
+      "temp_update_rate": 10,
+      "physics": {
+        "mass": 61500,
+        "initial_position": [0.0, 0.5, 100.0],
+        "initial_velocity": [0.0, 0.0, 0.0],
+        "friction": 0.6,
+        "convex_hull": true
+      },
+      "face_groups": [
+        {
+          "group_id": "turret",
+          "face_range": [0, 3000],
+          "vis_params": { "brdf_type": "roughmetal", "albedo": 0.4, "roughness": 0.6 },
+          "lwir_params": { "emissivity": 0.9, "base_temp": 350.15, "temp_tex_id": 1 },
+          "radar_x_params": { "rcs_lut_id": 1, "dielectric_real": 18.0, "dielectric_imag": 5.0 }
+        },
+        {
+          "group_id": "hull",
+          "face_range": [3001, 9000],
+          "vis_params": { "brdf_type": "diffuse", "albedo": 0.3 },
+          "lwir_params": { "emissivity": 0.88, "base_temp": 335.15 },
+          "radar_x_params": { "rcs_lut_id": 2, "dielectric_real": 12.5, "dielectric_imag": 2.1 }
+        },
+        {
+          "group_id": "tracks",
+          "face_range": [9001, 12560],
+          "vis_params": { "brdf_type": "rubber", "albedo": 0.15 },
+          "lwir_params": { "emissivity": 0.85, "base_temp": 340.15 }
+        }
+      ]
+    },
+    {
+      "object_id": "desert_terrain",
+      "mesh_path": "models/Desert/Desert.obj",
+      "face_count": 100000,
+      "physics": { "mass": 0 },
+      "face_groups": [
+        {
+          "group_id": "sand_surface",
+          "face_range": [0, 100000],
+          "vis_params": { "brdf_type": "sand", "albedo": 0.35, "roughness": 0.8 },
+          "lwir_params": { "emissivity": 0.92, "base_temp": 323.15 },
+          "radar_x_params": { "sigma0_db": -20.0, "surface_rough": 0.5 },
+          "sar_c_params": { "sigma0_db": -18.0, "polar_couple": 0.02 }
+        }
+      ]
+    }
+  ],
+
+  "sensors": {
+    "sensor_list": [
+      {
+        "sensor_id": 1,
+        "type": "radar",
+        "band": "X",
+        "tx_params": {
+          "power": 8000.0,
+          "beam_width": 0.03,
+          "wavelength": 0.03,
+          "pulse_rate": 4000.0,
+          "duty_cycle": 0.08
+        },
+        "aperture": {
+          "position": [0.0, 5.0, 0.0],
+          "direction": [0.0, 0.0, 1.0],
+          "fov_horizontal": 30.0,
+          "fov_vertical": 15.0
+        },
+        "rx_cross_sensors": []
+      },
+      {
+        "sensor_id": 2,
+        "type": "sar",
+        "band": "C",
+        "platform_type": "airborne",
+        "tx_params": {
+          "power": 15000.0,
+          "wavelength": 0.055,
+          "pulse_rate": 2000.0,
+          "duty_cycle": 0.1
+        },
+        "aperture": {
+          "position": [-500.0, 4000.0, 0.0],
+          "direction": [1.0, -0.2, 0.0],
+          "swath_width": 8000.0
+        },
+        "rx_cross_sensors": []
+      },
+      {
+        "sensor_id": 3,
+        "type": "ir",
+        "band": "LWIR",
+        "tx_params": {
+          "wavelength": 10.0e-6
+        },
+        "aperture": {
+          "position": [50.0, 10.0, 50.0],
+          "direction": [-0.5, -0.2, -0.8],
+          "fov_horizontal": 50.0,
+          "fov_vertical": 40.0
+        },
+        "rx_cross_sensors": []
+      }
+    ],
+    "cross_priority": {}
+  },
+
+  "atmosphere": {
+    "layers": [
+      {
+        "height_min": 0,
+        "height_max": 11000,
+        "temp": 308.15,
+        "pressure": 101325.0,
+        "humidity": 0.1,
+        "density": 1.1,
+        "aerosol": 5.0e-4,
+        "ext_coeff": [2.0e-3, 5.0e-3, 1.0e-4, 1.0e-4],
+        "scatter_coeff": [5.0e-4, 1.0e-3, 1.0e-6, 1.0e-6],
+        "absorb_coeff": [1.0e-4, 2.0e-4, 1.0e-6, 1.0e-6],
+        "refract_index": 1.0004,
+        "turbulence": 5.0e-13,
+        "cloud_density": 0.0,
+        "visibility_km": 8.0
+      },
+      {
+        "height_min": 11000,
+        "height_max": 20000,
+        "temp": 220.65,
+        "pressure": 22632.0,
+        "humidity": 0.0,
+        "density": 0.364,
+        "aerosol": 1.0e-7,
+        "ext_coeff": [5.0e-6, 1.0e-5, 5.0e-7, 5.0e-7],
+        "scatter_coeff": [1.0e-6, 2.0e-6, 1.0e-8, 1.0e-8],
+        "absorb_coeff": [5.0e-7, 1.0e-6, 1.0e-8, 1.0e-8],
+        "refract_index": 1.0001,
+        "turbulence": 1.0e-16,
+        "cloud_density": 0.0
+      }
+    ],
+    "weather_scenario": "dusty",
+    "weather_severity": 0.7
+  },
+
+  "simulation": {
+    "frame_dt": 0.01667,
+    "max_frames": 150,
+    "window_width": 1920,
+    "window_height": 1080
+  }
+}

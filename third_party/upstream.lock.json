@@ -1,0 +1,254 @@
+{
+  "dependencies": [
+    {
+      "archive_sha256": "a11acb93c519db2cb8f45c6790e36862cbdd8a1d7dbc3cadac685358771b936c",
+      "archive_url": "https://codeload.github.com/vsg-dev/VulkanSceneGraph/tar.gz/599a8c5c61cbb993079261b2ada99bd843badf5b",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE.md",
+        "LICENSE.Vulkan-Headers.md"
+      ],
+      "local_changes": [
+        {
+          "previous_tree_sha256": "10b0eb6998af303d455f985ed5904f80b990ee32d3cd0f168f8f793a76c5cfc5",
+          "reason": "Honor Vulkan allocation chains for ray tracing and reuse only compatible memory types in shared viewport/sensor devices",
+          "tree_sha256": "4d3f6f9be9c719f240671975d5542e88283fbf55e1d6c492e76300b720945579"
+        },
+        {
+          "previous_tree_sha256": "4d3f6f9be9c719f240671975d5542e88283fbf55e1d6c492e76300b720945579",
+          "reason": "Track and present images acquired with VK_SUBOPTIMAL_KHR before acquiring another frame",
+          "tree_sha256": "cede241524cfa47514b7d4f9727281df4690fa14f86fea9e05615dca80b40aa4"
+        },
+        {
+          "previous_tree_sha256": "cede241524cfa47514b7d4f9727281df4690fa14f86fea9e05615dca80b40aa4",
+          "reason": "Fix dynamic transfer rewrite dependencies, multisample depth reuse and shadow-map write/read ordering found by SDK synchronization validation",
+          "tree_sha256": "2f73114bde6ccd9536a371af1298154249c4c7d36c184fe855d0ffd95226a03a"
+        }
+      ],
+      "name": "vsg",
+      "repository": "https://github.com/vsg-dev/VulkanSceneGraph.git",
+      "source_directory": "third_party/vsg",
+      "source_manifest": "third_party/manifests/vsg.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "599a8c5c61cbb993079261b2ada99bd843badf5b",
+      "upstream_version": "1.1.15"
+    },
+    {
+      "archive_sha256": "64249394244717ce0170c347192f51ea78c58006ade8602cb0b34dd7f082ef79",
+      "archive_url": "https://codeload.github.com/vsg-dev/vsgXchange/tar.gz/d2a93c1eeda7b121537f0a077b192f675d1d045b",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE.md"
+      ],
+      "name": "vsgXchange",
+      "provenance_note": "Pre-meshoptimizer upstream revision. All public source headers match the previous installation; the later v1.1.14 tag requires ShaderSet geometryHints missing from the pinned VSG.",
+      "repository": "https://github.com/vsg-dev/vsgXchange.git",
+      "source_directory": "third_party/vsgXchange",
+      "source_manifest": "third_party/manifests/vsgXchange.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "d2a93c1eeda7b121537f0a077b192f675d1d045b",
+      "upstream_version": "1.1.14"
+    },
+    {
+      "archive_sha256": "d75fb5f851115c5a56665243073a51b8e19b1a199e28033935304769322a7736",
+      "archive_url": "https://codeload.github.com/vsg-dev/vsgImGui/tar.gz/37ef59ffa78482ee50b96c17b03bf3e0fbf0f973",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE.md"
+      ],
+      "name": "vsgImGui",
+      "nested_components": [
+        "imgui",
+        "implot"
+      ],
+      "provenance_note": "Use the exact submodule commits recorded by upstream v0.7.0 rather than the inconsistent preinstalled ImGui 1.90.1 WIP / ImPlot 1.1 WIP header mixture. The vsgImGui RenderImGui API header matches the prior installation.",
+      "repository": "https://github.com/vsg-dev/vsgImGui.git",
+      "source_directory": "third_party/vsgImGui",
+      "source_manifest": "third_party/manifests/vsgImGui.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "37ef59ffa78482ee50b96c17b03bf3e0fbf0f973",
+      "upstream_version": "0.7.0"
+    },
+    {
+      "abi": 52,
+      "archive_sha256": "f7675dabd6516c3a53dd1ffd330ba4c2d44fa7f098a8169844e0fcd1ff32abc8",
+      "archive_url": "https://codeload.github.com/pelicanmapping/rocky/tar.gz/558d1b6b116e1c53e9c6ac6a1c942c2acafd33be",
+      "installed_header_comparison": {
+        "different": [
+          "Color.h",
+          "ECS.h",
+          "ecs/Decal.h",
+          "ecs/Mesh.h",
+          "ecs/Optics.h",
+          "ecs/Component.h",
+          "vsg/Application.h",
+          "vsg/SharedRenderData.h",
+          "vsg/FutureNode.h",
+          "vsg/ShaderDefines.h",
+          "vsg/RTT.h",
+          "vsg/terrain/TerrainState.h",
+          "vsg/terrain/SurfaceNode.h",
+          "vsg/terrain/TerrainNode.h",
+          "vsg/ecs/DecalSystem.h",
+          "vsg/ecs/TransformSystem.h",
+          "vsg/ecs/System.h",
+          "vsg/ecs/LineSystem.h",
+          "vsg/ecs/ModelSystem.h",
+          "vsg/ecs/ECSNode.h",
+          "vsg/ecs/OpticsSystem.h",
+          "vsg/ecs/MeshSystem.h",
+          "vsg/ecs/PointSystem.h"
+        ],
+        "missing": [
+          "Version.h"
+        ],
+        "same": 110
+      },
+      "license": "MIT",
+      "license_files": [
+        "LICENSE.txt"
+      ],
+      "local_changes": [
+        {
+          "previous_tree_sha256": "92f60a60dd0dbcd9e12b94da76193e3cd79416c8754dfb3838061aef7458371b",
+          "reason": "Accept read-only GDAL GetMetadata result for subdataset lookup with GDAL 3.14 and earlier headers.",
+          "tree_sha256": "c8aa06473ebb1946538f6ab89802d6157efba679a1033a70ed021f27986e0368"
+        },
+        {
+          "previous_tree_sha256": "c8aa06473ebb1946538f6ab89802d6157efba679a1033a70ed021f27986e0368",
+          "reason": "Build Application without the optional Rocky ImGui integration when ROCKY_HAS_IMGUI is unset; retain the existing public overloads.",
+          "tree_sha256": "1ffb2cec302be6f7f891f7497f19a33145505a700a6b81d14a3578f0d2f4c5c2"
+        },
+        {
+          "previous_tree_sha256": "1ffb2cec302be6f7f891f7497f19a33145505a700a6b81d14a3578f0d2f4c5c2",
+          "reason": "Match LabelSystem compilation and default ECS registration to its public ROCKY_HAS_IMGUI feature guard.",
+          "tree_sha256": "47966b9e1a7488de5c52bdcc9e70384ff566902af5742e82a9e31783b94d3b0b"
+        }
+      ],
+      "name": "rocky",
+      "provenance_note": "The v1.1.0 release tag has ABI 51. This pinned post-tag ABI 52 commit matches the prior installation in the production MapNode/VSGContext/ViewDependentState/DateTime/Ephemeris/GeoPoint/Map API headers; it is a consistent source baseline, not a claim to reconstruct the unidentified prior binary byte-for-byte.",
+      "repository": "https://github.com/pelicanmapping/rocky.git",
+      "source_directory": "third_party/rocky",
+      "source_manifest": "third_party/manifests/rocky.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "558d1b6b116e1c53e9c6ac6a1c942c2acafd33be",
+      "upstream_tag_baseline": "v1.1.0",
+      "upstream_version": "1.1.0+558d1b6 (ABI 52)"
+    },
+    {
+      "archive_sha256": "70ad78e872c145f0164d54da833b651914c184edc65958906937b9739fb8fb1b",
+      "archive_url": "https://codeload.github.com/g-truc/glm/tar.gz/bf71a834948186f4097caa076cd2663c69a10e1e",
+      "license": "MIT",
+      "license_files": [
+        "copying.txt"
+      ],
+      "name": "glm",
+      "repository": "https://github.com/g-truc/glm.git",
+      "source_directory": "third_party/glm",
+      "source_manifest": "third_party/manifests/glm.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "bf71a834948186f4097caa076cd2663c69a10e1e",
+      "upstream_version": "0.9.9.8"
+    },
+    {
+      "archive_sha256": "a064b06ae82cdf425e67f1b9aa34f2ba8cda2559ab0d54ac08d36a8ecd4b8000",
+      "archive_url": "https://codeload.github.com/nlohmann/json/tar.gz/bc889afb4c5bf1c0d8ee29ef35eaaf4c8bef8a5d",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE.MIT"
+      ],
+      "name": "json",
+      "repository": "https://github.com/nlohmann/json.git",
+      "source_directory": "third_party/json",
+      "source_manifest": "third_party/manifests/json.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "bc889afb4c5bf1c0d8ee29ef35eaaf4c8bef8a5d",
+      "upstream_version": "3.11.2"
+    },
+    {
+      "archive_sha256": "4530d53b86d45228a5b8982a8f4fe7d95d3ba8e1944858d3f663732c7e949cb7",
+      "archive_url": "https://codeload.github.com/gabime/spdlog/tar.gz/76fb40d95455f249bd70824ecfcae7a8f0930fa3",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE",
+        "include/spdlog/fmt/bundled/format.h"
+      ],
+      "name": "spdlog",
+      "repository": "https://github.com/gabime/spdlog.git",
+      "source_directory": "third_party/spdlog",
+      "source_manifest": "third_party/manifests/spdlog.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "76fb40d95455f249bd70824ecfcae7a8f0930fa3",
+      "upstream_version": "1.10.0"
+    },
+    {
+      "archive_sha256": "0e339fb35d11ad76f3f8611c2437a44ea0cc5f50d79a82d95a725387fc48d214",
+      "archive_url": "https://codeload.github.com/skypjack/entt/tar.gz/78213075654a688e9da6bc49f7f873d25c26d12c",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE"
+      ],
+      "name": "entt",
+      "repository": "https://github.com/skypjack/entt.git",
+      "source_directory": "third_party/entt",
+      "source_manifest": "third_party/manifests/entt.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "78213075654a688e9da6bc49f7f873d25c26d12c",
+      "upstream_version": "3.13.2"
+    },
+    {
+      "archive_sha256": "d462a798e9bd36bcee5fdb20bae9d8776a5fe223752f2ec9f164b077f36c0065",
+      "archive_url": "https://codeload.github.com/mp3butcher/vsgBullet/tar.gz/cdc7e3b2b0bcbc88567b46f3f9eb11ccefe1361b",
+      "license": "LGPL-2.1-only",
+      "license_files": [
+        "LICENSE"
+      ],
+      "name": "vsgBullet",
+      "omitted_paths": [
+        "data/* except data/CMakeLists.txt"
+      ],
+      "provenance_note": "All 160 imported files match the upstream commit byte-for-byte. The upstream sample data assets are omitted; source, headers, build files, examples and license are retained. Existing local build/install artifacts are not imported.",
+      "repository": "https://github.com/mp3butcher/vsgBullet.git",
+      "source_directory": "third_party/vsgBullet",
+      "source_manifest": "third_party/manifests/vsgBullet.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "cdc7e3b2b0bcbc88567b46f3f9eb11ccefe1361b",
+      "upstream_version": "3.00.00"
+    },
+    {
+      "archive_sha256": "a543367a7b45959d7ea21eeac808e26d3b2264ebc6d59b5046135791e97f4ca9",
+      "archive_url": "https://codeload.github.com/ocornut/imgui/tar.gz/993fa347495860ed44b83574254ef2a317d0c14f",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE.txt"
+      ],
+      "name": "imgui",
+      "parent_dependency": "vsgImGui",
+      "repository": "https://github.com/ocornut/imgui.git",
+      "source_directory": "third_party/vsgImGui/src/imgui",
+      "source_manifest": "third_party/manifests/imgui.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "993fa347495860ed44b83574254ef2a317d0c14f",
+      "upstream_version": "1.91.6"
+    },
+    {
+      "archive_sha256": "d779ce33326343724d1e0fa23d4960cc9acaf4af584bc0134e504e7717ccc4bb",
+      "archive_url": "https://codeload.github.com/epezent/implot/tar.gz/f156599faefe316f7dd20fe6c783bf87c8bb6fd9",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE"
+      ],
+      "name": "implot",
+      "parent_dependency": "vsgImGui",
+      "repository": "https://github.com/epezent/implot.git",
+      "source_directory": "third_party/vsgImGui/src/implot",
+      "source_manifest": "third_party/manifests/implot.json",
+      "source_origin": "upstream_archive",
+      "upstream_commit": "f156599faefe316f7dd20fe6c783bf87c8bb6fd9",
+      "upstream_version": "0.17"
+    }
+  ],
+  "description": "Pinned in-repository graphics dependency sources. Configure/build never downloads code. Archive digests identify upstream downloads; per-file manifests identify the checked-in and reviewed source trees.",
+  "schema": "vsgraysim.third_party.lock",
+  "version": 1
+}
