@@ -104,8 +104,8 @@ SharedSceneResources::Result SharedSceneResources::build(
         d[4] = -1.0f; d[5] = 0.0f;   // 模型 0 = 固定值
     }
 
-    // 谱材质表 SSBO (批次1, 每材质 2 vec4, 与雷达材质表同序同数):
-    //   a = (ρ_tv, ρ_swir, ε_mwir, ε_lwir)   b = (镜面强度, GGX 粗糙度, 水标记, 0)
+    // 谱材质表 SSBO (批次1, 每材质 4 vec4, 与雷达材质表同序同数):
+    //   a = (ρ_tv, ρ_swir, ε_mwir, ε_lwir)   b = (镜面强度, GGX 粗糙度, 水标记, 0); c/d = 热响应及热源
     // 推导规则 (0/负 = JSON 未指定):
     //   ε_band = eps_band > 0 ? eps_band : emissivity (单值镜像)
     //   ρ_band = rho_band > 0 ? rho_band : 1-ε_band (Kirchhoff, opaque 表面)
@@ -113,7 +113,7 @@ SharedSceneResources::Result SharedSceneResources::build(
     //   据此启用逐像素解析波法线/白沫 —— 非水材质恒 0 恒等退化。
     // 无表 → 单一缺省地形材质 (ε=0.92 → ρ_tv/swir=0.08, 朗伯)。
     {
-        auto specData = vsg::floatArray::create(size_t(nMats) * 8);
+        auto specData = vsg::floatArray::create(size_t(nMats) * 16);
         const RadarMaterial defMat{};
         for (uint32_t m = 0; m < nMats; ++m) {
             const RadarMaterial& r = (materials && m < materials->size())
@@ -121,14 +121,17 @@ SharedSceneResources::Result SharedSceneResources::build(
             const float epsBase = r.emissivity > 0.0f ? r.emissivity : 0.90f;
             const float eMw = r.eps_mwir >= 0.0f ? r.eps_mwir : -1.0f;
             const float eLw = r.eps_lwir >= 0.0f ? r.eps_lwir : -1.0f;
-            float* s = specData->data(uint32_t(m) * 8);
+            float* s = specData->data(uint32_t(m) * 16);
             s[0] = r.rho_tv >= 0.0f ? r.rho_tv : 1.0f - epsBase;
             s[1] = r.rho_swir >= 0.0f ? r.rho_swir : 1.0f - epsBase;
             s[2] = eMw;
             s[3] = eLw;
             s[4] = r.spec_strength;
             s[5] = r.spec_roughness;
-            s[6] = (r.dielectric_model == 1) ? 1.0f : 0.0f;   // #4 水标记
+            s[6] = (r.dielectric_model == 1) ? 1.0f : 0.0f;
+            s[7] = 0.0f;
+            std::copy(r.thermal_surface.begin(), r.thermal_surface.end(), s + 8);
+            std::copy(r.thermal_source.begin(), r.thermal_source.end(), s + 12);
         }
         spectralDataInfo = vsg::BufferInfo::create(specData);
     }
@@ -139,6 +142,9 @@ SharedSceneResources::Result SharedSceneResources::build(
     matIdxInfo = vsg::BufferInfo::create(matArr);
     matDataInfo = vsg::BufferInfo::create(matData);
     propsInfo = vsg::BufferInfo::create(vid->arrays[1]->data);   // props 直传引用
+    const auto* terrainNormals = vid->arrays.size()>5 ? vid->arrays[5]->data->cast<vsg::vec4Array>() : nullptr;
+    thermalNormalInfo = vsg::BufferInfo::create(terrainNormals && terrainNormals->size()==nVerts
+        ? vid->arrays[5]->data : vsg::ref_ptr<vsg::Data>(vsg::vec4Array::create(1,vsg::vec4{})));
 
     // ---- TV 彩色: uv (binding3) / 贴图槽号 (binding4) 抽取 (缺失 → 零填充, 兼容程序化场景) ----
     {
@@ -292,7 +298,11 @@ SharedSceneResources::Result SharedSceneResources::buildInstances(vsg::Device& d
     }
     std::vector<vsg::vec3> positions;
     std::vector<vsg::vec2> props,uvs;
+    std::vector<vsg::vec4> normals;
     std::vector<uint32_t> materialIds,slots,indices;
+    const bool needNormals = std::any_of(instances.begin(),instances.end(),[](const auto& instance) {
+        return instance.geometry->arrays.size()>5;
+    });
     for(const auto& instance:instances) {
         auto& geometry=*instance.geometry;
         const auto* pos=geometry.arrays.at(0)->data->cast<vsg::vec3Array>();
@@ -302,7 +312,9 @@ SharedSceneResources::Result SharedSceneResources::buildInstances(vsg::Device& d
             throw std::invalid_argument("invalid instance thermal vertex arrays");
         const auto* uv=geometry.arrays.size()>3?geometry.arrays[3]->data->cast<vsg::vec2Array>():nullptr;
         const auto* slot=geometry.arrays.size()>4?geometry.arrays[4]->data->cast<vsg::uintArray>():nullptr;
+        const auto* shading=geometry.arrays.size()>5?geometry.arrays[5]->data->cast<vsg::vec4Array>():nullptr;
         if((uv&&uv->size()!=pos->size())||(slot&&slot->size()!=pos->size()))throw std::invalid_argument("invalid instance texture arrays");
+        if(shading&&shading->size()!=pos->size())throw std::invalid_argument("invalid instance thermal normal array");
         const auto offset=uint32_t(positions.size());
         for(auto index:meshIndices(geometry)) indices.push_back(offset+index);
         for(std::size_t i=0;i<pos->size();++i) {
@@ -311,6 +323,7 @@ SharedSceneResources::Result SharedSceneResources::buildInstances(vsg::Device& d
             const auto textureSlot=slot?(*slot)[i]:0u;
             if(textureSlot&&(!textures||textureSlot>=textures->slotData.size()))throw std::invalid_argument("GPU texture slot index out of bounds");
             uvs.push_back(uv?(*uv)[i]:vsg::vec2(0,0));slots.push_back(textureSlot);
+            if(needNormals) normals.push_back(shading?(*shading)[i]:vsg::vec4{});
         }
     }
     auto draw=vsg::VertexIndexDraw::create();
@@ -320,7 +333,12 @@ SharedSceneResources::Result SharedSceneResources::buildInstances(vsg::Device& d
     std::copy(positions.begin(),positions.end(),pos->begin()); std::copy(props.begin(),props.end(),prop->begin());
     std::copy(materialIds.begin(),materialIds.end(),mat->begin()); std::copy(uvs.begin(),uvs.end(),uv->begin());
     std::copy(slots.begin(),slots.end(),slot->begin()); std::copy(indices.begin(),indices.end(),index->begin());
-    draw->assignArrays({pos,prop,mat,uv,slot}); draw->assignIndices(index); draw->indexCount=uint32_t(index->size()); draw->instanceCount=1;
+    if (needNormals) {
+        auto shading=vsg::vec4Array::create(normals.size());
+        std::copy(normals.begin(),normals.end(),shading->begin());
+        draw->assignArrays({pos,prop,mat,uv,slot,shading});
+    } else draw->assignArrays({pos,prop,mat,uv,slot});
+    draw->assignIndices(index); draw->indexCount=uint32_t(index->size()); draw->instanceCount=1;
     auto result=build(device,draw,&materials,textures);
     if(result.ok) installInstances(device,instances);
     return result;

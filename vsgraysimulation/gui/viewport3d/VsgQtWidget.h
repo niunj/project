@@ -160,6 +160,8 @@ signals:
     /// Emitted after the VSG viewer & window are first initialised.
     void vsgReady();
     void initializationFailed(const QString& message);
+    /// Runs on the viewport thread with the final camera for this submission.
+    void beforeSceneRecord();
     /// Emitted when a brush stroke begins (left-press while brush active).
     void brushDragStarted();
 
@@ -197,7 +199,7 @@ private:
     vsg::ref_ptr<vsg::Group>     pre_render_;
     bool supports_clustered_draws_=false;
     vsg::ref_ptr<vsg::Options>   options_;
-    vsg::ref_ptr<vsgImGui::RenderImGui> imgui_;
+    vsgImGui::RenderImGui* imgui_=nullptr; // Owned by the render graph overlay.
     bool imgui_enabled_=true;
 
     bool                          vsg_inited_ = false;

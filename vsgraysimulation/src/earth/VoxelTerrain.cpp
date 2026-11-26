@@ -199,6 +199,9 @@ void VoxelTerrain::rebuildMesh() {
     occupied_count_=0;vsg::dvec3 centreSum{};
     imagery_uv.clear();surface_normals.clear();
     if(appearance_){imagery_rgba=appearance_->rgba;imagery_width=appearance_->width;imagery_height=appearance_->height;normal_rgba=appearance_->normal_rgba;mr_rgba=appearance_->mr_rgba;}
+    emissive_rgba=appearance_?appearance_->emissive_rgba:std::vector<uint8_t>{};
+    hasMaterialBlend=false;
+    for(size_t i=3;i<mr_rgba.size();i+=4)if(mr_rgba[i]==0){hasMaterialBlend=true;break;}
     vertices_.clear();
     indices_.clear();triangle_cells_.clear();
     const double size = resolution_m;

@@ -3,6 +3,7 @@
 #include <vsgraysim/earth/SceneWeather.h>
 #include <vsg/nodes/Group.h>
 #include <vsg/maths/box.h>
+#include <vsg/maths/quat.h>
 #include <vsg/nodes/MatrixTransform.h>
 #include <functional>
 #include <map>
@@ -29,6 +30,22 @@ struct VoxelBodySettings {
     double ballastMassKg=0; // optional explicit point mass, separate from occupied material
     vsg::dvec3 ballastPosition{};
 };
+struct VoxelRotorDrive {
+    std::string carrier;
+    vsg::dvec3 pivot{}; // carrier-local metres, with the rotor mesh centred at its hub
+    vsg::dvec3 axis{0.,1.,0.};
+    double rpm=0.,phaseDeg=0.;
+    double startSeconds=0.,spinUpSeconds=0.;
+    bool waterJet=false;
+    double rpmAt(double seconds) const;
+    double angleAt(double seconds) const; // radians
+};
+struct VoxelPoseKeyframe {
+    double seconds;
+    vsg::dvec3 position;
+    vsg::dquat rotation;
+};
+enum class VoxelMotionResponse { None, Waves, Gusts };
 struct VoxelSceneObject {
     std::string id,role;
     std::shared_ptr<const VoxelTerrain> volume;
@@ -40,6 +57,9 @@ struct VoxelSceneObject {
     vsg::dvec3 velocity{};
     vsg::dvec3 angularVelocity{}; // world radians/s; velocity is model-origin velocity
     VoxelBodySettings body;
+    std::optional<VoxelRotorDrive> rotor;
+    std::shared_ptr<const std::vector<VoxelPoseKeyframe>> poseTrack;
+    VoxelMotionResponse motionResponse=VoxelMotionResponse::None;
     std::set<uint32_t> anchors;
     std::set<uint64_t> brokenBonds; // cell*3 + positive axis
     std::string parentId;
@@ -70,6 +90,7 @@ struct VoxelSceneSnapshot {
     std::vector<VoxelContact> contacts;
     nlohmann::json journal=nlohmann::json::array();
     nlohmann::json loadDiagnostics=nlohmann::json::array(); // transient preparation results, not physical/checkpoint state
+    nlohmann::json scenePresentation; // transient read-only broker data, bound to tick and revision
     double sampleTime=-1.; // transient interpolated measurement state, never a checkpoint
     double timeSeconds() const {return sampleTime>=0?sampleTime:double(tick)*fixedStep;}
 };
@@ -114,7 +135,7 @@ public:
     std::vector<VoxelSceneSnapshotPtr> history() const;
     bool paused() const;
     void setPaused(bool);
-    /// Paused authoring only. Commands: add/remove/place/material/sensor_materials, sensor_paint and terrain_brush.
+    /// Paused authoring only. Commands: add/remove/place/material/sensor_materials, target_properties, sensor_paint and terrain_brush.
     void edit(const nlohmann::json& commands,uint64_t expectedRevision);
     /// Commit immutable assets prepared off-thread into the existing paused world.
     void importPrepared(VoxelSceneSnapshotPtr,uint64_t expectedRevision);
@@ -149,5 +170,6 @@ struct VoxelSceneDisplay {
     void sync(const VoxelSceneSnapshot&);
 };
 VoxelSceneDisplay makeVoxelSceneDisplay(const VoxelSceneSnapshot&,const VoxelSceneDisplay* reuse=nullptr,bool externalOceanLighting=false);
-std::optional<VoxelSceneHit> raycastVoxelScene(const VoxelSceneSnapshot&,const vsg::dvec3&,const vsg::dvec3&,double,bool terrainOnly=false);
+std::optional<VoxelSceneHit> raycastVoxelScene(const VoxelSceneSnapshot&,const vsg::dvec3&,const vsg::dvec3&,double,
+    bool terrainOnly=false,std::string_view objectId={});
 }

@@ -158,7 +158,7 @@ BandRT::Result BandRT::build(vsg::Device& deviceArg,
         envInfo = vsg::BufferInfo::create(envData_);
     }
 
-    // ---- 波段差量 UBO (动态, 92 float = 23 vec4 与 band_shade.comp BandUbo 对齐):
+    // ---- 波段差量 UBO (动态, 96 float = 24 vec4 与 band_shade.comp BandUbo 对齐):
     //      band   [tMin, tMax, λc_um, bandId]  band2 [kSun, 基准N·L, 云底 m, 云影强度]
     //      band3  [云顶 m, 覆盖率, 密度系数, 风速]  band4 [风向x, 风向z, 时间 s, 云发射辐亮度]
     //      #4 oceanWave[16] (x=L y=A z=cosθ w=sinθ) + oceanOpt [Q, waveCount, pxAng, 0]
@@ -171,7 +171,7 @@ BandRT::Result BandRT::build(vsg::Device& deviceArg,
     // 夜间 is_day=0 → kSun=0 恒等退化。基准 N·L=0.35 (城市平均朝向吸热)
     // #5 体积云: band2.zw + band3/band4 由 setCloudVolume 每帧注入 (数值去重)
     // #4 海面波场: oceanWave/oceanOpt 由 setOceanWave 每帧注入 (数值去重)
-    bandData_ = vsg::floatArray::create(92);
+    bandData_ = vsg::floatArray::create(96);
     bandData_->properties.dataVariance = vsg::DYNAMIC_DATA;
     (*bandData_)[0] = lut.tMin();
     (*bandData_)[1] = lut.tMax();
@@ -191,7 +191,7 @@ BandRT::Result BandRT::build(vsg::Device& deviceArg,
     (*bandData_)[13] = 0.0f;  // 风向z
     (*bandData_)[14] = 0.0f;  // 时间 s
     (*bandData_)[15] = 0.0f;  // IR 云发射辐亮度
-    for (int i = 16; i < 92; ++i) (*bandData_)[i] = 0.0f;   // #4/#6/r10 oceanWave/oceanOpt/thermal/band5 初始禁用
+    for (int i = 16; i < 96; ++i) (*bandData_)[i] = 0.0f;   // #4/#6/r10 oceanWave/oceanOpt/thermal/band5 初始禁用
     // #4: 像素角 rad/px (视距滤波尺度 = 短波亚像素混叠判据; fov/宽度真值,
     //     0 时 shader 回退近似常量) —— build 期一次, setOceanWave 下发 oceanOpt.z
     pxAngRad_ = float(profile.fov_deg * M_PI / 180.0 / std::max(profile.width, 1u));
@@ -388,6 +388,11 @@ void BandRT::setEnv(const EnvAnswer& env) {
         (*bandData_)[84] = day ? float(1.0 - std::exp(-tDayH * 60.0 / 90.0)) : 0.0f;
         (*bandData_)[85] = day ? 0.0f : float(1.0 - std::exp(-tNightH * 60.0 / 180.0));
         (*bandData_)[86] = 4.0f;   // 夜间辐射冷却降幅 K (城市表面层典型)
+        (*bandData_)[89] = float(env.cloud_coverage);
+        (*bandData_)[92] = float(env.thermal_local_hour);
+        (*bandData_)[93] = float(env.thermal_air_delta_k);
+        (*bandData_)[94] = float(env.thermal_wetness);
+        (*bandData_)[95] = float(env.thermal_scene_seconds);
         (*bandData_)[87] = 6.0f;   // 白天云影全影降温 K (直射遮挡典型量级)
         bandData_->dirty();
     }

@@ -1,0 +1,25 @@
+# Original color palette for the scene preview models
+newmtl ivory
+Kd 0.84 0.88 0.90
+Ks 0.18 0.18 0.18
+Ns 28
+
+newmtl blue
+Kd 0.045 0.29 0.65
+Ks 0.22 0.22 0.22
+Ns 40
+
+newmtl orange
+Kd 0.93 0.25 0.05
+Ks 0.14 0.14 0.14
+Ns 30
+
+newmtl graphite
+Kd 0.075 0.095 0.115
+Ks 0.16 0.16 0.16
+Ns 27
+
+newmtl glass
+Kd 0.09 0.21 0.25
+Ks 0.4 0.4 0.4
+Ns 80

@@ -19,10 +19,13 @@ public:
     static std::shared_ptr<const VoxelEarthPatch> decode(const nlohmann::json&);
     nlohmann::json encode() const;
     std::shared_ptr<VoxelTerrain> initialVolume() const;
+    nlohmann::json inferredThermalMaterials(const VoxelTerrain&, double baseK) const;
     EarthSurfaceSnapshotPtr makeSurface(std::shared_ptr<const VoxelTerrain>,const std::string& mode,bool rigidFragment=false) const;
     const nlohmann::json& provenance() const {return provenance_;}
     const nlohmann::json& materials() const {return materials_;}
     size_t residentBytes()const{return (heights_.size()+seaReference_.size())*sizeof(double)+rgba_.size();}
+    std::array<double, 2> pageSplitXZ() const {return {x_+(nx_/2)*cell_,z_+(nz_/2)*cell_};}
+    double cellSize() const {return cell_;}
     vsg::dbox bounds()const{return {{x_,bottom_,z_},{x_+nx_*cell_,bottom_+ny_*cell_,z_+nz_*cell_}};}
     bool strictCoverage()const{return provenance_.at("earth").value("strict",true);}
 private:

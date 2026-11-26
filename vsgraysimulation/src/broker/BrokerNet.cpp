@@ -291,6 +291,7 @@ json infoToJson(const EquipmentInfo& e)
     j["frame_rate"] = e.frame_rate;
     j["range_max"] = e.range_max;
     j["description"] = e.description;
+    if(!e.model_id.empty())j["model_id"] = e.model_id;
     return j;
 }
 
@@ -311,6 +312,7 @@ EquipmentInfo infoFromJson(const json& j)
     e.frame_rate = j.value("frame_rate", 0.0f);
     e.range_max = j.value("range_max", 0.0f);
     e.description = j.value("description", std::string());
+    e.model_id = j.value("model_id", std::string());
     return e;
 }
 
@@ -467,6 +469,7 @@ void BrokerNet::startSimRole(const Config& cfg)
         [this](const SarFrame&  f) { forwardSar(f);  },
         [this](const IrFrame&   f) { forwardIr(f);   },
         [this](const VisFrame&  f) { forwardVis(f);  });
+    SimDataBroker::instance().setSonarTap([this](const SonarFrame& f){forwardSonar(f);});
 
     running_ = true;
     // 数据面异步转发线程: 帧外发不再阻塞仿真帧预算 (序列化仍即时, IPC 写入后台)
@@ -711,6 +714,19 @@ void BrokerNet::publishFrame(uint32_t sid, SensorType t, const void* body,
     {std::lock_guard<std::mutex> lock(flight_mtx_);w.putStr(scene_session_id_);}
     w.put(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()));
     buf = std::move(w.buf);
+}
+
+void BrokerNet::forwardSonar(const SonarFrame& f) {
+    if(!tp_||!linkAllows(f.sensor_id))return;
+    Writer body;
+    body.put(uint8_t(f.water_column_enabled?2:1));
+    body.put(f.platform_id);body.put(f.frame_id);body.put(f.tick);body.put(f.sim_time);
+    body.put(f.range_limit_m);body.put(f.transducer_draft_m);body.put(f.clearance_m);
+    body.put(f.water_depth_m);body.put(f.two_way_ms);body.put(uint8_t(f.bottom));
+    if(f.water_column_enabled)body.put(f.echo_range_m);
+    std::vector<uint8_t> buffer;
+    publishFrame(f.sensor_id,SensorType::SONAR,body.buf.data(),body.buf.size(),f.surface_revision,buffer);
+    enqueueForward("broker/frame/"+std::to_string(f.sensor_id),std::move(buffer));
 }
 
 void BrokerNet::forwardRadar(const RadarFrame& f)
@@ -1019,6 +1035,22 @@ void BrokerNet::handleFrameTopic(const std::string& topic,
     auto& broker = SimDataBroker::instance();
     bool accepted=false;
     switch (SensorType(type_i)) {
+    case SensorType::SONAR: {
+        const auto version=r.get<uint8_t>();
+        if(version!=1&&version!=2)break;
+        SonarFrame f;
+        f.sensor_id=sid;f.surface_revision=revision;
+        f.platform_id=r.get<uint32_t>();f.frame_id=r.get<uint64_t>();f.tick=r.get<uint64_t>();
+        f.sim_time=r.get<double>();f.range_limit_m=r.get<double>();f.transducer_draft_m=r.get<double>();
+        f.clearance_m=r.get<double>();f.water_depth_m=r.get<double>();f.two_way_ms=r.get<double>();
+        f.bottom=BottomReturn(r.get<uint8_t>());
+        if(version==2){
+            f.water_column_enabled=true;
+            f.echo_range_m=r.get<double>();
+        }
+        if(r.ok&&r.off==r.n)accepted=broker.publishSonar(f);
+        break;
+    }
     case SensorType::RADAR: {
         RadarFrame f = deserializeRadar(r);
         f.surface_revision=revision;
@@ -1267,7 +1299,13 @@ void BrokerNet::flightSendLoop()
             }
         }
         std::string response;auto result=flightResult(command,"unknown","transport_timeout","Delivery or execution is unknown; await heartbeat reconciliation");
-        if(requestJson("broker/flight/control",json(command).dump(),&response,cfg_.request_ms)) {
+        const auto payload=json(command).dump();
+        bool received=requestJson("broker/flight/control",payload,&response,cfg_.request_ms);
+        // A displayed pose is idempotent. Reuse its request ID so the server
+        // can reconcile a lost reply without applying a second revision.
+        if(!received&&command.presentation_pose)
+            received=requestJson("broker/flight/control",payload,&response,cfg_.request_ms);
+        if(received) {
             try {
                 auto reply=json::parse(response);
                 if(reply.contains("result")) {
@@ -1323,6 +1361,7 @@ void BrokerNet::stop()
 
     SimDataBroker::instance().setInterceptorTap(nullptr);
     SimDataBroker::instance().setFrameTap(nullptr, nullptr, nullptr, nullptr);
+    SimDataBroker::instance().setSonarTap(nullptr);
 
     if(role_==Role::Display){std::vector<uint32_t> ids;{std::lock_guard lock(lease_mtx_);for(const auto& [id,l]:owned_leases_)ids.push_back(id);}for(auto id:ids)linkDetach(id);}
     if (tp_) {

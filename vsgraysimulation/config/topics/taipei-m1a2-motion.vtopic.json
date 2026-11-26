@@ -1,0 +1,23 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北 M1A2 平台状态联调",
+  "scene": "../earth/taipei-m1a2-motion.vscene.json",
+  "earth_map": "../earth/taipei-m1a2-motion.map.json",
+  "camera": {"eye_m": [11, 4.0, 9], "target_m": [0, 1.6, 0.5]},
+  "sky": {"show_atmosphere": true, "time_scale": 1},
+  "clouds": {"cover": 0},
+  "paused": true,
+  "equipment": {
+    "format": "voxel-equipment-v1",
+    "platforms": [
+      {"id": 101, "object": "m1a2", "name": "M1A2", "kind": "tank", "model_id": "m1a2", "m1a2_display_rig": "../../build/platform-motion-assets/m1a2"}
+    ],
+    "equipment": [
+      {
+        "id": 10101, "name": "台北观察相机", "platform_id": 102,
+        "band": "TV", "period_seconds": 0.1, "width": 48, "height": 32, "fov_deg": 30,
+        "aperture": {"position_m": [24, 10, 35], "look_at_m": [0, 1, 0]}
+      }
+    ]
+  }
+}

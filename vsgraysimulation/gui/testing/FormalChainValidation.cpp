@@ -21,6 +21,9 @@
 #include <QElapsedTimer>
 #include <QPainter>
 #include <QPushButton>
+#include <QDoubleSpinBox>
+#include <QComboBox>
+#include "viewport3d/PlatformMotionFeature.h"
 #include <QTableWidget>
 #include <QTimer>
 #include <QTreeWidget>
@@ -34,8 +37,38 @@ namespace {
 using json=nlohmann::json;
 QString root(){return qEnvironmentVariable("VSGRAYSIM_FORMAL_CHAIN_DIR");}
 void require(bool yes,const char* why){if(!yes)throw std::runtime_error(why);}
-void write(const QString& name,const json& value){QDir().mkpath(root());QSaveFile f(root()+"/"+name);require(f.open(QIODevice::WriteOnly),"cannot open validation report");const auto bytes=QByteArray::fromStdString(value.dump(2));require(f.write(bytes)==bytes.size()&&f.commit(),"cannot write validation report");}
+void write(const QString& name,const json& value){
+    QDir().mkpath(root());
+    const auto bytes=QByteArray::fromStdString(value.dump(2));
+    std::string error;
+    for(int attempt=0;attempt<3;++attempt) {
+        QSaveFile f(root()+"/"+name);
+        if(f.open(QIODevice::WriteOnly)&&f.write(bytes)==bytes.size()&&f.commit())return;
+        error=f.errorString().toStdString();
+    }
+    throw std::runtime_error("cannot write "+name.toStdString()+": "+error);
+}
 template<class T> std::string hash(const std::vector<T>& values){return QCryptographicHash::hash(QByteArray::fromRawData(reinterpret_cast<const char*>(values.data()),qsizetype(values.size()*sizeof(T))),QCryptographicHash::Sha256).toHex().toStdString();}
+json terrainPageStats(QWidget& window) {
+    for (auto* view : window.findChildren<viewport3d::Viewport3DView*>()) {
+        if (!view->isVisible() || !view->isReady()) continue;
+        auto* feature = view->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");
+        if (!feature) continue;
+        auto pages = feature->terrainDisplayPageStats();
+        if (!pages.empty()) return pages;
+    }
+    return json::object();
+}
+json platformMotion(viewport3d::Viewport3DView& view) {
+    const auto* motion=view.featureAs<viewport3d::ScenePlatformMotion>(viewport3d::ScenePlatformMotion::kId);
+    const auto* voxel=view.featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");
+    if(!motion||!voxel||!voxel->snapshot())return {};
+    const auto* state=motion->state("m1a2");
+    if(!state)return {};
+    return {{"tick",voxel->snapshot()->tick},{"yaw_rad",state->turretYaw},{"pitch_rad",state->barrelElevation},
+        {"travel_m",state->trackDistance},{"wheel_angle_rad",state->wheelAngle},{"wheels",state->animatedWheels},
+        {"utc",voxel->snapshot()->utcOrigin}};
+}
 void capture(QWidget& window,const QString& name){
     auto picture=window.grab();bool native=false;
     for(auto* view:window.findChildren<viewport3d::Viewport3DView*>())if(view->isVisible()&&view->isReady()){
@@ -71,7 +104,10 @@ QPushButton* powerButton(display::ControlWorkbench& window){
 }
 void installFormalValidation(SceneDesignerWindow& window){
     const auto destination=qEnvironmentVariable("VSGRAYSIM_FORMAL_SCENE_SAVE");if(root().isEmpty()||destination.isEmpty())return;
-    watch(window,"designer",[&window,destination,done=false,edited=false,settledAt=qint64(-1),settling=QElapsedTimer{}]()mutable{
+    const auto usdInput = qEnvironmentVariable("VSGRAYSIM_FORMAL_USD_EDITS");
+    const auto usdOutput = qEnvironmentVariable("VSGRAYSIM_FORMAL_USD_EXPORT");
+    watch(window,"designer",[&window,destination,usdInput,usdOutput,done=false,edited=false,
+        usdEdited=false,settledAt=qint64(-1),settling=QElapsedTimer{}]()mutable{
         if(done)return;auto* view=window.findChild<viewport3d::Viewport3DView*>();if(!view||!view->isReady())return;
         auto* feature=view->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");if(!feature||!feature->runtime())return;
         require(feature->lastError().empty(),"designer voxel preparation failed");
@@ -82,10 +118,26 @@ void installFormalValidation(SceneDesignerWindow& window){
         }
         if(settledAt<0){settling.start();settledAt=0;view->markActivity();return;}
         if(settling.elapsed()<3000){view->markActivity();return;}
+        if (!usdInput.isEmpty() && !usdEdited) {
+            const auto revision = feature->runtime()->snapshot()->revision;
+            bool applied = false;
+            require(QMetaObject::invokeMethod(&window, "applyUsdTargetEdits", Q_RETURN_ARG(bool, applied),
+                Q_ARG(QString, usdInput)) && applied, "designer USD edit layer failed");
+            require(feature->runtime()->snapshot()->revision == revision + 1, "USD edit layer did not commit one edit");
+            usdEdited = true;
+            settledAt = -1;
+            return;
+        }
+        if (!usdOutput.isEmpty()) {
+            bool exported = false;
+            require(QMetaObject::invokeMethod(&window, "saveUsdTargetEdits", Q_RETURN_ARG(bool, exported),
+                Q_ARG(QString, usdOutput)) && exported, "designer USD export failed");
+        }
         auto* globe=view->featureAs<viewport3d::EarthViewFeature>("rocky_map");
         require(globe&&globe->weather(),"designer weather not ready after settling");
         require(std::abs(globe->weather()->seconds-feature->runtime()->snapshot()->timeSeconds())<1e-9,"paused designer cloud clock drifted from scene time");
         const auto expected=feature->runtime()->checkpoint();bool saved=false;
+        done=true; // The publisher processes paint and timer events while waiting for its worker.
         require(QMetaObject::invokeMethod(&window,"saveScenarioFile",Q_RETURN_ARG(bool,saved),Q_ARG(QString,destination))&&saved,"designer save failed");
         auto project=VoxelSceneProject::open(destination.toStdString());require(project.createScene()->checkpoint()==expected,"designer dropped or altered authored voxel state");
         bool countConfigured=false;
@@ -93,8 +145,8 @@ void installFormalValidation(SceneDesignerWindow& window){
         const auto equipmentCount=project.equipmentConfig().equipment.size();
         require(equipmentCount==size_t(countConfigured?configuredCount:4),"designer dropped equipment configuration");
         capture(window,qEnvironmentVariable("VSGRAYSIM_FORMAL_DESIGNER_NAME","designer"));
-        write(qEnvironmentVariable("VSGRAYSIM_FORMAL_DESIGNER_NAME","designer")+".json",{{"pid",::getpid()},{"saved",destination.toStdString()},{"checkpoint_sha256",QCryptographicHash::hash(QByteArray::fromStdString(expected.dump()),QCryptographicHash::Sha256).toHex().toStdString()},{"content_revision",expected.at("content_revision")},{"tick",expected.at("tick")},{"equipment_count",equipmentCount},{"authoring_commands_applied",edited},{"sky_clock_seconds",view->featureAs<viewport3d::SkyFeature>("rocky_sky")->clockSeconds()},{"cloud_clock_seconds",globe->weather()->seconds}});
-        done=true;QApplication::quit();
+        write(qEnvironmentVariable("VSGRAYSIM_FORMAL_DESIGNER_NAME","designer")+".json",{{"pid",::getpid()},{"saved",destination.toStdString()},{"checkpoint_sha256",QCryptographicHash::hash(QByteArray::fromStdString(expected.dump()),QCryptographicHash::Sha256).toHex().toStdString()},{"content_revision",expected.at("content_revision")},{"tick",expected.at("tick")},{"equipment_count",equipmentCount},{"authoring_commands_applied",edited},{"usd_edit_layer_applied",usdEdited},{"terrain_display_pages",feature->terrainDisplayPageStats()},{"sky_clock_seconds",view->featureAs<viewport3d::SkyFeature>("rocky_sky")->clockSeconds()},{"cloud_clock_seconds",globe->weather()->seconds}});
+        QApplication::quit();
     });
 }
 void installFormalValidation(SimulationControlWindow& window){
@@ -107,11 +159,17 @@ void installFormalValidation(SimulationControlWindow& window){
             if(view&&view->isReady()) {
                 auto* voxel=view->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");auto* earth=view->featureAs<viewport3d::EarthView>(viewport3d::EarthView::kId);
                 ready=voxel&&voxel->snapshot()&&voxel->runtime()==nullptr&&earth&&earth->surfaceSnapshot();
-                if(ready)status["view_tick"]=voxel->snapshot()->tick;
+                status["viewHasVoxel"]=bool(voxel&&voxel->snapshot());
+                status["viewHasTerrain"]=bool(earth&&earth->surfaceSnapshot());
+                if(voxel&&voxel->snapshot()) {
+                    status["view_tick"]=voxel->snapshot()->tick;
+                    status["platform_motion"]=platformMotion(*view);
+                }
                 auto* widget=view->widget();const auto current=widget->property("renderFrameSerial").toULongLong();
                 if(ready&&current!=serial){serial=current;samples.push_back(widget->property("renderFrameMs").toDouble());if(samples.size()>600)samples.erase(samples.begin());}
                 if(!samples.empty()){auto sorted=samples;std::sort(sorted.begin(),sorted.end());status["render"]={{"samples",sorted.size()},{"p50_ms",sorted[(sorted.size()-1)/2]},{"p95_ms",sorted[size_t((sorted.size()-1)*.95)]},{"fenced",widget->property("renderFrameFenced").toBool()},{"width",widget->width()},{"height",widget->height()}};}
             }
+            if(view)status["voxel_read_error"]=view->property("publishedVoxelReadError").toString().toStdString();
             status["view_ready"]=ready;status["ui_command_seq"]=last;write("probe-simulation.json",status);
             const auto file=root()+"/probe-command-simulation.json";if(!QFileInfo::exists(file))return;
             json command;try{std::ifstream(file.toStdString())>>command;}catch(...){return;}
@@ -138,11 +196,15 @@ void installFormalValidation(SimulationControlWindow& window){
             require(status["equipment"].size()==4,"formal source did not register all equipment");
             for(const auto& e:status["equipment"])require(e["frames"]==0,"equipment generated data before display link");
             const auto context=status.value("worker_process",false)?status.at("earth"):json::parse(BrokerNet::instance().lastSimMeta().earth_json);
+            if (context.value("terrain_display_paging",false) && feature->terrainDisplayPageStats().empty()) {
+                view->markActivity();
+                return;
+            }
             json archive;std::ifstream(context.at("voxel_scene").at("checkpoint_file").get<std::string>())>>archive;
             const auto project=VoxelSceneProject::open(context.at("source_scenario"));const auto authored=project.createScene()->checkpoint();
             archive["paused"]=authored.at("paused");require(archive==authored,"formal simulation did not restore the saved canonical state");
             status["saved_checkpoint_restored"]=true;
-            capture(window,"simulation-ready");write("simulation-ready.json",status);phase=1;
+            capture(window,"simulation-ready");status["terrain_display_pages"]=terrainPageStats(window);write("simulation-ready.json",status);phase=1;
         }
         if(phase==1){bool linked=true;for(const auto& e:status["equipment"])linked=linked&&e["subscribed"].get<bool>();if(linked){QMetaObject::invokeMethod(&window,"onPlayPause");phase=2;}}
         if(phase==2&&QFileInfo::exists(root()+"/display-controls.json")){
@@ -156,8 +218,10 @@ void installFormalValidation(display::ControlWorkbench& window){
     if(qEnvironmentVariableIsSet("VSGRAYSIM_WORKER_PROBE")) {
         watch(window,"display",[&window,last=uint64_t(0),serial=qulonglong(0),render=std::vector<double>{}]()mutable{
             auto status=window.connectionStatus();const auto meta=BrokerNet::instance().lastSimMeta();status["online"]=BrokerNet::instance().simOnline();status["running"]=meta.running;status["scene_session_id"]=meta.scene_session_id;status["sim_time"]=meta.sim_time;status["channels"]=channels();status["ui_pid"]=::getpid();status["command_seq"]=last;
-            for(auto* view:window.findChildren<viewport3d::Viewport3DView*>())if(view->isVisible()&&view->isReady()){auto* earth=view->featureAs<viewport3d::EarthView>(viewport3d::EarthView::kId);auto* voxel=view->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");if(earth&&earth->surfaceSnapshot()&&voxel&&voxel->snapshot()){const auto current=view->widget()->property("renderFrameSerial").toULongLong();if(current!=serial){serial=current;render.push_back(view->widget()->property("renderFrameMs").toDouble());if(render.size()>600)render.erase(render.begin());}status["view_ready"]=true;}}
+            for(auto* view:window.findChildren<viewport3d::Viewport3DView*>())if(view->isVisible()&&view->isReady()){auto* earth=view->featureAs<viewport3d::EarthView>(viewport3d::EarthView::kId);auto* voxel=view->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");if(earth&&earth->surfaceSnapshot()&&voxel&&voxel->snapshot()){const auto current=view->widget()->property("renderFrameSerial").toULongLong();if(current!=serial){serial=current;render.push_back(view->widget()->property("renderFrameMs").toDouble());if(render.size()>600)render.erase(render.begin());}status["view_ready"]=true;const auto motion=platformMotion(*view);if(!motion.is_null())status["platform_motion"]=motion;}}
             if(!render.empty()){auto sorted=render;std::sort(sorted.begin(),sorted.end());status["render_3d"]={{"samples",sorted.size()},{"p50_ms",sorted[(sorted.size()-1)/2]},{"p95_ms",sorted[size_t((sorted.size()-1)*.95)]},{"fenced",true}};}
+            for(auto* label:window.findChildren<QLabel*>("m1a2_display_result"))
+                if(label->isVisible()){status["presentation_feedback"]=label->text().toStdString();break;}
             write("probe-display.json",status);
             const auto file=root()+"/probe-command-display.json";if(!QFileInfo::exists(file))return;
             json command;try{std::ifstream(file.toStdString())>>command;}catch(...){return;}const auto seq=command.at("seq").get<uint64_t>();if(seq<=last)return;last=seq;
@@ -175,6 +239,22 @@ void installFormalValidation(display::ControlWorkbench& window){
             else if(action=="open_console")window.openPlatformConsole(QString::fromStdString(command.value("mode",std::string("aircraft"))),command.value("platform_id",uint32_t(0)));
             else if(action=="close_consoles")window.closePlatformConsoles();
             else if(action=="open_view")window.openEquipmentView(command.at("equipment_id").get<uint32_t>());
+            else if(action=="m1a2_pose") {
+                const auto id=command.value("platform",uint32_t(101));
+                for(auto* platforms:window.findChildren<QComboBox*>("earth_platform")) {
+                    const auto i=platforms->findData(id);
+                    if(i>=0&&platforms->isVisible())platforms->setCurrentIndex(i);
+                }
+                for(auto* apply:window.findChildren<QPushButton*>("m1a2_display_apply")) {
+                    if(!apply->isVisible()||!apply->isEnabled())continue;
+                    auto* yaw=apply->parentWidget()->findChild<QDoubleSpinBox*>("m1a2_display_yaw");
+                    auto* pitch=apply->parentWidget()->findChild<QDoubleSpinBox*>("m1a2_display_pitch");
+                    require(yaw&&pitch,"pose fields missing");
+                    yaw->setValue(command.at("yaw").get<double>());pitch->setValue(command.at("pitch").get<double>());
+                    apply->click();return;
+                }
+                throw std::runtime_error("M1A2 controls unavailable in visible Earth panels");
+            }
             else if(action=="reset_metrics")render.clear();
             else if(action=="detach"){for(auto* button:window.findChildren<QPushButton*>())if(button->text()==QStringLiteral("断开全部装备")){button->click();break;}}
             else if(action=="capture")capture(window,QString::fromStdString(command.value("name",std::string("probe-display"))));
@@ -191,9 +271,17 @@ void installFormalValidation(display::ControlWorkbench& window){
         }
         if(status.at("sessions").size()!=4)return;
         if(phase==1){
+            const auto earth = json::parse(meta.earth_json);
+            const auto pages = terrainPageStats(window);
+            if (earth.value("terrain_display_paging",false) && pages.empty()) {
+                for (auto* view : window.findChildren<viewport3d::Viewport3DView*>()) view->markActivity();
+                return;
+            }
             for(const auto& s:status.at("sessions"))if(!s.at("connected").get<bool>()||!s.at("has_frame").get<bool>()||s.at("frames").get<uint64_t>()<3)return;
             const auto products=channels();for(const auto& p:products){require(p.at("surface_revision")==status.at("scene_revision"),"display accepted a mismatched voxel revision");if(p.at("id")==7104)require(p.at("power_sum").get<double>()>0,"empty remote radar return");else require(p.at("absolute_sum").get<double>()>0,"empty remote imaging product");}
-            write("display-linked.json",{{"pid",::getpid()},{"state",status},{"channels",products},{"earth",json::parse(meta.earth_json)}});capture(window,"display-live");
+            capture(window,"display-live");
+            write("display-linked.json",{{"pid",::getpid()},{"state",status},{"channels",products},
+                {"earth",earth},{"terrain_display_pages",terrainPageStats(window)}});
             auto* button=powerButton(window);require(button&&button->isEnabled(),"actual display power button unavailable");button->click();phase=2;return;
         }
         if(phase==2){

@@ -3,6 +3,8 @@
 #include "EngagementVisualFeature.h"
 
 #include "FeatureRegistry.h"
+#include "EnvFeatures.h"
+#include <vsg/app/Camera.h>
 #include "ViewportContext.h"
 #include "ViewportKit.h"
 
@@ -14,6 +16,8 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <limits>
+#include <spdlog/spdlog.h>
 
 namespace vsgraysim { namespace viewport3d {
 
@@ -146,7 +150,8 @@ bool samePlumes(const std::vector<EngagementVisualFeature::Plume>& a,
     for (size_t i = 0; i < a.size(); ++i) {
         const auto& x = a[i]; const auto& y = b[i];
         if (x.id != y.id || x.faction != y.faction ||
-            !sameVec(x.pos, y.pos) || !sameVec(x.dir, y.dir)) return false;
+            x.jet != y.jet || x.strength != y.strength || x.radius != y.radius || x.visualStyle != y.visualStyle ||
+            !(x.exhaust==y.exhaust) || !sameVec(x.pos, y.pos) || !sameVec(x.dir, y.dir)) return false;
     }
     return true;
 }
@@ -166,16 +171,66 @@ bool sameDamageSmokes(const std::vector<EngagementVisualFeature::DamageSmoke>& a
 
 } // namespace
 
+void EngagementVisualFeature::configure(const nlohmann::json& j) {
+    const bool old=legacy_fx_;
+    legacy_fx_=j.value("legacy_effects",legacy_fx_);
+    annotations_=j.value("annotations",annotations_);
+    if(old!=legacy_fx_){particles_.clear();impacts_.clear();launches_.clear();}
+    if(root_) {
+        if(!legacy_fx_&&!particles_.initialize())spdlog::warn("Aviation FX: using legacy overlays because the particle shader is unavailable");
+        rebuild();
+    }
+}
+
+void EngagementVisualFeature::updateParticles(ViewportContext& ctx,const FrameTick& tick) {
+    if(!particleMode()||!ctx.camera())return;
+    vsg::dmat4 vp;vsg::dvec3 worldEye;
+    gui::ViewportKit::cameraMatrices(ctx.camera(),vp,worldEye);
+    const auto eye=vsg::vec3(vsg::inverse(ctx.contentModel())*worldEye);
+    float windSpeed=0,windAz=0;
+    rockyenv::AtmosphereState light;
+    if(auto* sky=ctx.featureAs<SkyFeature>(SkyFeature::kId))
+        if(auto* provider=sky->lightingProvider())provider->getAtmosphereState(light);
+    if(auto* cloud=ctx.featureAs<CloudFeature>(CloudFeature::kId)) {
+        windSpeed=cloud->windSpeed();windAz=cloud->windAzimuth();
+    }
+    const float az=float(vsg::radians(windAz));
+    std::vector<AviationParticles::Source> emitters;
+    emitters.reserve(plumes_.size()+damage_smokes_.size()+9);
+    const auto add=[&](const Plume& p) {
+        using Style=AviationParticles::Style;
+        emitters.push_back({p.id,p.pos,p.dir,p.visualStyle.value_or(p.jet?Style::Jet:Style::WarmExhaust),p.strength,p.radius,{},p.exhaust});
+    };
+    visitPlumes(add);
+    using Style=AviationParticles::Style;
+    for(const auto& ds:damage_smokes_)emitters.push_back({"damage:"+ds.id,ds.pos,{0,1,0},Style::Soot,
+        std::clamp(ds.severity,.10f,1.f),.8f+ds.severity});
+    // Existing wreck marks are not persistent fires: the burst already owns
+    // the drifting smoke, and a wreck coordinate may be airborne.
+
+    const auto scene=sceneEffects_.collect(ctx,emitters,tick.elapsed_sec);
+    burningDebrisCount_=scene.burningDebrisCount;
+    if(scene.resetHistory)particles_.clear();
+    for(const auto& flash:scene.fractureFlashes)particles_.burst(flash,AviationParticles::Burst::Fracture);
+    const auto wind=scene.wind.value_or(vsg::vec3(std::sin(az)*windSpeed,0,-std::cos(az)*windSpeed));
+    particles_.update(scene.time,emitters,wind,eye,
+                      light.sun_dir_enu,light.ambient_light+light.moon_light*.3f,light.sun_light,light.horizon_color,
+                      light.visibility>0?light.visibility:18000.f);
+}
+
 void EngagementVisualFeature::onAttach(ViewportContext& ctx)
 {
     ctx_ = &ctx;
     root_ = vsg::Group::create();
+    if(!legacy_fx_&&!particles_.initialize())spdlog::warn("Aviation FX: using legacy overlays because the particle shader is unavailable");
+    rebuild();
     if (enabled_) setInWorld(true);
 }
 
 void EngagementVisualFeature::onDetach(ViewportContext& ctx)
 {
     setInWorld(false);
+    clear();
     ctx_ = nullptr;
     root_ = {};
 }
@@ -183,18 +238,23 @@ void EngagementVisualFeature::onDetach(ViewportContext& ctx)
 void EngagementVisualFeature::setEnabled(bool on)
 {
     enabled_ = on;
+    if(!on)particles_.clear();
     if (ctx_) { if (on) setInWorld(true); else setInWorld(false); }
 }
 
 void EngagementVisualFeature::setInWorld(bool add)
 {
     if (!root_ || !ctx_) return;
+    if(add==in_world_)return;
     const bool now = in_world_;
     if (add && !now) {
-        ctx_->contentRoot()->addChild(root_);
+        attachedRoot_=ctx_->contentRoot();
+        attachedRoot_->addChild(root_);
         in_world_ = true;
     } else if (!add && now) {
-        ctx_->removeFromWorld(root_);
+        auto& children=attachedRoot_->children;
+        children.erase(std::remove(children.begin(),children.end(),root_),children.end());
+        attachedRoot_=nullptr;
         in_world_ = false;
     }
     ctx_->requestCompile();
@@ -202,7 +262,11 @@ void EngagementVisualFeature::setInWorld(bool add)
 
 void EngagementVisualFeature::onFrame(ViewportContext& ctx, const FrameTick& tick)
 {
+    if(in_world_&&attachedRoot_!=ctx.contentRoot()) {
+        setInWorld(false);particles_.clear();setInWorld(true);
+    }
     pulse_elapsed_ = tick.elapsed_sec;
+    updateParticles(ctx,tick);
     bool changed = false;
     for (auto it = impacts_.begin(); it != impacts_.end();) {
         it->age_sec += static_cast<float>(tick.dt_sec);
@@ -286,9 +350,9 @@ void EngagementVisualFeature::onFrame(ViewportContext& ctx, const FrameTick& tic
         }
     }
     // 尾焰: 位置随弹体, 长度闪烁 (发动机推力抖动)。
-    for (const auto& p : plumes_) {
+    visitPlumes([&](const Plume& p) {
         auto it = plume_nodes_.find(p.id);
-        if (it == plume_nodes_.end() || !it->second) continue;
+        if (it == plume_nodes_.end() || !it->second) return;
         const float flick = 0.8f + 0.3f * float(std::sin(pulse_elapsed_ * 27.0 +
                               double(p.id.size()) * 1.7));
         const vsg::vec3 nd = vsg::length(p.dir) > 1e-4f
@@ -297,7 +361,7 @@ void EngagementVisualFeature::onFrame(ViewportContext& ctx, const FrameTick& tic
             vsg::translate(vsg::dvec3(p.pos)) *
             alignNegY(vsg::dvec3(-nd.x, -nd.y, -nd.z)) *
             vsg::scale(double(4.5f * flick));
-    }
+    });
     // 持续毁伤: 残骸火光盘闪烁 + 烟团柱循环上升 (常驻)。
     for (auto& w : wrecks_) {
         if (w.fire_node) {
@@ -341,6 +405,7 @@ void EngagementVisualFeature::setEngagements(const std::vector<Engagement>& engs
     if (sameEngagements(engs_, engs)) return;   // 快照无变化: 跳过重建
 
     engs_ = engs;
+    if(particleMode()&&!annotations_)return;
 
     // 更新弹道历史: 对仍在飞拦截弹累积位置; 移除不再在飞的交战历史。
     std::set<std::string> alive;
@@ -360,30 +425,58 @@ void EngagementVisualFeature::setEngagements(const std::vector<Engagement>& engs
         if (!alive.count(it->first)) it = pulse_nodes_.erase(it);
         else ++it;
     }
-    rebuild();
+    if(annotations_||legacy_fx_||!particleMode())rebuild();
 }
 
 void EngagementVisualFeature::setPlumes(const std::vector<Plume>& plumes)
 {
     if (samePlumes(plumes_, plumes)) return;   // 快照无变化: 跳过重建
     plumes_ = plumes;
-    // 移除不再在飞导弹的尾焰节点。
+    if(!particleMode())refreshLegacyPlumes();
+}
+
+void EngagementVisualFeature::setPlatformPlumes(const std::string& owner,std::vector<Plume> plumes) {
+    auto previous=platformPlumes_.find(owner);
+    if(plumes.empty()) {
+        if(previous==platformPlumes_.end())return;
+        platformPlumes_.erase(previous);
+    } else {
+        if(previous!=platformPlumes_.end()&&samePlumes(previous->second,plumes))return;
+        platformPlumes_.insert_or_assign(owner,std::move(plumes));
+    }
+    if(!particleMode())refreshLegacyPlumes();
+}
+
+void EngagementVisualFeature::refreshLegacyPlumes() {
     std::set<std::string> alive;
-    for (const auto& p : plumes_) alive.insert(p.id);
-    for (auto it = plume_nodes_.begin(); it != plume_nodes_.end();)
-        if (!alive.count(it->first)) it = plume_nodes_.erase(it);
-        else ++it;
-    rebuild();
+    visitPlumes([&](const Plume& plume){ alive.insert(plume.id); });
+    auto current=plume_nodes_.begin();
+    bool changed=false;
+    while(current!=plume_nodes_.end()) {
+        if(!alive.count(current->first)) {
+            current=plume_nodes_.erase(current);
+            changed=true;
+        } else ++current;
+    }
+    if(changed||alive.size()!=plume_nodes_.size())rebuild();
 }
 
 void EngagementVisualFeature::addLaunch(const vsg::vec3& pos, int faction)
 {
+    if(particleMode()){if(enabled_)particles_.burst(pos,AviationParticles::Burst::Launch);return;}
     launches_.push_back({pos, faction, 0.0f});
     rebuild();
 }
 
+void EngagementVisualFeature::addPreviewFlash(const vsg::vec3& pos,const vsg::vec3& direction,float scale)
+{
+    if(particleMode()&&enabled_)
+        particles_.burst(pos,AviationParticles::Burst::StageFlash,direction,scale);
+}
+
 void EngagementVisualFeature::addMiss(const vsg::vec3& pos, int faction)
 {
+    if(particleMode()&&!annotations_)return;
     miss_marks_.push_back({pos, faction, 0.0f});
     rebuild();
 }
@@ -398,11 +491,12 @@ void EngagementVisualFeature::setDamageSmokes(const std::vector<DamageSmoke>& sm
     for (auto it = dmg_nodes_.begin(); it != dmg_nodes_.end();)
         if (!alive.count(it->first)) it = dmg_nodes_.erase(it);
         else ++it;
-    rebuild();
+    if(!particleMode()||annotations_)rebuild();
 }
 
 void EngagementVisualFeature::addImpact(const vsg::vec3& pos, int faction)
 {
+    if(particleMode()){if(enabled_)particles_.burst(pos,AviationParticles::Burst::Impact);return;}
     impacts_.push_back({pos, faction, 0.0f});
     rebuild();
 }
@@ -412,14 +506,14 @@ void EngagementVisualFeature::addWreck(const std::string& id, const vsg::vec3& p
 {
     for (const auto& w : wrecks_) if (w.id == id) return;   // 幂等
     wrecks_.push_back({id, pos, faction});
-    rebuild();
+    if(!particleMode()||annotations_)rebuild();
 }
 
 void EngagementVisualFeature::removeWreck(const std::string& id)
 {
     auto it = std::remove_if(wrecks_.begin(), wrecks_.end(),
                              [&](const Wreck& w) { return w.id == id; });
-    if (it != wrecks_.end()) { wrecks_.erase(it); rebuild(); }
+    if (it != wrecks_.end()) { wrecks_.erase(it); if(!particleMode()||annotations_)rebuild(); }
 }
 
 void EngagementVisualFeature::clear()
@@ -432,6 +526,7 @@ void EngagementVisualFeature::clear()
     plumes_.clear();
     miss_marks_.clear();
     damage_smokes_.clear();
+    platformPlumes_.clear();particles_.clear();sceneEffects_.reset();burningDebrisCount_=0;
     pulse_nodes_.clear();
     plume_nodes_.clear();
     dmg_nodes_.clear();
@@ -443,6 +538,10 @@ void EngagementVisualFeature::rebuild()
     if (!root_) return;
     root_->children.clear();
     shader_handles_.clear();
+    if(particleMode()) {
+        root_->addChild(vsg::ref_ptr<vsg::Node>(particles_.node()));
+        if(!annotations_) {if(ctx_)ctx_->requestCompile();return;}
+    }
 
     // 1) 制导连线 (拦截弹 → 目标): 半透明管道表现 "制导指令链",
     //    管道内数据流方向从拦截弹流向目标 (uv.x 递增方向)。
@@ -565,14 +664,14 @@ void EngagementVisualFeature::rebuild()
     }
 
     // 3c) 在飞导弹尾焰: 单位火焰锥 + 矩阵对齐/闪烁 (位置随弹体)。
-    for (const auto& p : plumes_) {
+    if(!particleMode())visitPlumes([&](const Plume& p) {
         auto& mt = plume_nodes_[p.id];
         if (!mt) {
             mt = vsg::MatrixTransform::create();
             mt->addChild(makeFlameCone(QColor(0xff, 0x8a, 0x3c)));
         }
         root_->addChild(mt);
-    }
+    });
 
     // 3e) 损伤冒烟: 受损未摧毁平台的持续烟柱 (矩阵驱动循环上升)。
     for (const auto& ds : damage_smokes_) {

@@ -11,6 +11,8 @@
 #include <memory>
 
 namespace vsgraysim::gui::display {
+QImage infraredRadianceImage(const std::vector<float>& values, uint32_t width, uint32_t height,
+                              double minMicrons, double maxMicrons, bool automatic, bool thermalPalette);
 struct PanelInput {
     std::string identity;
     uint64_t sequence=0;

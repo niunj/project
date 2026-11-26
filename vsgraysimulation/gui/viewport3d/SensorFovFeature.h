@@ -9,16 +9,26 @@
 #include "IViewportFeature.h"
 #include "SceneEntities.h"
 
+#include <vsgraysim/model_sdk/EquipmentVisual.h>
 #include <vsg/core/ref_ptr.h>
 #include <vsg/core/Array.h>
 #include <vsg/maths/vec3.h>
+#include <vsg/nodes/MatrixTransform.h>
+#include <vsg/nodes/Switch.h>
 
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace vsg { class Group; class Node; }
+namespace vsgraysim::earth { struct VoxelEquipmentConfig; }
 
 namespace vsgraysim { namespace viewport3d {
+
+class VoxelSceneFeature;
 
 /// 传感器 FoV 视锥线框。
 /// 两种挂载模式:
@@ -32,6 +42,8 @@ public:
     const char* id() const override { return kId; }
     void onAttach(ViewportContext& ctx) override;
     void onDetach(ViewportContext& ctx) override;
+    void configure(const nlohmann::json& params) override;
+    void setEnabled(bool on) override;
 
     /// 局部空间视锥节点 (实体坐标系): 视轴 = 实体系 +Z 先绕 X 俯仰再绕 Y 方位。
     /// `mid_plane`/`axis_line` 控制中间截面与视轴线 (场景设计器全开)。
@@ -61,7 +73,30 @@ public:
 
     void onFrame(ViewportContext& ctx, const FrameTick& tick) override;
 
+    struct EquipmentPose {
+        vsg::dvec3 origin, direction;
+        double azimuthDegrees, simulationSeconds;
+    };
+    std::optional<EquipmentPose> displayedEquipmentPose(uint32_t id) const;
+    size_t equipmentGeometryBuilds() const { return equipment_geometry_builds_; }
+
 private:
+    struct EquipmentOverlay {
+        vsg::ref_ptr<vsg::MatrixTransform> mount, beam;
+        model_sdk::EquipmentVisualStyle style;
+        EquipmentPose pose;
+    };
+    void syncEquipment(ViewportContext&);
+    vsg::ref_ptr<vsg::Switch> holder_;
+    vsg::ref_ptr<vsg::Group> equipment_root_;
+    std::map<uint32_t,EquipmentOverlay> equipment_;
+    const VoxelSceneFeature* last_equipment_source_ = nullptr;
+    uint64_t equipment_generation_ = 0;
+    uint64_t equipment_tick_ = 0, equipment_revision_ = 0;
+    std::shared_ptr<const earth::VoxelEquipmentConfig> preview_equipment_;
+    vsg::dmat4 equipment_content_model_;
+    size_t equipment_geometry_builds_ = 0;
+
     /// 世界空间扫描线 (扇面内摆动, onFrame 逐帧改写端点; B7 §7.2)。
     struct SweepLine {
         vsg::ref_ptr<vsg::vec3Array> verts; ///< 2 端点 (中心→弧), DYNAMIC_DATA

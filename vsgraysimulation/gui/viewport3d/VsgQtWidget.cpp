@@ -36,6 +36,7 @@
 #include <vsg/app/CompileManager.h>
 #include <vsgImGui/RenderImGui.h>
 #include <vsgImGui/imgui.h>
+#include <vsgImGui/implot.h>
 
 #include "ViewportKit.h"
 
@@ -76,6 +77,56 @@ namespace {
 // device/instance. Some deployed VSG builds support only deviceID 0. An observer
 // does not keep an otherwise closed viewer/device alive.
 vsg::observer_ptr<vsg::Device>& viewportDevice(){static vsg::observer_ptr<vsg::Device> device;return device;}
+
+struct ImGuiScope {
+    ImGuiContext* previous=ImGui::GetCurrentContext();
+    ImPlotContext* previousPlot=ImPlot::GetCurrentContext();
+    ImGuiScope(ImGuiContext* context,ImPlotContext* plot) {
+        ImGui::SetCurrentContext(context);ImPlot::SetCurrentContext(plot);
+    }
+    ~ImGuiScope(){ImGui::SetCurrentContext(previous);ImPlot::SetCurrentContext(previousPlot);}
+};
+
+// vsgImGui initializes and destroys the contexts active during its own calls.
+// Keep each render graph's renderer/backend attached to its own contexts.
+class ViewportImGui final : public vsg::Inherit<vsg::Group,ViewportImGui> {
+public:
+    explicit ViewportImGui(vsg::Window* window):window_(window) {
+        ImGuiScope scope(nullptr,nullptr);
+        context_=ImGui::CreateContext();
+        auto& io=ImGui::GetIO();
+        const auto font=ViewportKit::resolveAssetPath("fonts/NotoSansCJKSC.ttf");
+        if(std::filesystem::exists(font))io.Fonts->AddFontFromFileTTF(font.c_str(),17.f,nullptr,io.Fonts->GetGlyphRangesChineseFull());
+        ImGui::StyleColorsDark();
+        auto& style=ImGui::GetStyle();
+        style.WindowRounding=8;style.FrameRounding=5;style.GrabRounding=4;
+        style.WindowPadding={10,8};style.FramePadding={8,4};style.ItemSpacing={8,6};
+        style.Colors[ImGuiCol_WindowBg]={.055f,.067f,.094f,.90f};
+        style.Colors[ImGuiCol_Border]={.35f,.43f,.55f,.45f};
+        auto renderer=vsgImGui::RenderImGui::create(window_);
+        plot_=ImPlot::GetCurrentContext();
+        renderer_=renderer.get();
+        addChild(renderer);
+    }
+    vsgImGui::RenderImGui* renderer()const{return renderer_;}
+    void accept(vsg::RecordTraversal& rt)const override {
+        ImGuiScope scope(context_,plot_);
+        const auto extent=window_->extent2D();
+        ImGui::GetIO().DisplaySize={float(extent.width),float(extent.height)};
+        renderer_->accept(rt);
+    }
+private:
+    ~ViewportImGui()override {
+        ImGuiScope scope(context_,plot_);
+        if(scope.previous==context_)scope.previous=nullptr;
+        if(scope.previousPlot==plot_)scope.previousPlot=nullptr;
+        children.clear();
+    }
+    vsg::ref_ptr<vsg::Window> window_;
+    ImGuiContext* context_=nullptr;
+    ImPlotContext* plot_=nullptr;
+    vsgImGui::RenderImGui* renderer_=nullptr;
+};
 }
 
 // ---------------------------------------------------------------------------
@@ -407,49 +458,11 @@ bool VsgQtWidget::initVsg() try {
     const auto& queueFamilies=window_->getOrCreatePhysicalDevice()->getQueueFamilyProperties();
     supports_clustered_draws_=cg->queueFamily>=0&&(queueFamilies.at(size_t(cg->queueFamily)).queueFlags&VK_QUEUE_COMPUTE_BIT);
 
-    // In-viewport ImGui overlay (official vsgImGui pattern: direct child of
-    // the RenderGraph, rendered after the 3D scene). Used by the per-software
-    // toolbar to toggle 3D overlays (平台标注/通信连线 等)。
-    //
-    // 中文字体: 默认 ProggyClean 无 CJK 字形 (中文全部显示为方框)。
-    // 必须在 RenderImGui::create 之前把 NotoSansCJKSC 注入 FontAtlas
-    // (GetGlyphRangesChineseFull 含 CJK + 常用标点/项目符号)。
-    if(imgui_enabled_) {
-      {
-        if (!ImGui::GetCurrentContext()) ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
-        const std::string font_path =
-            vsgraysim::gui::ViewportKit::resolveAssetPath("fonts/NotoSansCJKSC.ttf");
-        if (std::filesystem::exists(font_path)) {
-            io.Fonts->AddFontFromFileTTF(
-                font_path.c_str(), 17.0f, nullptr,
-                io.Fonts->GetGlyphRangesChineseFull());
-            spdlog::info("VsgQtWidget: ImGui 中文字体已加载 {}", font_path);
-        } else {
-            spdlog::warn("VsgQtWidget: 未找到 ImGui 中文字体 {}", font_path);
-        }
-        // 全局暗色主题 (与 Qt 暗色一致, 圆角/间距微调)。
-        ImGui::StyleColorsDark();
-        auto& st                  = ImGui::GetStyle();
-        st.WindowRounding         = 8.0f;
-        st.FrameRounding          = 5.0f;
-        st.GrabRounding           = 4.0f;
-        st.WindowBorderSize       = 1.0f;
-        st.WindowPadding          = {10.0f, 8.0f};
-        st.FramePadding           = {8.0f, 4.0f};
-        st.ItemSpacing            = {8.0f, 6.0f};
-        st.Colors[ImGuiCol_WindowBg] =
-            ImVec4(0.055f, 0.067f, 0.094f, 0.90f);
-        st.Colors[ImGuiCol_Border] =
-            ImVec4(0.35f, 0.43f, 0.55f, 0.45f);
-    }
-    imgui_ = vsgImGui::RenderImGui::create(window_);
-    if (imgui_) {
-        rg->addChild(imgui_);
+    if (imgui_enabled_) {
+        auto overlay=ViewportImGui::create(window_.get());
+        imgui_=overlay->renderer();
+        rg->addChild(overlay);
         spdlog::info("VsgQtWidget: ImGui overlay enabled");
-    } else {
-        spdlog::warn("VsgQtWidget: ImGui overlay unavailable");
-    }
     }
 
     // Options with vsgXchange readers (for asset loading).
@@ -509,7 +522,7 @@ void VsgQtWidget::addToOverlay(vsg::ref_ptr<vsg::Node> node) {
 
 void VsgQtWidget::addImGuiDraw(const std::function<bool()>& draw)
 {
-    auto render_imgui = dynamic_cast<vsgImGui::RenderImGui*>(imgui_.get());
+    auto* render_imgui = imgui_;
     if (!render_imgui || !draw) return;
     // 透传内层返回值: 回调失效时返回 false (老版本 RenderImGui 若支持
     // false 自动移除则顺势清退; 不支持则仅为每帧一次 bool 判断, 无害)。
@@ -587,6 +600,7 @@ bool VsgQtWidget::frame() {
         }
 
         viewer_->handleEvents();
+        emit beforeSceneRecord();
         viewer_->update();
         viewer_->recordAndSubmit();
         viewer_->present();

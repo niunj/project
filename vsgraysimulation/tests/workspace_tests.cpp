@@ -3,7 +3,7 @@
 #include "display/FlightPanel.h"
 #include "display/ConsoleSelector.h"
 #include "display/AircraftCockpitPanel.h"
-#include "display/TexturedCockpit.h"
+#include "display/PlatformInstruments.h"
 #include <QComboBox>
 #include "display/SensorPanels.h"
 #include "base/ThemeManager.h"

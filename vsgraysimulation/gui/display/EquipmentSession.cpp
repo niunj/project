@@ -20,7 +20,7 @@ bool EquipmentSession::bind(uint32_t id,const std::string& name) {
 }
 void EquipmentSession::unbind() {
     if(equipment_id_) SimDataBroker::instance().unsubscribe(equipment_id_);
-    radar_view_.reset();sar_view_.reset();ir_view_.reset();vis_view_.reset();
+    radar_view_.reset();sar_view_.reset();ir_view_.reset();vis_view_.reset();sonar_view_.reset();
     equipment_id_=0; binding_generation_=0; name_.clear(); frames_=0; last_frame_id_=0; last_sim_time_=0;
     has_frame_=false; connected_=false; active_=false; paused_=false; powered_=false;
     bound_remote_=false; expected_surface_.reset(); waiting_surface_=false;
@@ -116,6 +116,14 @@ void EquipmentSession::tick(std::optional<uint64_t> surface,bool surfaceReady,bo
     }
     case SensorType::VIS: {
         VisFrame frame; if(broker.latestVis(equipment_id_,&frame) && !frame.empty() && accepts(frame.surface_revision)) { noteFrame(frame.frame_id,frame.sim_time,frame.stage); vis_=std::move(frame); } break;
+    }
+    case SensorType::SONAR: {
+        const auto frame=broker.sonarSnapshot(equipment_id_);
+        if(frame&&accepts(frame->surface_revision)){
+            noteFrame(frame->frame_id,frame->sim_time,frame->stage);
+            sonar_view_=frame;
+        }
+        break;
     }
     case SensorType::LASER: break;
     }

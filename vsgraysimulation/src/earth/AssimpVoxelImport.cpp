@@ -1,6 +1,7 @@
 #include "AssimpVoxelImport.h"
 
 #include <assimp/Importer.hpp>
+#include <assimp/GltfMaterial.h>
 #include <assimp/material.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -12,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <stdexcept>
+#include <string_view>
 
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
@@ -65,7 +67,9 @@ struct Material {
     vsg::vec3 emission{};
     float metal = 0;
     float roughness = .65f;
-    vsg::ref_ptr<vsg::Data> albedo, normal, metallicRoughness;
+    vsg::ref_ptr<vsg::Data> albedo, normal, metallicRoughness, emissionMap;
+    bool blend = false;
+    float alphaCutoff = -1.f;
 };
 
 class MeshReader {
@@ -117,6 +121,18 @@ private:
         if (source.Get(AI_MATKEY_COLOR_EMISSIVE, emission) == AI_SUCCESS) {
             output.emission = {emission.r, emission.g, emission.b};
         }
+        aiString alphaMode;
+        if (source.Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS) {
+            const std::string_view mode = alphaMode.C_Str();
+            output.blend = mode == "BLEND";
+            if (mode == "MASK") {
+                output.alphaCutoff = .5f;
+                source.Get(AI_MATKEY_GLTF_ALPHACUTOFF, output.alphaCutoff);
+            }
+        } else {
+            source.Get(AI_MATKEY_OPACITY, output.diffuse.a);
+            output.blend = output.diffuse.a < 1.f;
+        }
         source.Get(AI_MATKEY_METALLIC_FACTOR, output.metal);
         float shine = 0;
         if (source.Get(AI_MATKEY_ROUGHNESS_FACTOR, output.roughness) != AI_SUCCESS &&
@@ -126,6 +142,9 @@ private:
         output.albedo = texture(source, aiTextureType_BASE_COLOR, VK_FORMAT_R8G8B8A8_SRGB);
         if (!output.albedo) output.albedo = texture(source, aiTextureType_DIFFUSE, VK_FORMAT_R8G8B8A8_SRGB);
         output.normal = texture(source, aiTextureType_NORMALS, VK_FORMAT_R8G8B8A8_UNORM);
+        output.emissionMap = texture(source, aiTextureType_EMISSIVE, VK_FORMAT_R8G8B8A8_SRGB);
+        if (!output.emissionMap)
+            output.emissionMap = texture(source, aiTextureType_EMISSION_COLOR, VK_FORMAT_R8G8B8A8_SRGB);
         // Assimp's glTF importer records the packed green/blue texture in UNKNOWN.
         output.metallicRoughness = texture(source, aiTextureType_UNKNOWN, VK_FORMAT_R8G8B8A8_UNORM);
         return output;
@@ -182,6 +201,9 @@ private:
         if (uv && material.albedo) draw->setObject("voxel.import.image", material.albedo);
         if (uv && material.normal) draw->setObject("voxel.import.normal_image", material.normal);
         if (uv && material.metallicRoughness) draw->setObject("voxel.import.mr_image", material.metallicRoughness);
+        if (uv && material.emissionMap) draw->setObject("voxel.import.emissive_image", material.emissionMap);
+        if (material.blend) draw->setValue("voxel.import.blend", true);
+        if (material.alphaCutoff >= 0.f) draw->setValue("voxel.import.alpha_cutoff", material.alphaCutoff);
         draw->setValue("voxel.import.diffuse", material.diffuse);
         draw->setValue("voxel.import.emissive", material.emission);
         draw->setValue("voxel.import.metallic", material.metal);
@@ -198,8 +220,8 @@ private:
 };
 }
 
-vsg::ref_ptr<vsg::Data> loadVoxelTexture(const std::string& path) {
-    return decodeTexture(path, nullptr, VK_FORMAT_R8G8B8A8_SRGB);
+vsg::ref_ptr<vsg::Data> loadVoxelTexture(const std::string& path, bool srgb) {
+    return decodeTexture(path, nullptr, srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM);
 }
 
 vsg::ref_ptr<vsg::Node> loadAssimpVoxelMesh(const std::string& path) {

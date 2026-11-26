@@ -1,4 +1,5 @@
 #include "SensorPanels.h"
+#include "SonarDisplayPanel.h"
 #include "PanelProcessing.h"
 #include "RadarTerrainMap.h"
 #include <QVariant>
@@ -520,6 +521,7 @@ ImageDisplayPanel::~ImageDisplayPanel()=default;
 std::unique_ptr<DisplayPanel> createPanelFor(SensorType type,QWidget* parent) {
     switch(type) {
     case SensorType::RADAR: return std::make_unique<RadarDisplayPanel>(parent);
+    case SensorType::SONAR: return std::make_unique<SonarDisplayPanel>(parent);
     case SensorType::IR: case SensorType::SAR: case SensorType::VIS: return std::make_unique<ImageDisplayPanel>(type,parent);
     case SensorType::LASER: return {};
     }

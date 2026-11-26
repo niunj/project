@@ -1,4 +1,5 @@
 #include "EquipmentViewProcesses.h"
+#include <vsgraysim/model_packages/SceneModelRegistry.h>
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QUuid>
@@ -13,7 +14,9 @@ bool EquipmentViewProcesses::open(const EquipmentInfo& equipment,const std::stri
     auto& view=views_[equipment.equipment_id];if(!view.path.isEmpty())QFile::remove(view.path);
     view.process=std::make_unique<QProcess>();view.equipment=equipment;view.scene=scene;view.report=nlohmann::json::object();
     view.path=directory_.path()+"/"+QUuid::createUuid().toString(QUuid::WithoutBraces)+".json";
-    QString mode=equipment.type==SensorType::RADAR?"radar":equipment.type==SensorType::IR?"infrared":equipment.type==SensorType::SAR?"sar":"optical";
+    QString mode=equipment.type==SensorType::RADAR?"radar":equipment.type==SensorType::IR?"infrared":equipment.type==SensorType::SAR?"sar":equipment.type==SensorType::SONAR?"sonar":"optical";
+    if(const auto* model=model_packages::equipmentModel(equipment.model_id))
+        mode=QString::fromLatin1(model->console.data(),qsizetype(model->console.size()));
     view.process->setProcessChannelMode(QProcess::ForwardedErrorChannel);
     auto* process=view.process.get();connect(process,&QProcess::readyReadStandardOutput,this,[process]{process->readAllStandardOutput();});
     process->start(QCoreApplication::applicationFilePath(),{"--equipment-view="+QString::number(equipment.equipment_id),"--workmode="+mode,"--view-state="+view.path,"--view-scene="+QString::fromStdString(scene),"--view-managed=1"});return true;

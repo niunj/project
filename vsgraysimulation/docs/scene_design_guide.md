@@ -1358,6 +1358,26 @@ CG-57稳性限制：均匀密度只配平名义水线，不能校准重心与横
 
 原场景设计器现有“体素地形与多波段属性”面板，可编辑地形工作区、导入目标并设置对象/局部体素的光学、红外及雷达参数。新 `.vsimscene` 清单与同名 `.data` 二进制资源目录共同交付正式仿真软件，旧专题仍兼容。格式、预算和大区域驻留边界见 [场景包说明](scene_package.md)。
 
+### 台北红外专题
+
+在场景设计器打开 `config/topics/taipei-thermal.vtopic.json`。新建地形时可勾选“按影像推定红外地表分类”，生成裸土/混合地面、林地、低植被、亮色建成区/矿物和推定水面五类。目标可按对象或局部体素设置 MWIR/LWIR 发射率，以及昼夜、湿润和工作热响应。局部热源支持启动时刻、工作时长和升温/冷却时间常数。保存 `.vsimscene` 可随场景发布这些参数。目标的对象级参数也可随 USD 编辑层往返。
+
+仿真主控打开发布包，沿用显控的装备链接流程订阅 7102（MWIR）和 7103（LWIR）。红外日照使用已有的 DSM 平滑法线，陡直断面保留几何朝向。原始 P0 的四个通道依次为带内辐亮度、模型表面温度（K）、发射率和距离（km）。显控自动拉伸适合观察细节，关闭后使用 265–335 K 黑体等效辐亮度窗，便于同一波段对照。显示处理保留原始数据。
+
+专题使用台北新影像与 DSM，地表类别、热参数和目标散热区均为估算。RGB 影像无法提供实测温度、材料光谱或被植被遮挡的地表细节。样例目标的热循环在数秒内完成，用于联调。地球测试程序可用 `--scene-thermal-capture <专题或场景包> <输出目录>` 生成 Vulkan 图像、原始 P0 和 `thermal-report.json`。
+
+### 显控平台操作台
+
+在大显控选择“平台操作台”，绑定在线平台后，顶部可在“Qt 动态仪表”和“三维座舱 / HUD”间切换。F-16C、AH-64D、A320 和 MQ-9 使用各自的 `config/cockpits` 配置。Qt 按配置绘制姿态、航向、仪表量程和操纵控件，缺失的指示空速、气压高度及发动机数据以空读数显示。MQ-9 的 EO/IR 窗口继续从现有设备链路取得图像。
+
+三维模式默认使用驾驶员眼点。F-16C 的 `photo_panel.mount: fighter` 使用项目自行建模的独立 Vulkan 座舱。显示器边框、按键、仪表外圈、侧台旋钮、右侧操纵杆和左侧油门为三维几何；干净版底图仍提供印字及部分面板细节。侧台区分喷漆、金属和橡胶表面；夜间压低屏幕发光，面板字标的背光与舱内照明分开。ImGui 仪表读取在线遥测，操纵杆和油门按实际执行器值运动，未提供的空速、气压高度和发动机数据保持空读数。
+
+左键可点双 MFD 下方前三个按键，切换 FLT、CTRL 和 ENG。主面板灯光区域的两个实体旋钮分别控制仪表照明和 HUD；右侧 ALT / HDG HOLD 开关需要先用工具栏取得当前平台的飞控租约。保持模式以当前速度、局部高度和航向建立设定；其开关位置取自仿真端回报。各照明档位和 MFD 页是本地显控设置。左侧新加 `LDG GEAR`、`POS` 和 `LDG`，分别连接仿真端的起落架、航行灯和着陆灯状态，同样需要已有飞控租约。起落架手柄命令确认后由仿真时间驱动 3 秒行程，暂停时不会移动。座舱区分收起、行程中与放下锁定；着陆灯仅在选择开启且起落架放下锁定时回报为点亮。这里是简化子系统，未改变地面接触、碰撞体或传感器；外部灯具投光、发动机和电气系统仍未建模。
+
+右键拖动可转头，F1 回正，滚轮调整视场。关闭 HUD 后仪表台和窗外场景继续显示；“外部跟随”切回机外观察。AH-64D、A320 仍使用原有面板，MQ-9 使用机载前视和地面控制台。EO/IR 图像仍在原 Qt 显控。若平台来自体素场景，本机外壳仅在当前驾驶员视口隐藏，体素快照、碰撞及传感器仍使用原数据。
+
+键盘、手柄和 Qt 操纵控件沿用原平台控制租约。舰船和地面车辆仍使用外部跟随，分别显示节和 km/h。
+
 ## 单云散射、自阴影、雾与时间重投影
 
 现有单云对象新增沿光路自阴影、三阶近似散射、可选附加雾及半分辨率积分/原尺寸时间重建。密度、风、物理体素与碰撞精度保持原实现。实现、实际地球程序对照、分辨率和性能边界见 [天气渲染说明](cloud_weather_rendering.md)。
@@ -1375,3 +1395,105 @@ CG-57稳性限制：均匀密度只配平名义水线，不能校准重心与横
 ### 军舰稳性与连续海面真实感
 
 当前军舰默认预设采用明确标注为假定的压载质量分布；连续海面材质、保持精度的水动力优化及原生实拍范围见 [军舰稳性与海面说明](ocean_stability_and_realism.md)。旧检查点保留其原质量属性，重新打开更新后的场景声明才采用新默认值。
+
+### 三维尾焰与烟尘
+
+F-16C 的机外视角在仿真上报较高的实际油门时显示尾焰，喷口按自带 OBJ 的几何位置校准。场景中其他飞机可为对象填写 `visual_jet_exhaust.nozzle_local_m` 来指定显示挂点，不使用 F-16 的挂点作为通用默认值。白色尾烟根据已有飞行位置采样；发射源结束后，已产生的烟仍会随场景风漂移、扩散及淡出。仿真预览对检测到的飞机存活状态变化播放一次闪光、火球和黑烟。粒子仅用于视口，既不生成物理事件，也不改变体素、碰撞或传感器数据。
+
+新版将视口粒子视为局部椭球体积：投影包围面仅限定着色范围，片元按视线与椭球的交点在内部采样。所有粒子复用一张 48³ 的周期三维扰动纹理，并按投影尺寸降低远处烟团采样数。烟与火分别积分消光和发光，烟的向阳衰减按局部密度近似；这套体积数据不进入场景的物理体素、传感器或检查点。
+
+同机位对照可用 `sim_earth_gui_tests --aviation-fx-capture <输出目录>`，通过 `legacy_effects` 对比旧版线框效果。测试用台北区域影像与 DEM，并使用纯视觉合成事件验证；统计的围栏帧耗时不含仿真步进。
+
+体素飞机发布断裂碎块后，视口从同一份仿真快照读取各块的位置、姿态和速度，在各碎块上持续绘制火焰。生成的烟脱离碎块后继续随风漂移。自定义飞机可在模型的 `source` 对象中填写 `"visual_burning_debris": true`。效果使用预设燃烧时长，红外传感器仍按现有材料温度计算。可运行 `sim_earth_gui_tests --aircraft-debris-capture <输出目录>`，查看台北场景的完整机体、空中断裂、翻滚和落地的原生截图，以及分别统计的渲染和物理耗时。
+
+三维航迹使用仿真时间和已发布的位置、速度。相邻观测点之间的曲线保留原始端点，并限制在两点的范围内。缺测或位置突变时从新位置另起一段。相机朝向变化时，航迹条带保持可见宽度，主要用于显示俯冲和垂直上升。持续尾烟沿已观测路径按距离采样，生成后随风漂移并逐渐扩散。体素专题中的自定义飞行模型可在其 `source` 对象中填写 `"visual_flight_trail": true`。运行 `sim_earth_gui_tests --aviation-fx-capture <输出目录>` 可得到使用同一批观测点绘制的直线、曲线原生截图和独立渲染计时。
+
+运行 `sim_earth_gui_tests --aviation-video-frames <输出目录>` 可按 24 帧/秒导出三段 720p 的 Vulkan PNG 连续帧，依次展示飞机尾焰、导弹模型的烟焰和火箭的尾焰烟柱。三段均使用台北新数据和固定 UTC，飞行路径用于画面演示，可从帧序列查看起焰、持续飞行、熄火和残留烟迹。
+
+### 直升机的体素旋翼
+
+运行 `python3 tools/prepare_ah64_voxel.py <场景目录>`，可从自带 AH-64 的原始三角网格生成带贴图的机身、主旋翼和尾旋翼，以及台北场景的低速和高速定义。物体的 `rotor_drive` 按机身局部坐标记录 `carrier`、`pivot_m`、`axis` 和有正负方向的 `rpm`，可选 `phase_deg`。旋翼网格以自身轴心为原点。固定步、分数时刻传感器采样及 Bullet 碰撞子步均按仿真时间计算旋翼相位。当前安装驱动适用于静止或规定运动的机身，受力飞行动力学和断轴脱落属于后续模型。
+
+运行 `sim_earth_gui_tests --ah64-rotor-capture <场景目录> <输出目录>` 可输出同机位原生 Vulkan 对照。高速视频以 60 帧/秒、1/240 秒快门采样。尾桨特写使用 1/500 秒快门，各自附有同一时刻的 1/40 秒长曝光对照。曝光由多个仿真时刻的原生帧合成，另提供瞬时画面。场景转速和轴心取自演示设置与资产几何。
+
+航迹动画可以给各个 `rotor_drive` 配置 `start_seconds` 和 `spin_up_seconds`，两者均以场景仿真秒计。旋翼由静止平滑加速到设置转速，角度按瞬时转速积分。渲染、碰撞、转速回报和挂点声音共享这一时间基准。
+
+运行 `python3 tools/prepare_cg57_deck_takeoff.py build/cg57-deck-takeoff/scene` 生成台北外海的 CG-57 甲板起飞主题，在现有场景入口打开生成的 `cg57-deck-takeoff.vtopic.json`。舰艇和 AH-64 使用 `models` 中的原始资产。14.4 秒的规定航迹包含停机、升速、离舰、悬停和侧向飞离，舰艇甲板及起落架位置以模型几何为准。用 `sim_earth_gui_tests --earth-deck-takeoff <主题文件> <输出目录>` 导出 6 张 Vulkan 截图和验收数据。设置 `VSGRAYSIM_DECK_TAKEOFF_FRAMES=1` 可同时导出 50 帧/秒的连续画面。
+
+### 平台动作预览
+
+`platform_motion_preview` 视口特性提供履带车辆、CG‑57 和 F‑16 三种独立演示。履带环和负重轮按同一段位移更新，军舰天线使用源文件拆出的网格。后坐、开盖、闪光和演示件离架由预览时间线控制，复用体积烟尘与尾焰渲染。履带车辆演示统一使用 M1A2 原模型，CG‑57 的甲板开盖件使用视觉演示件。
+
+舰艇资产先用 `python3 tools/earth/split_cg57_view.py <资产目录>` 拆分。用离线转换工具将目录中的 `hull.ac`、`antenna.ac` 分别导出为 `hull-split.obj`、`antenna-split.obj`，保留源坐标和贴图。可使用 `osgconv -O noRotation` 完成这一步。运行 `sim_earth_gui_tests --platform-motion-capture <M1A2 拆件目录> <CG-57 拆件目录> <输出目录>` 可导出三段原生 PNG 帧和各部件状态的验收数据。运行预览使用已有的模型加载和渲染组件。
+
+M1A2 专用预览使用 `python3 tools/prepare_m1a2_motion.py <资产目录>` 拆出原模型的炮塔、炮管和 18 个轮件，保留原始贴图、UV 和法线。负重轮按网格半径转动，移动的履齿沿原始履带网格提取的带面轮廓循环。运行 `sim_earth_gui_tests --m1a2-motion-capture <资产目录> <输出目录>` 可查看行驶、炮筒回缩和停车的原生帧。可通过 `platform_motion_preview` 的 `tank_assets` 指定生成的资产目录。
+
+视觉参考：[DVIDS 的 F-16 加力实拍](https://www.dvidshub.net/image/9900718/thunderbird-knifes-vertical-afterburner-lit-climb)、[NASA 探空火箭飞行影像](https://svs.gsfc.nasa.gov/13932)、[NASA B-720 受控撞击照片](https://www.nasa.gov/gallery/b-720-controlled-impact-demonstration-cid/)。仅参考可见外观，不把试验画面或数据作为燃烧、推进或毁伤模型。
+
+### 型号动画、座舱信号与体素快照
+
+- `gui/platform_animation` 是纯 C++ 模块。型号动画类以场景时刻和平台状态采样部件姿态、挂点特效，型号在 `PlatformAnimation.cpp` 登记。F-16C 还有座舱型号类，定义座舱硬件的动作曲线和点击对应的信号。
+- `gui/viewport3d` 绑定 VSG 节点并绘制模型。可用 `model_id` 选择型号曲线，用 `parts_manifest` 绑定其他模型。绑定文件含 `version: 1`、`body`、`joints`、`attachments`。关节按父节点在前排列，字段为 `name`、可选 `parent`、`pivot_m`、可选 `mesh`。挂点字段为 `name`、可选 `joint`、`position_m`。坐标采用米、Y 向上，各网格和枢轴使用同一绑定姿态坐标。空父节点表示车体根节点，网格路径相对绑定文件。现有 M1A2 履带和轮组继续用 `tank_assets`。
+- `CockpitControlSignals` 把型号座舱的系统动作转发给公共飞控通路，由已有租约、平台能力、仿真回报处理控制状态。灯光和舵面动画可以随正式遥测更新。
+- 尾烟按平台实例和挂点提交，型号可指定色调预设、烟雾不透明度、寿命及扩散，统一由现有 GPU 粒子路径绘制。体素碎块和天气输入由视口适配器从快照转换。装配、启动、碰撞和传感器以原有体素场景及仿真状态为准。
+- 重新运行 M1A2 拆件脚本可生成独立炮塔与炮管。地球测试程序的 `--m1a2-motion-capture` 会核对两侧炮塔角度、炮管俯仰、回缩复位及 18 个轮件。
+
+### 正式 M1A2 状态联调
+
+生成原模型部件后，在仿真主控打开 `config/topics/taipei-m1a2-motion.vtopic.json`。
+
+```bash
+python3 tools/prepare_m1a2_motion.py build/platform-motion-assets/m1a2
+```
+
+显控连接台北观察相机，再在「地球态势」中选择 M1A2。可调整显示姿态并查看后台确认的修订号、横向角、俯仰角与履带行程。暂停时可设置显示姿态，履带行程从正式世界步的车体位移求得。两端视口采用同一快照的 tick、体素内容修订和显示姿态数据。关节属于显示层，碰撞与传感器仍以原有体素体为准。模型发生结构变化时，视口恢复显示正式体素几何。
+
+配置中 `m1a2_display_rig` 为相对主题文件的拆件目录。正式场景配置的 AH-64 转子和舰艇由已有世界状态产生转速、相位、航速及姿态遥测。F-16C 使用现有飞控通路。
+
+用 `python3 tools/prepare_display_vehicle.py build/platform-motion-assets/display-vehicle` 转换车辆贴图后，`sim_earth_gui_tests --vehicle-effects-capture <输出目录>` 在台北新数据视口显示车辆烟尘和短程体素道具动画。该演示按视口时间轴驱动。
+
+分开验收控制回报与 Vulkan 画面时，可先保存后台确认的四帧状态，再用地球测试程序逐帧读回。保存的描述符引用同一份体素几何。
+
+```bash
+QT_QPA_PLATFORM=offscreen build/source-refresh/gui/sim_earth_gui_tests \
+  --formal-platform-motion-broker build/source-refresh/app/vsgraysim_sim_control \
+  config/topics/taipei-m1a2-motion.vtopic.json build/formal-platform-motion/recorded-broker
+
+QT_QPA_PLATFORM=xcb build/source-refresh/gui/sim_earth_gui_tests \
+  --published-platform-motion-capture build/formal-platform-motion/recorded-broker \
+  build/formal-platform-motion/recorded-vulkan
+```
+
+### 平台运动与海浪、阵风
+
+按航线运动的体素对象可在 `pose_track` 旁设置 `"motion_response": "waves"` 或 `"motion_response": "gusts"`。船体从同一海浪谱采样船底四点的波高，经短时平滑产生升沉、横摇和纵摇。应将基准吃水写入航线。动态船体由现有浮力和水阻积分求解。飞机的阵风以场景天气的风向、风速和降水为输入，根据平台经过的位置和仿真时刻计算。显示、碰撞和传感器共用带响应的刚体位姿。装配的部件也随载体运动。
+
+水下轴件可在 `rotor_drive` 中设置 `"water_jet": true`。轴心浸没且转动时，桨后出现连续的透明旋流。渲染器根据轴转速历史估算排水距离，并叠加载体相对海流的位移。旋流离桨后扩散、减弱，颜色沿用水深和光照参数。尾流系数用于显示近似。
+
+设置 `"motion_response": "waves"` 的船体，迎流侧肩部压入水面时会发出短时浪花。发射点用当前体素船体轮廓和波面求交，发射强度随船体和水沿波面法线的相对速度变化。浪花沿船体外侧扩散，并随水面运动淡出。设置 `VSGRAYSIM_CAPTURE_WITHOUT_HULL_SPRAY=1` 可在地球测试程序中拍摄只关闭这层浪花的对照，保留同航线的船体摇摆和原有泡沫。
+
+海洋专题复用场景声音系统。打开显控「地球态势」的「音效」，或在地球海洋演示中按 M，可听到随风速、浪高、距离和地形遮挡变化的海面声。船舷浪花的拍水声取自同一波面接触事件，根据声源到听者的距离延迟播放。相机或声压测点进入水下后，播放水下环境声，按 1 µPa 显示声压级。空气声压级继续按 20 µPa 显示。海洋声频谱和传播参数为演示估算设置。
+
+船舶使用水上发动机声和船体入水声两条声路，音高和强度按相对水速与海况估算。带 `water_jet` 的潜艇螺旋桨直接以转轴作为声源，用仿真 RPM 驱动周期和强度。水面附近约 1.25 m 的过渡带随局部波面移动，逐步混合空气、水中声路并降低空气声高频。距离、传播时延和遮挡由原有声学链路处理。
+
+```bash
+python3 tools/prepare_sonar_crossing.py --marine-audio build/marine-audio-dive/topic
+QT_QPA_PLATFORM=xcb build/source-refresh/gui/sim_earth_gui_tests \
+  --earth-marine-audio build/marine-audio-dive/topic/taipei-marine-audio.vtopic.json \
+  build/marine-audio-dive/capture
+```
+
+这条航线从船边穿过波面至潜艇桨后。输出每秒 25 张 Vulkan 帧和同钟采样的 48 kHz 立体声 PCM，以及各时刻的水下混合比例、转速与声路距离。
+
+用以下命令生成同航线、同 UTC 的开关对照专题，并在原生 Vulkan 地球视口拍摄。
+
+```bash
+python3 tools/prepare_environment_motion.py build/environment-motion/topics
+python3 tools/prepare_sonar_crossing.py --diesel build/open-submarine/scene
+QT_QPA_PLATFORM=xcb build/source-refresh/gui/sim_earth_gui_tests \
+  --earth-environment-motion build/environment-motion/topics/ship-response.vtopic.json \
+  build/environment-motion/ship-response
+QT_QPA_PLATFORM=xcb build/source-refresh/gui/sim_earth_gui_tests \
+  --earth-diesel-propeller build/open-submarine/scene/taipei-diesel-submarine.vtopic.json \
+  build/environment-motion/propeller
+```

@@ -1,12 +1,15 @@
 {
   "schema": "vsgraysim.cockpit",
   "version": 1,
+  "layout": "vector-flow",
+  "photo_panel": {
+    "background": "../../assets/cockpit/a320/panel-base.png",
+    "grips": "../../assets/cockpit/a320/control-grips.png"
+  },
   "id": "a320",
   "name": "A320 · 客机显控台",
   "category": "airliner",
   "description": "左座侧杆 / 中央双发推力外观 · PFD / ND / 发动机 / 系统屏",
-  "background": "../../assets/cockpit/a320/panel-base.png",
-  "grips": "../../assets/cockpit/a320/control-grips.png",
   "engine_count": 2,
   "controls": {
     "stick": [

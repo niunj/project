@@ -17,7 +17,8 @@ template <class F> double timed(F work) {
 int main(int argc, char **argv) try {
     if (argc < 3)
         throw std::invalid_argument(
-            "scene_package inspect PACKAGE | pack TOPIC OUTPUT | benchmark TOPIC OUTPUT");
+            "scene_package inspect PACKAGE | checkpoint PACKAGE | read-terrain PACKAGE X0 Z0 X1 Z1 | "
+            "pack TOPIC OUTPUT [--terrain-pages] | benchmark TOPIC OUTPUT [--terrain-pages]");
     const std::string mode = argv[1];
     if (mode == "inspect") {
         if (argc != 3)
@@ -25,9 +26,31 @@ int main(int argc, char **argv) try {
         std::cout << VoxelScenePackage::inspect(argv[2]).dump(2) << '\n';
         return 0;
     }
-    if (argc != 4 || (mode != "pack" && mode != "benchmark"))
+    if (mode == "checkpoint" && argc == 3) {
+        std::cout << VoxelScenePackage::checkpoint(argv[2]).dump() << '\n';
+        return 0;
+    }
+    if (mode == "read-terrain" && argc == 7) {
+        const std::array<double, 4> bounds{std::stod(argv[3]), std::stod(argv[4]), std::stod(argv[5]), std::stod(argv[6])};
+        json pages;
+        const auto elapsed = timed([&] { pages = VoxelScenePackage::terrainPagesAsync(argv[2], bounds).get(); });
+        const auto manifest = VoxelScenePackage::inspect(argv[2]);
+        uint64_t stored = 0;
+        for (auto& page : pages) {
+            const auto& entry = manifest.at("terrain_pages").at(page.at("patch").get<std::string>());
+            const auto& hash = entry.at("pages").at(page.at("page").get<size_t>()).get_ref<const std::string&>();
+            stored += manifest.at("assets").at(hash).at("stored_bytes").get<uint64_t>();
+            page.erase("data");
+        }
+        std::cout << json{{"pages", std::move(pages)}, {"stored_bytes_read", stored},
+            {"worker_request_wall_ms", elapsed}}.dump(2) << '\n';
+        return 0;
+    }
+    const bool paged = argc == 5 && std::string(argv[4]) == "--terrain-pages";
+    if ((argc != 4 && !paged) || (mode != "pack" && mode != "benchmark"))
         throw std::invalid_argument("pack/benchmark require TOPIC and OUTPUT.vsimscene");
-    const auto project = VoxelSceneProject::open(argv[2]);
+    auto project = VoxelSceneProject::open(argv[2]);
+    if (paged) project.document["terrain_paging"] = "quad-v1";
     std::unique_ptr<VoxelScene> scene;
     const auto prepareMs = timed([&] { scene = project.createScene(); });
     const auto state = scene->checkpoint();

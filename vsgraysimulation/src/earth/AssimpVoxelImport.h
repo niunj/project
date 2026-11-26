@@ -7,5 +7,5 @@
 
 namespace vsgraysim::earth {
 vsg::ref_ptr<vsg::Node> loadAssimpVoxelMesh(const std::string& path);
-vsg::ref_ptr<vsg::Data> loadVoxelTexture(const std::string& path);
+vsg::ref_ptr<vsg::Data> loadVoxelTexture(const std::string& path, bool srgb = true);
 }

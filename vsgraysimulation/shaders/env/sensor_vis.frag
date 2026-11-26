@@ -330,9 +330,9 @@ void main() {
     const vec3 direction=path/max(distance,1.0e-6);
     vec3 normal=normalize(cross(dFdx(vWorld),dFdy(vWorld)));
     if(dot(normal,direction)>0.0)normal=-normal;
-    const bool hasMaterial=vMaterial*2u+1u<materials.length();
-    const vec4 specA=hasMaterial?materials[vMaterial*2u]:vec4(max(1.0-vProps.y,0.0),0,0,0);
-    const vec4 specB=hasMaterial?materials[vMaterial*2u+1u]:vec4(0,.5,0,0);
+    const bool hasMaterial=vMaterial*4u+1u<materials.length();
+    const vec4 specA=hasMaterial?materials[vMaterial*4u]:vec4(max(1.0-vProps.y,0.0),0,0,0);
+    const vec4 specB=hasMaterial?materials[vMaterial*4u+1u]:vec4(0,.5,0,0);
     vec3 albedo=vec3(clamp(specA.x>=0.0?specA.x:1.0-vProps.y,0.0,1.0));
     if(vSlot>0u&&vSlot<texSlots.length()){
         const vec4 kd=texSlots[vSlot];

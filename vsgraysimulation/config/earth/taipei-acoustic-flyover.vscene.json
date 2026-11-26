@@ -1,0 +1,128 @@
+{
+  "format": "voxel-scene-v1",
+  "fixed_step_seconds": 0.02,
+  "geo_anchor": {
+    "lat": 25.063,
+    "lon": 121.56,
+    "alt": 30.80966
+  },
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 26,
+    "hours_utc": 4.0
+  },
+  "objects": [
+    {
+      "id": "taipei-terrain",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "taipei-region.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -2000,
+            "max_x": 2000,
+            "min_z": -2000,
+            "max_z": 2000
+          },
+          "grid_size": 161,
+          "imagery_size": 1024,
+          "strict": true
+        },
+        "cell_size_m": 32,
+        "bottom_m": -150,
+        "mode": "hd",
+        "hd_subdivisions": 2
+      }
+    },
+    {
+      "id": "test-screen",
+      "role": "structure",
+      "source": {
+        "type": "box",
+        "dimensions": [
+          1,
+          8,
+          20
+        ],
+        "cell_size_m": 2,
+        "origin_m": [
+          20,
+          -1,
+          -20
+        ]
+      },
+      "physics": {
+        "motion": "static"
+      },
+      "material": {
+        "color_rgba": [
+          0.35,
+          0.4,
+          0.43,
+          1
+        ]
+      }
+    },
+    {
+      "id": "speaker",
+      "role": "target",
+      "source": {
+        "type": "box",
+        "dimensions": [
+          2,
+          5,
+          2
+        ],
+        "cell_size_m": 0.35,
+        "origin_m": [
+          -0.35,
+          4.3,
+          -0.35
+        ]
+      },
+      "physics": {
+        "motion": "static"
+      },
+      "material": {
+        "color_rgba": [
+          0.86,
+          0.62,
+          0.2,
+          1
+        ]
+      }
+    },
+    {
+      "id": "flyover",
+      "role": "target",
+      "position_m": [
+        -120,
+        70,
+        20
+      ],
+      "velocity_mps": [
+        20,
+        0,
+        0
+      ],
+      "rotation_deg": [
+        0,
+        -90,
+        0
+      ],
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/SkywalkerX8/x8_body.dae",
+        "voxel_size_m": 0.021,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      }
+    }
+  ]
+}

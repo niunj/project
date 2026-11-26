@@ -14,7 +14,7 @@ find_program(_usd_ninja ninja REQUIRED)
 
 set(USD_ROOT "${CMAKE_BINARY_DIR}/third_party/install/openusd")
 set(_usd_build "${CMAKE_BINARY_DIR}/third_party/openusd")
-set(_usd_component_names usd usdGeom sdf tf gf vt)
+set(_usd_component_names usd usdGeom usdShade sdf tf gf vt)
 file(MAKE_DIRECTORY "${USD_ROOT}/include")
 set(_usd_byproducts)
 foreach(_component IN LISTS _usd_component_names)

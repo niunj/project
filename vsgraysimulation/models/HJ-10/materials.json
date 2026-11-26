@@ -1,0 +1,160 @@
+{
+  "wavelengthUnit": "um",
+  "materials": [
+    {
+      "id": 0,
+      "name": "涂层弹体与翼面（等效表面）",
+      "code": "coated_shell_and_fins",
+      "spectrum": {
+        "wavelengths": [
+          0.38,
+          0.55,
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          8.0,
+          10.0,
+          12.0,
+          14.0,
+          20.0
+        ],
+        "emissivities": [
+          0.9,
+          0.9,
+          0.9,
+          0.9,
+          0.9,
+          0.9,
+          0.9,
+          0.9,
+          0.9,
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "optical": {
+        "solarAbsorptivity": 0.6
+      },
+      "description": "可见光模型的涂装壳体及翼面；黑色色带、标识和铆钉不误判为裸金属。",
+      "parameterEvidence": {
+        "status": "generic engineering estimate; NOT measured HJ-10 properties",
+        "spectrumModel": "gray equivalent, constant emissivity; not a measured spectral curve",
+        "uncertainty": "surface finish, coating and oxidation unknown; use only for visual simulation",
+        "visibleBandCaveat": "0.38-2 um entries only extend the renderer LUT; not measured visible optical constants",
+        "sources": [
+          "https://www.nasa.gov/smallsat-institute/sst-soa/thermal-control/",
+          "https://ntrs.nasa.gov/citations/20230013900"
+        ]
+      }
+    },
+    {
+      "id": 1,
+      "name": "前端罩体（等效涂层表面）",
+      "code": "effective_front_cover",
+      "spectrum": {
+        "wavelengths": [
+          0.38,
+          0.55,
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          8.0,
+          10.0,
+          12.0,
+          14.0,
+          20.0
+        ],
+        "emissivities": [
+          0.88,
+          0.88,
+          0.88,
+          0.88,
+          0.88,
+          0.88,
+          0.88,
+          0.88,
+          0.88,
+          0.88,
+          0.88,
+          0.88
+        ]
+      },
+      "optical": {
+        "solarAbsorptivity": 0.55
+      },
+      "description": "依据几何端罩位置分区；未取得真实基材/窗口光谱，不认定为特定光学材料。",
+      "parameterEvidence": {
+        "status": "generic engineering estimate; NOT measured HJ-10 properties",
+        "spectrumModel": "gray equivalent, constant emissivity; not a measured spectral curve",
+        "uncertainty": "surface finish, coating and oxidation unknown; use only for visual simulation",
+        "visibleBandCaveat": "0.38-2 um entries only extend the renderer LUT; not measured visible optical constants",
+        "sources": [
+          "https://www.nasa.gov/smallsat-institute/sst-soa/thermal-control/",
+          "https://ntrs.nasa.gov/citations/20230013900"
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "尾端耐热表面（等效氧化金属）",
+      "code": "effective_aft_heat_resistant_surface",
+      "spectrum": {
+        "wavelengths": [
+          0.38,
+          0.55,
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          8.0,
+          10.0,
+          12.0,
+          14.0,
+          20.0
+        ],
+        "emissivities": [
+          0.85,
+          0.85,
+          0.85,
+          0.85,
+          0.85,
+          0.85,
+          0.85,
+          0.85,
+          0.85,
+          0.85,
+          0.85,
+          0.85
+        ]
+      },
+      "optical": {
+        "solarAbsorptivity": 0.7
+      },
+      "description": "尾端环面和喷口近口表面；仅作通用耐热表面类比，不代表型号实测材料。",
+      "parameterEvidence": {
+        "status": "generic engineering estimate; NOT measured HJ-10 properties",
+        "spectrumModel": "gray equivalent, constant emissivity; not a measured spectral curve",
+        "uncertainty": "surface finish, coating and oxidation unknown; use only for visual simulation",
+        "visibleBandCaveat": "0.38-2 um entries only extend the renderer LUT; not measured visible optical constants",
+        "sources": [
+          "https://www.sandia.gov/research/publications/details/total-hemispherical-emissivity-of-metals-applicable-to-radiant-heat-testing-2018-11-01/"
+        ]
+      }
+    }
+  ],
+  "model": "HJ-10",
+  "purpose": "uncalibrated visual flight surface field",
+  "temperatureUnitInMcm": "K",
+  "ambientTemperatureC": 20.0,
+  "limitations": [
+    "不是实测温度/光谱，也不是CFD或武器性能模型。",
+    "尾焰/喷流不包含在表面MCM中。",
+    "光谱为明确标注的灰体等效，不将总发射率伪装成测量光谱。"
+  ]
+}

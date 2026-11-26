@@ -19,6 +19,8 @@ struct VoxelSurfaceAppearance {
     std::map<uint64_t,uint32_t> faceTiles;
     struct Corner {vsg::dvec3 position;vsg::vec3 normal;};
     std::map<uint64_t,Corner> corners;
+    // MR alpha is available in existing checkpoints. Zero marks a blend tile,
+    // while legacy atlases and opaque tiles use 255.
     std::vector<uint8_t> normal_rgba,mr_rgba,emissive_rgba;
     // Exact source triangles clipped to their owning occupied cell. Immutable
     // source-chart ownership survives cropped fracture volumes/checkpoints.

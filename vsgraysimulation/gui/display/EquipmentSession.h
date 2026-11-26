@@ -75,6 +75,7 @@ public:
     std::shared_ptr<const SarFrame> sarSnapshot()const{return sar_view_;}
     std::shared_ptr<const IrFrame> irSnapshot()const{return ir_view_;}
     std::shared_ptr<const VisFrame> visSnapshot()const{return vis_view_;}
+    std::shared_ptr<const SonarFrame> sonarSnapshot()const{return sonar_view_;}
 
     // ---- 雷达 GPU 驻留路径 (零拷贝) ----
     /// 最近雷达帧数据是否驻留 GPU (rd_map 为空, 本体经 radarGpuHandle() 消费)
@@ -104,6 +105,7 @@ private:
     std::shared_ptr<const SarFrame> sar_view_;
     std::shared_ptr<const IrFrame> ir_view_;
     std::shared_ptr<const VisFrame> vis_view_;
+    std::shared_ptr<const SonarFrame> sonar_view_;
     RadarFrame  radar_;       ///< 最近雷达帧 (如适用; GPU 路径下仅元数据)
     IrFrame     ir_;          ///< 最近红外帧
     SarFrame    sar_;         ///< 最近 SAR 帧

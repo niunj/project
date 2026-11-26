@@ -1,0 +1,31 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北地表与设备舱红外验收",
+  "scene": "../earth/taipei-thermal.vscene.json",
+  "earth_map": "../earth/default.map.json",
+  "sky": {
+    "show_atmosphere": true,
+    "time_scale": 1,
+    "visibility": 30000
+  },
+  "clouds": {
+    "cover": 0,
+    "volume": true,
+    "cumulus_count": 0
+  },
+  "camera": {
+    "eye_m": [
+      4,
+      491,
+      5
+    ],
+    "target_m": [
+      -16,
+      477.7,
+      -16
+    ]
+  },
+  "paused": false,
+  "equipment": "../equipment/taipei-thermal.vequipment.json",
+  "terrain_paging": "quad-v1"
+}

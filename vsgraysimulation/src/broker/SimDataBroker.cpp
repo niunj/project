@@ -131,6 +131,37 @@ std::shared_ptr<const SarFrame> SimDataBroker::sarSnapshot(uint32_t id) const {s
 std::shared_ptr<const IrFrame> SimDataBroker::irSnapshot(uint32_t id) const {std::lock_guard lock(mtx_);auto it=channels_.find(id);return it==channels_.end()?nullptr:it->second.ir_host;}
 std::shared_ptr<const VisFrame> SimDataBroker::visSnapshot(uint32_t id) const {std::lock_guard lock(mtx_);auto it=channels_.find(id);return it==channels_.end()?nullptr:it->second.vis_host;}
 
+std::shared_ptr<const SonarFrame> SimDataBroker::sonarSnapshot(uint32_t id) const {
+    std::lock_guard lock(mtx_);
+    const auto it=channels_.find(id);
+    return it==channels_.end()?nullptr:it->second.sonar_host;
+}
+
+void SimDataBroker::setSonarTap(std::function<void(const SonarFrame&)> tap) {
+    std::lock_guard lock(mtx_);
+    sonar_tap_=std::move(tap);
+}
+
+bool SimDataBroker::publishSonar(const SonarFrame& frame) {
+    if(!frame.valid())return false;
+    std::function<void(const SonarFrame&)> tap;
+    {
+        std::lock_guard lock(mtx_);
+        if(!server_online_)return false;
+        const auto info=EquipmentRegistry::instance().findById(frame.sensor_id);
+        if(!info||info->type!=SensorType::SONAR||info->platform_id!=frame.platform_id)return false;
+        auto& channel=getChannel(frame.sensor_id);
+        if(!channel.stats.powered||!info->powered||
+           (channel.sonar_host&&channel.sonar_host->frame_id>=frame.frame_id))return false;
+        channel.sonar_host=std::make_shared<const SonarFrame>(frame);
+        channel.stats.last_frame_id=frame.frame_id;
+        ++channel.stats.published_frames;
+        tap=sonar_tap_;
+    }
+    if(tap)tap(frame);
+    return true;
+}
+
 bool SimDataBroker::publishRadar(const RadarFrame& frame)
 {
     if (frame.empty() || frame.rd_map.size() != size_t(frame.range_bins) * frame.doppler_bins) return false;

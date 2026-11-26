@@ -1,6 +1,6 @@
 // Shared production wave/optical field. CPU stores the identical immutable
 // harmonic table; phases are never advanced by renderer wall-clock time.
-layout(set=0,binding=0) uniform Ocean {vec4 p[796];} ocean;
+layout(set=0,binding=0) uniform Ocean {vec4 p[824];} ocean;
 layout(set=0,binding=4) uniform sampler2D meanSeaMap;
 vec3 oceanMean(vec2 xz){if(ocean.p[128].x<2.)return vec3(ocean.p[0].y,0,0);vec2 raw=(xz-ocean.p[127].xy)/ocean.p[127].zw;vec2 uv=clamp(raw,vec2(0),vec2(ocean.p[128].x-1.));ivec2 ij=min(ivec2(floor(uv)),ivec2(int(ocean.p[128].x)-2));vec2 f=uv-vec2(ij);float a=texelFetch(meanSeaMap,ij,0).r,b=texelFetch(meanSeaMap,ij+ivec2(1,0),0).r,c=texelFetch(meanSeaMap,ij+ivec2(0,1),0).r,d=texelFetch(meanSeaMap,ij+ivec2(1,1),0).r;return vec3(ocean.p[0].y+mix(mix(a,b,f.x),mix(c,d,f.x),f.y),(raw.x<0.||raw.x>ocean.p[128].x-1.)?0.:mix(b-a,d-c,f.y)/ocean.p[127].z,(raw.y<0.||raw.y>ocean.p[128].x-1.)?0.:mix(c-a,d-b,f.x)/ocean.p[127].w);}
 // height, d(height)/dx, d(height)/dz, decaying aerated-wake coverage.

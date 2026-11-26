@@ -127,7 +127,7 @@ std::shared_ptr<const VoxelOcean> VoxelOcean::load(const nlohmann::json& j,const
     o->linearDrag=number(j,"linear_drag_mps",.2,0,5);
     if(j.contains("sea_fog")){const auto& fog=j.at("sea_fog");if(!fog.is_object())throw std::invalid_argument("sea_fog must be an object");for(const auto& a:fog.items())if(a.key()!="visibility_m"&&a.key()!="height_m")throw std::invalid_argument("unknown sea_fog field");o->fogVisibility=number(fog,"visibility_m",0,0,200000);if(o->fogVisibility>0&&o->fogVisibility<50)throw std::invalid_argument("marine visibility must be zero or >=50m");o->fogHeight=number(fog,"height_m",45,1,1000);}
     if(j.contains("foam")){const auto& events=j.at("foam");if(!events.is_array()||events.size()>maximumFoam)throw std::invalid_argument("invalid ocean foam table");for(const auto& e:events){OceanFoam p;p.x=number(e,"x",0,-o->halfExtent,o->halfExtent);p.z=number(e,"z",0,-o->halfExtent,o->halfExtent);p.birth=number(e,"birth_s",0,0,1e12);p.length=number(e,"length_m",1,.05,1000);p.width=number(e,"width_m",1,.05,100);p.dirX=number(e,"direction_x",0,-1,1);p.dirZ=number(e,"direction_z",-1,-1,1);if(std::abs(p.dirX*p.dirX+p.dirZ*p.dirZ-1)>1e-5)throw std::invalid_argument("foam direction must be normalized");p.strength=number(e,"strength",0,0,1);p.lifetime=number(e,"lifetime_s",24,.1,60);p.seed=uint32_t(number(e,"seed",0,0,4294967295.));o->foam.push_back(p);}}
-    if(j.contains("splashes")){const auto& events=j.at("splashes");if(!events.is_array()||events.size()>maximumSplashes)throw std::invalid_argument("invalid ocean splash table");for(const auto& e:events){OceanSplash p;p.x=number(e,"x",0,-o->halfExtent,o->halfExtent);p.z=number(e,"z",0,-o->halfExtent,o->halfExtent);p.birth=number(e,"birth_s",0,0,1e12);p.height=number(e,"height_m",0,-20000,20000);p.speed=number(e,"speed_mps",0,0,20);p.radius=number(e,"radius_m",1,.05,20);p.lifetime=number(e,"lifetime_s",2,.1,6);p.seed=uint32_t(number(e,"seed",0,0,4294967295.));o->splashes.push_back(p);}}
+    if(j.contains("splashes")){const auto& events=j.at("splashes");if(!events.is_array()||events.size()>maximumSplashes)throw std::invalid_argument("invalid ocean splash table");for(const auto& e:events){OceanSplash p;p.x=number(e,"x",0,-o->halfExtent,o->halfExtent);p.z=number(e,"z",0,-o->halfExtent,o->halfExtent);p.birth=number(e,"birth_s",0,0,1e12);p.height=number(e,"height_m",0,-20000,20000);p.speed=number(e,"speed_mps",0,0,20);p.radius=number(e,"radius_m",1,.05,20);p.lifetime=number(e,"lifetime_s",2,.1,6);p.seed=uint32_t(number(e,"seed",0,0,4294967295.));p.drift=vector(e,"drift_mps",{},-60.,60.);o->splashes.push_back(p);}}
 
     if(!o->provenance.is_object())throw std::invalid_argument("ocean provenance must be an object");
     if(j.contains("reference_surface")){
@@ -171,12 +171,101 @@ void VoxelOcean::refreshBounds(){
     for(const auto& w:wakes){amplitudeBound+=w.amplitude;curvatureBound+=wakeCurvature(w,0);slopeBound+=w.amplitude*(w.k+1/w.width);minimumWavelength=std::min(minimumWavelength,6.283185307179586/w.k);}
     integrationSpan=std::min(2.,std::sqrt(.005/std::max(1e-12,curvatureBound)));
 }
-OceanSurfaceSample VoxelOcean::surface(double x,double z,double t)const{
+OceanSurfaceSample VoxelOcean::surface(double x,double z,double t,bool includeWakes)const{
     if(!std::isfinite(x)||!std::isfinite(z)||!std::isfinite(t))throw std::invalid_argument("nonfinite ocean surface query");
     const auto mean=meanSurface(x,z);OceanSurfaceSample s;s.height=mean.x;vsg::dvec3 gradient(mean.y,0,mean.z);
     for(const auto& h:harmonics){const double phase=h.k*(h.dx*x+h.dz*z)-h.omega*t+h.phase;const double sine=std::sin(phase);s.height+=h.amplitude*std::cos(phase);gradient.x-=h.k*h.amplitude*h.dx*sine;gradient.z-=h.k*h.amplitude*h.dz*sine;}
-    for(const auto& w:wakes){const auto q=wakeField(w,current,x,z,t);s.height+=q.height;gradient+=q.gradient;}
+    if(includeWakes)for(const auto& w:wakes){const auto q=wakeField(w,current,x,z,t);s.height+=q.height;gradient+=q.gradient;}
     s.normal=vsg::normalize(vsg::dvec3(-gradient.x,1,-gradient.z));return s;
+}
+std::vector<OceanPropellerJet> oceanPropellerJets(const VoxelSceneSnapshot& scene){
+    std::vector<OceanPropellerJet> result;
+    if(!scene.ocean)return result;
+    const auto& water=*scene.ocean;
+    const double time=scene.timeSeconds();
+    for(const auto& [id,part]:scene.objects){
+        if(!part.rotor||!part.rotor->waterJet||!part.volume||!part.volume->occupiedCount())continue;
+        const auto& drive=*part.rotor;
+        const double spin=drive.rpmAt(time)*vsg::PI/30.;
+        if(std::abs(spin)<.01)continue;
+        const auto pose=part.pose(scene.tick,scene.fixedStep);
+        const auto hub=pose*vsg::dvec3{};
+        if(water.densityAt(hub,time)<=0.)continue;
+        const auto axis=pose*vsg::dvec4(drive.axis,0.);
+        const auto bounds=part.localBounds();
+        const double radius=.5*std::max(bounds.max.y-bounds.min.y,bounds.max.z-bounds.min.z);
+        const vsg::dvec3 aft{-axis.x,-axis.y,-axis.z};
+        const double age=std::clamp(time-drive.startSeconds,0.,3.2);
+        const double speed=std::clamp(.21*std::abs(spin)*radius,0.,8.);
+        const double birth=time-age;
+        const double rampEnd=std::clamp(drive.startSeconds+drive.spinUpSeconds,birth,time);
+        // RPM is cubic during spin-up and then constant. Integrate it before phase wrapping.
+        const double ramp=(rampEnd-birth)/6.*(drive.rpmAt(birth)+4.*drive.rpmAt((birth+rampEnd)*.5)+drive.rpmAt(rampEnd));
+        const double revolutions=(ramp+(time-rampEnd)*drive.rpm)/60.;
+        const double path=std::min(8.*age,.21*radius*std::abs(revolutions)*2.*vsg::PI);
+        // Water emitted earlier has moved with the current while the hub continued along its route.
+        const auto plume=aft*path+(water.current-part.velocity)*age;
+        if(vsg::length(plume)<.04)continue;
+        result.push_back({hub,aft,plume,radius,speed,spin,age,std::remainder(drive.angleAt(time),2.*vsg::PI)});
+        if(result.size()==maximumOceanPropellerJets)break;
+    }
+    return result;
+}
+namespace {
+void depositHullSpray(VoxelOcean& ocean,const VoxelSceneSnapshot& scene,const VoxelSceneObject& hull) {
+    if(!hull.volume->occupiedCount())return;
+    const double time=scene.timeSeconds();
+    const auto pose=hull.pose(scene.tick,scene.fixedStep);
+    const auto bounds=hull.localBounds();
+    const auto size=bounds.max-bounds.min;
+    const auto center=(bounds.max+bounds.min)*.5;
+    const int lengthAxis=size.z>=size.x?2:0;
+    const int beamAxis=2-lengthAxis;
+    const vsg::dvec3 forward{pose[lengthAxis][0],0.,pose[lengthAxis][2]};
+    const vsg::dvec3 beam{pose[beamAxis][0],0.,pose[beamAxis][2]};
+    const double beamLength=vsg::length(beam);
+    const double ahead=vsg::dot(hull.velocity-ocean.current,forward);
+    if(std::abs(ahead)<.55||beamLength<.1)return;
+    const auto origin=pose*vsg::dvec3{};
+    uint32_t seed=2166136261u;
+    for(unsigned char c:hull.id)seed=(seed^c)*16777619u;
+
+    for(int side:{-1,1}){
+        auto shoulder=center;
+        shoulder[lengthAxis]+=std::copysign(.31*size[lengthAxis],ahead);
+        auto ray=pose*shoulder;
+        const auto outward=beam*(double(side)/beamLength);
+        const double reach=.78*size[beamAxis]+.6;
+        ray+=outward*reach;
+        if(!ocean.contains(ray.x,ray.z))continue;
+        ray.y=ocean.surface(ray.x,ray.z,time).height;
+        std::optional<VoxelSceneHit> contact;
+        for(int i=0;i<2;++i){
+            contact=raycastVoxelScene(scene,ray,-outward,reach,false,hull.id);
+            if(!contact)break;
+            ray.y=ocean.surface(contact->position.x,contact->position.z,time).height;
+        }
+        if(!contact)continue;
+        const auto point=contact->position;
+        const auto water=ocean.sample(point.x,point.z,time,point.y);
+        if(std::abs(point.y-water.height)>.12)continue;
+        const auto relative=hull.velocity+vsg::cross(hull.angularVelocity,point-origin)-water.velocity;
+        const double closing=-vsg::dot(relative,water.normal);
+        if(closing<.055)continue;
+
+        OceanSplash burst;
+        burst.x=point.x;burst.z=point.z;burst.height=water.height;burst.birth=time;
+        burst.speed=std::clamp(1.32+1.8*closing+.14*std::abs(ahead),1.4,4.4);
+        burst.radius=std::clamp(.66+.42*closing+.12*std::abs(ahead),.7,1.6);
+        burst.lifetime=.64;
+        burst.seed=seed^uint32_t(scene.tick+side);
+        burst.drift=hull.velocity*.42+outward*(.8+1.3*closing);
+        burst.drift.y=0.;
+        burst.drift.x=std::clamp(burst.drift.x,-40.,40.);
+        burst.drift.z=std::clamp(burst.drift.z,-40.,40.);
+        ocean.splashes.push_back(burst);
+    }
+}
 }
 double VoxelOcean::localCurvature(double x,double z,double seconds,double radius)const{
     double bound=baseCurvatureBound;
@@ -198,6 +287,12 @@ void VoxelOcean::advanceWakes(VoxelSceneSnapshot& scene,const VoxelSceneSnapshot
             OceanWake w;w.x=p.x;w.z=p.z;w.birth=time;w.width=std::clamp(p.radius,.5,3.);w.k=1.8/w.width;w.speed=std::sqrt(9.80665/w.k)*.65;w.amplitude=std::min(.06,.008*entry*std::sqrt(std::max(.001,body.massKg()/next->density)));w.lifetime=5.;next->wakes.push_back(w);
         }
     }
+    // Use the transformed, occupied bow shoulder and the current wave normal.
+    // These short spray bursts do not feed back into the wave or collision solver.
+    const uint64_t sprayCadence=std::max<uint64_t>(1,std::llround(.12/scene.fixedStep));
+    if(scene.tick%sprayCadence==0)
+        for(const auto& [id,body]:scene.objects)
+            if(body.motionResponse==VoxelMotionResponse::Waves)depositHullSpray(*next,scene,body);
     if(next->splashes.size()>maximumSplashes)next->splashes.erase(next->splashes.begin(),next->splashes.end()-maximumSplashes);
     // Fixed simulation-time cadence, independent of display frames and caches.
     const uint64_t cadence=std::max<uint64_t>(1,std::llround(.4/scene.fixedStep));
@@ -230,7 +325,12 @@ void VoxelOcean::advanceWakes(VoxelSceneSnapshot& scene,const VoxelSceneSnapshot
 nlohmann::json VoxelOcean::encode()const{
     auto v=[](vsg::dvec3 a){return nlohmann::json::array({a.x,a.y,a.z});};nlohmann::json w=nlohmann::json::array();for(const auto& h:harmonics)w.push_back({{"amplitude_m",h.amplitude},{"k",h.k},{"dx",h.dx},{"dz",h.dz},{"omega",h.omega},{"phase",h.phase}});
     nlohmann::json packets=nlohmann::json::array();for(const auto& q:wakes)packets.push_back({{"x",q.x},{"z",q.z},{"birth_s",q.birth},{"amplitude_m",q.amplitude},{"width_m",q.width},{"speed_mps",q.speed},{"lifetime_s",q.lifetime},{"k",q.k},{"direction_x",q.dirX},{"direction_z",q.dirZ},{"body_speed_mps",q.bodySpeed}});
-    nlohmann::json spray=nlohmann::json::array();for(const auto& p:splashes)spray.push_back({{"x",p.x},{"z",p.z},{"birth_s",p.birth},{"height_m",p.height},{"speed_mps",p.speed},{"radius_m",p.radius},{"lifetime_s",p.lifetime},{"seed",p.seed}});
+    nlohmann::json spray=nlohmann::json::array();
+    for(const auto& p:splashes){
+        spray.push_back({{"x",p.x},{"z",p.z},{"birth_s",p.birth},{"height_m",p.height},
+            {"speed_mps",p.speed},{"radius_m",p.radius},{"lifetime_s",p.lifetime},{"seed",p.seed}});
+        if(vsg::length(p.drift)>0.)spray.back()["drift_mps"]={p.drift.x,p.drift.y,p.drift.z};
+    }
     nlohmann::json deposits=nlohmann::json::array();for(const auto& p:foam)deposits.push_back({{"x",p.x},{"z",p.z},{"birth_s",p.birth},{"length_m",p.length},{"width_m",p.width},{"direction_x",p.dirX},{"direction_z",p.dirZ},{"strength",p.strength},{"lifetime_s",p.lifetime},{"seed",p.seed}});
     nlohmann::json result={{"foam",deposits},{"splashes",spray},{"sea_fog",{{"visibility_m",fogVisibility},{"height_m",fogHeight}}},{"wakes",packets},{"enabled",true},{"sea_level_m",seaLevel},{"bottom_m",bottom},{"half_extent_m",halfExtent},{"cell_size_m",cellSize},{"density_kg_m3",density},{"drag_coefficient",drag},{"linear_drag_mps",linearDrag},{"temperature_k",temperature},{"wind_speed_mps",windSpeed},{"wind_azimuth_deg",windAzimuth},{"wave_height_m",waveHeight},{"wave_length_m",waveLength},{"swell_height_m",swellHeight},{"swell_length_m",swellLength},{"current_mps",v(current)},{"absorption_rgb_per_m",v(absorption)},{"scattering_rgb_per_m",v(scattering)},{"harmonics",w},{"provenance",provenance}};if(referenceSize)result["reference_surface"]={{"grid_size",referenceSize},{"min_x",referenceX},{"min_z",referenceZ},{"step_x",referenceStepX},{"step_z",referenceStepZ},{"heights_m",referenceHeights}};return result;
 }

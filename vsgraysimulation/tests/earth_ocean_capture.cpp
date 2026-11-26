@@ -2,10 +2,19 @@
 #include "viewport3d/Viewport3DView.h"
 #include "viewport3d/ViewportConfig.h"
 #include "viewport3d/EarthViewFeature.h"
+#include "viewport3d/SensorFovFeature.h"
 #include "viewport3d/VoxelSceneFeature.h"
 #include "viewport3d/EnvFeatures.h"
 #include "viewport3d/VsgQtWidget.h"
+#include <vsgraysim/broker/VoxelEquipmentSource.h>
+#include <vsgraysim/broker/SimDataBroker.h>
+#include <vsgraysim/earth/ScenePresentation.h>
 #include <vsgraysim/earth/VoxelOcean.h>
+#pragma push_macro("slots")
+#undef slots
+#include <vsgraysim/earth/VoxelEquipmentRuntime.h>
+#pragma pop_macro("slots")
+#include <simcore/Orientation.h>
 #include <vsgraysim/earth/VoxelOceanOptics.h>
 #include <simcore/GeoFrame.h>
 #include <vsg/all.h>
@@ -30,7 +39,24 @@ void pump(int ms){QElapsedTimer t;t.start();while(t.elapsed()<ms){QApplication::
 void runEarthOceanCapture(const QString& output,bool interactive){
  using namespace vsgraysim;using namespace vsgraysim::earth;using namespace vsgraysim::viewport3d;using json=nlohmann::json;
  check(QApplication::platformName()=="xcb","ocean acceptance needs a native Vulkan surface");const auto directory=std::filesystem::absolute(output.isEmpty()?"build/voxel-ocean/interactive":output.toStdString());std::filesystem::create_directories(directory);
- const bool coastal=std::getenv("VSGRAYSIM_OCEAN_ISOLATED")==nullptr;const char* customScene=std::getenv("VSGRAYSIM_OCEAN_SCENE");const char* topicPath=std::getenv("VSGRAYSIM_SCENE_TOPIC");auto config=topicPath?ViewportConfig::fromTopicFile(topicPath):ViewportConfig::fromPreset("earth_display");
+ const bool coastal=std::getenv("VSGRAYSIM_OCEAN_ISOLATED")==nullptr;const char* customScene=std::getenv("VSGRAYSIM_OCEAN_SCENE");const char* topicPath=std::getenv("VSGRAYSIM_SCENE_TOPIC");
+ const bool equipmentCheck=std::getenv("VSGRAYSIM_EQUIPMENT_VISUAL_CHECK")!=nullptr;
+ const bool civilCheck=std::getenv("VSGRAYSIM_CIVIL_MODEL_CHECK")!=nullptr;
+ const bool missionCheck=std::getenv("VSGRAYSIM_FALCON_SWOT_CHECK")!=nullptr;
+ const bool audioCheck=std::getenv("VSGRAYSIM_SCENE_AUDIO_CHECK")!=nullptr;
+ const bool oceanAudioCheck=std::getenv("VSGRAYSIM_OCEAN_ENV_AUDIO_CHECK")!=nullptr;
+ const bool surveyCheck=std::getenv("VSGRAYSIM_UNDERWATER_SURVEY_CHECK")!=nullptr;
+ const bool acousticsCheck=std::getenv("VSGRAYSIM_ACOUSTIC_FLYOVER_CHECK")!=nullptr;
+ const bool mountsCheck=std::getenv("VSGRAYSIM_NAMED_SOUND_MOUNTS_CHECK")!=nullptr;
+ if(mountsCheck)check(topicPath,"named sound mounts require the acceptance topic");
+ if(equipmentCheck&&!topicPath)topicPath="config/topics/taipei-ship-visual-preview.vtopic.json";
+ if(civilCheck&&!topicPath)topicPath="config/topics/taipei-civil-aviation.vtopic.json";
+ if(missionCheck&&!topicPath)topicPath="config/topics/taipei-falcon9-swot.vtopic.json";
+ if(audioCheck&&!topicPath)topicPath="config/topics/taipei-falcon9-swot.vtopic.json";
+ if(surveyCheck&&!topicPath)topicPath="config/topics/taipei-underwater-survey.vtopic.json";
+ if(acousticsCheck&&!topicPath)topicPath="config/topics/taipei-acoustic-flyover.vtopic.json";
+ auto config=topicPath?ViewportConfig::fromTopicFile(topicPath):ViewportConfig::fromPreset("earth_display");
+ if(!topicPath&&(interactive||oceanAudioCheck))config.add("scene_audio");
  std::string scenePath=customScene?customScene:coastal?"config/earth/taipei-coast-ocean.vscene.json":"config/earth/taipei-ocean.vscene.json";if(topicPath)for(const auto& entry:config.entries())if(entry.id==VoxelSceneFeature::kId)scenePath=entry.params.at("scene_json");
  json declaration;std::ifstream(scenePath)>>declaration;const auto& geo=declaration.at("geo_anchor");simcore::geo::GeoAnchor anchor;anchor.lat_deg=geo.at("lat");anchor.lon_deg=geo.at("lon");anchor.alt_m=geo.at("alt");anchor.heading_deg=geo.value("heading_deg",0.);const auto chart=simcore::geo::makeEnuToWorldMatrix(anchor);
 
@@ -52,8 +78,468 @@ void runEarthOceanCapture(const QString& output,bool interactive){
   auto* fog=new QShortcut(QKeySequence("7"),&window);QObject::connect(fog,&QShortcut::activated,&window,[&]{auto o=scene.snapshot()->ocean->encode();o["sea_fog"]={{"visibility_m",scene.snapshot()->ocean->fogVisibility>0?0:1600},{"height_m",45}};oceanEdit(o);});
   auto* utc=new QShortcut(QKeySequence("8"),&window);QObject::connect(utc,&QShortcut::activated,&window,[&]{timeOfDay=(timeOfDay+1)%3;if(auto* sky=view->featureAs<SkyFeature>(SkyFeature::kId))sky->configure({{"year",2026},{"month",9},{"day",26},{"hours_utc",timeOfDay==0?4.:timeOfDay==1?9.5:16.}});});
   int detailIndex=0;auto* details=new QShortcut(QKeySequence("9"),&window);QObject::connect(details,&QShortcut::activated,&window,[&]{if(!naval)return;const vsg::dvec3 eyes[4]={{32,17,-87},{27,25,-12},{24,41,-12},{28,23,75}},targets[4]={{0,7,-60},{0,20,-12},{0,34,-12},{0,10,52}};const auto state=scene.snapshot();const auto matrix=state->objects.at("vessel").pose(state->tick,state->fixedStep);camera(matrix*eyes[detailIndex],matrix*targets[detailIndex]);detailIndex=(detailIndex+1)%4;});
-  window.setWindowTitle(QStringLiteral("海岸海洋 — 1–5 机位 / 6 海况 / 7 海雾 / 8 日夜 / 9 舰体细节 / 空格 暂停"));
-  QObject::connect(&timer,&QTimer::timeout,&window,[&]{const double now=clock.elapsed()*.001,dt=now-previous;previous=now;if(play){scene.setPaused(false);targetSeconds+=dt;scene.advanceTo(targetSeconds,8);scene.setPaused(true);}render();});timer.start(20);QApplication::exec();return;
+  auto* widget=view->widget();
+  widget->setProperty("sceneAudioRequested",true);
+  auto* audio=new QShortcut(QKeySequence("M"),&window);
+  QObject::connect(audio,&QShortcut::activated,&window,[widget]{
+   widget->setProperty("sceneAudioRequested",!widget->property("sceneAudioRequested").toBool());
+  });
+  window.setWindowTitle(QStringLiteral("海岸海洋 — 1–5 机位 / 6 海况 / 7 海雾 / 8 日夜 / 9 舰体细节 / M 音效 / 空格 暂停"));
+  QObject::connect(&timer,&QTimer::timeout,&window,[&]{const double now=clock.elapsed()*.001,dt=now-previous;previous=now;scene.setPaused(!play);if(play){targetSeconds+=dt;scene.advanceTo(targetSeconds,8);}render();});timer.start(20);QApplication::exec();return;
+ }
+ if(oceanAudioCheck){
+  auto* widget=view->widget();
+  widget->setProperty("sceneAudioRequested",true);
+  scene.setPaused(false);
+  const auto listen=[&](const char* medium,vsg::dvec3 eye){
+   camera(eye,{0,eye.y,-10});
+   QElapsedTimer clock;clock.start();
+   const double start=scene.snapshot()->timeSeconds();
+   while(clock.elapsed()<4500){
+    scene.advanceTo(start+.5+clock.elapsed()*.001,16);
+    render();pump(24);
+    const auto value=json::parse(widget->property("sceneAcousticsReading").toString().toStdString(),nullptr,false);
+    if(!value.is_object()||value.value("medium",std::string())!=medium||!value.at("spl_db").is_number())continue;
+    const bool haveSea=std::any_of(value.at("paths").begin(),value.at("paths").end(),[](const auto& entry){
+     return entry.at("id").template get<std::string>().rfind("sea:",0)==0;
+    });
+    if(haveSea&&widget->property("sceneAudioOutputActive").toBool())return value;
+   }
+   throw std::runtime_error(std::string("native ocean audio did not reach the ")+medium+" listener");
+  };
+  const auto air=listen("air",{9.,1.6,-10.});
+  capture("audio-air");
+  const auto water=listen("water",{9.,-4.8,-10.});
+  capture("audio-water");
+  scene.setPaused(true);
+  for(int i=0;i<6;++i){render();pump(25);}
+  check(!widget->property("sceneAudioOutputActive").toBool(),"ocean PCM output did not mute on pause");
+  std::ofstream(directory/"native-ocean-audio.json")<<json{{"air",air},{"water",water},{"pause_muted",true}}.dump(2)<<'\n';
+  std::cout<<"PASS: native ocean stereo, listener media and pause\n";
+  window.hide();pump(20);return;
+ }
+ if(mountsCheck){
+  auto* widget=view->widget();
+  widget->setProperty("sceneAudioRequested",true);
+  widget->setProperty("sceneAcousticProbe",QStringLiteral("mount-check"));
+  camera({-25.,20.,-27.},{2.,25.,-1.});
+  const auto project=VoxelSceneProject::open(topicPath);
+  VoxelEquipmentRuntime sensors(scene,project.equipmentConfig(),view->context().window()->getDevice());
+  auto& broker=SimDataBroker::instance();
+  check(broker.subscribe(887),"could not subscribe actual optics fixture");
+  const vsg::dvec3 listener={4.,9.,-12.};
+  const auto vec=[](const json& value){const auto p=value.get<std::array<double,3>>();return vsg::dvec3{p[0],p[1],p[2]};};
+  const auto coords=[](const vsg::dvec3& p){return json::array({p.x,p.y,p.z});};
+  const std::array<std::string,4> names{"platform:880/engine","platform:883/main_rotor","platform:883/tail_rotor","equipment:887/fan"};
+  std::vector<std::array<vsg::dvec3,4>> recorded;
+  json paths=json::object(),impact,contactOnset,heardImpact;
+  std::map<uint64_t,std::vector<vsg::dvec3>> contacts;
+  std::map<std::string,double> impulses;
+  std::array<unsigned,4> verified{};
+  std::array<double,4> errors{};
+  bool off=false,fanSilent=false,device=false;double last=-1.;unsigned readingCount=0;
+  scene.setPaused(false);
+  QElapsedTimer clock;clock.start();
+  while(scene.snapshot()->timeSeconds()<3.30&&clock.elapsed()<45000){
+   const auto target=std::min(3.30,clock.elapsed()*.001);
+   while(scene.snapshot()->timeSeconds()+1e-8<target){
+    const auto state=scene.snapshot();
+    const auto pose=[&](const char* name){return state->objects.at(name).pose(state->tick,state->fixedStep);};
+    if(recorded.size()==state->tick)recorded.push_back({pose("flyover")*vsg::dvec3{0.,0.,.6},
+        pose("main-rotor")*vsg::dvec3{},pose("tail-rotor")*vsg::dvec3{},pose("body")*vsg::dvec3{.72,-.14,1.975}});
+    scene.advanceTo(state->timeSeconds()+state->fixedStep,1);
+    const auto current=scene.snapshot();
+    for(const auto& c:current->contacts){
+     if(contactOnset.is_null()&&(c.a=="crate"||c.b=="crate")){
+      const auto equip=voxelEquipmentStateTelemetry(sensors.config(),*current);
+      const auto emission=scenePresentation(sensors.config(),*current,equip,state.get());
+      contactOnset={{"tick",current->tick},{"objects",{c.a,c.b}},{"normal_on_b",coords(c.normalOnB)},
+        {"point_a_m",coords(c.pointA)},{"point_b_m",coords(c.pointB)},
+        {"before_velocity_mps",coords(state->objects.at("crate").velocity)},
+        {"after_velocity_mps",coords(current->objects.at("crate").velocity)},{"events",emission.at("events")}};
+     }
+     if(c.a=="crate"){
+      impulses[c.b]=std::max(impulses[c.b],c.impulseNs);
+      if(c.b=="contact-pad"||c.b=="taipei-terrain")contacts[current->tick].push_back(c.pointB);
+     }else if(c.b=="crate"){
+      impulses[c.a]=std::max(impulses[c.a],c.impulseNs);
+      if(c.a=="contact-pad"||c.a=="taipei-terrain")contacts[current->tick].push_back(c.pointA);
+     }
+    }
+    if(!off&&current->timeSeconds()>=2.25){
+     ControlCommand command;command.type=ControlCommand::Type::PowerOff;command.equipment_id=887;command.equipment_type=SensorType::VIS;
+     broker.sendControl(command);off=true;
+    }
+    sensors.advanceMeasurements();
+   }
+   render();pump(10);
+   device=device||widget->property("sceneAudioOutputActive").toBool();
+   const auto row=json::parse(widget->property("sceneAcousticsReading").toString().toStdString(),nullptr,false);
+   if(!row.is_object()||row.at("sample_s").get<double>()<=last||!row.at("spl_db").is_number())continue;
+   last=row.at("sample_s");++readingCount;
+   const auto spl=row.at("spl_db").get<double>();
+   check(std::abs(20e-6*std::pow(10.,spl/20.)-row.at("pressure_rms_pa").get<double>())<1e-8,"meter SPL did not match its received pressure");
+   bool haveFan=false;
+   for(const auto& path:row.at("paths")){
+    if(path.at("reflected").get<bool>())continue;
+    const auto key=path.at("id").get<std::string>();
+    const auto origin=vec(path.at("source_position_m"));
+    check(std::abs(vsg::length(origin-listener)-path.at("path_length_m").get<double>())<1e-5,"measured path did not start at the reported origin");
+    const auto t=path.at("emission_s").get<double>();
+    const auto part=std::find(names.begin(),names.end(),key);
+    if(part!=names.end()){
+     const auto index=std::size_t(part-names.begin());
+     const auto frame=t/initial->fixedStep;
+     const auto tick=static_cast<size_t>(frame);
+     if(tick+1>=recorded.size())continue;
+     const auto fraction=frame-tick;
+     const auto reflectedPose=recorded[tick][index]*(1.-fraction)+recorded[tick+1][index]*fraction;
+     const auto distance=vsg::length(origin-reflectedPose);
+     check(distance<.08,"sound propagation did not use the model mount at emission time");
+     errors[index]=std::max(errors[index],distance);++verified[index];paths[key]=path;
+     if(index==3)haveFan=true;
+    }else if(key.rfind("impact:",0)==0){
+     heardImpact=path;
+     const auto tick=uint64_t(std::llround(t/initial->fixedStep));
+     const auto it=contacts.find(tick);
+     if(it==contacts.end())continue;
+     for(const auto& point:it->second)if(vsg::length(origin-point)<1e-7){
+      impact=path;impact["bullet_contact_m"]=coords(point);impact["contact_tick"]=tick;break;
+     }
+    }
+   }
+   if(last>=2.65&&!haveFan)fanSilent=true;
+  }
+  const auto stats=sensors.statistics();
+  auto report=json{{"verified_path_counts",verified},{"max_mount_position_error_m",errors},{"path_order",names},
+    {"paths",paths},{"impact",impact},{"working_vis_frames",broker.channelStats(887).published_frames},
+    {"rejected_sensor_windows",stats.rejectedWindows},{"reading_count",readingCount},{"collision_ticks",contacts.size()},
+    {"crate_contact_max_impulse_ns",impulses},{"contact_onset",contactOnset},{"last_impact_path",heardImpact},
+    {"crate_position_final_m",coords(scene.snapshot()->objects.at("crate").pose(scene.snapshot()->tick,scene.snapshot()->fixedStep)*vsg::dvec3{})},
+    {"fan_silent_after_power_off",fanSilent},{"playback_active",device}};
+  std::ofstream(directory/"named-mounts-validation.json")<<report.dump(2)<<'\n';
+  check(scene.snapshot()->timeSeconds()>=3.30&&readingCount>20&&device,"native named-mount scene did not produce audio");
+  check(std::all_of(verified.begin(),verified.end(),[](auto n){return n>5;})&&fanSilent&&off,"named sources or fan power transition missing");
+  check(!impact.is_null()&&broker.channelStats(887).published_frames>0,"actual bullet collision or GPU equipment frames were not captured");
+  scene.setPaused(true);
+  for(int i=0;i<4;++i){render();pump(25);}
+  check(!widget->property("sceneAudioOutputActive").toBool(),"named acoustics did not mute during pause");
+  camera({-23.,24.,-26.},{2.,22.,-3.});capture("named-mount-airframes");
+  camera({2.,24.,-23.},{10.,15.,-9.});capture("actual-contact-scene");
+  report["pause_muted"]=true;
+  std::ofstream(directory/"named-mounts-validation.json")<<report.dump(2)<<'\n';
+  window.hide();pump(20);return;
+ }
+ if(acousticsCheck) {
+  const QString clear=QStringLiteral("无遮拦"),screened=QStringLiteral("屏障后");
+  auto* widget=view->widget();
+  widget->setProperty("sceneAudioRequested",true);
+  widget->setProperty("sceneAcousticProbe",clear);
+  camera({-62.,8.,-10.},{-5.,30.,12.});
+  scene.setPaused(false);
+  const auto reading=[&](){return json::parse(widget->property("sceneAcousticsReading").toString().toStdString(),nullptr,false);};
+  json series=json::array();double last=-1.;bool device=false,approach=false,recede=false;
+  double closest=0.;QElapsedTimer wall;wall.start();
+  while(scene.snapshot()->timeSeconds()<12.20&&wall.elapsed()<45000){
+   const double target=std::min(12.20,wall.elapsed()*.001);
+   scene.advanceTo(target,24);
+   const double time=scene.snapshot()->timeSeconds();
+   if(time>=5.96&&time<6.15&&closest==0.){
+    camera({0.,9.,-23.},{0.,70.,20.});
+    capture("x8-flyover-ground");closest=time;
+   }
+   render();pump(12);
+   device=device||widget->property("sceneAudioOutputActive").toBool();
+   auto r=reading();
+   if(!r.is_object()||r.at("sample_s").get<double>()<=last)continue;
+   last=r.at("sample_s");
+   for(const auto& path:r.at("paths"))if(path.at("id")=="acoustic:x8-engine"){
+    const double factor=path.at("doppler");approach|=factor>1.025;recede|=factor<.975;
+   }
+   series.push_back(std::move(r));
+  }
+  check(scene.snapshot()->timeSeconds()>=12.18&&series.size()>40&&approach&&recede,"flight acoustics did not resolve both sides of flyover");
+  check(device,"native flyover did not start PCM output");
+  scene.setPaused(true);
+  const auto settled=[&](const QString& probe){
+   widget->setProperty("sceneAcousticProbe",probe);
+   QElapsedTimer wait;wait.start();
+   while(wait.elapsed()<3000){
+    render();pump(25);const auto r=reading();
+    if(r.is_object()&&r.value("probe",std::string())==probe.toStdString()&&r.at("sample_s")==scene.snapshot()->timeSeconds())return r;
+   }
+   throw std::runtime_error("native acoustic probe did not settle");
+  };
+  const auto clean=settled(clear),behind=settled(screened);
+  const auto speaker=[](const json& r){for(const auto& path:r.at("paths"))if(path.at("id")=="acoustic:reference-speaker")return path;throw std::runtime_error("no speaker path");};
+  const auto direct=speaker(clean),occluded=speaker(behind);
+  check(!direct.at("screened").get<bool>()&&occluded.at("screened").get<bool>()&&
+    direct.at("spl_db").get<double>()>occluded.at("spl_db").get<double>()+8.,"real scene barrier did not reduce speaker level");
+  check(!widget->property("sceneAudioOutputActive").toBool(),"pause did not stop physical scene playback");
+  camera({-55.,24.,-64.},{20.,5.,10.});capture("fixed-source-and-barrier");
+  std::ofstream(directory/"acoustics-validation.json")<<json{{"clear",clean},{"screened",behind},
+   {"speaker_clear",direct},{"speaker_screened",occluded},{"playback_active",device},{"pause_muted",true},
+   {"flyover_capture_s",closest},{"flyover",series}}.dump(2)<<'\n';
+  window.hide();pump(20);return;
+ }
+ if(surveyCheck) {
+  scene.setPaused(false);
+  check(!scene.advanceTo(18.,1000).pendingSteps,"underwater scene did not reach sampling tick");
+  scene.setPaused(true);
+  const auto state=scene.snapshot();
+  const auto target=state->objects.at("alvin").pose(state->tick,state->fixedStep)*vsg::dvec3{};
+  camera(target+vsg::dvec3{-7.2,1.6,2.7},target);
+  capture("alvin-underwater");
+  std::ofstream(directory/"underwater.json")<<json{{"tick",state->tick},{"seconds",state->timeSeconds()},
+      {"object","alvin"},{"camera_offset_m",{-7.2,1.6,2.7}},{"occupied_voxels",state->objects.at("alvin").volume->occupiedCount()},
+      {"depth_reference","synthetic demonstration seabed"}}.dump(2)<<'\n';
+  window.hide();pump(20);return;
+ }
+ if(audioCheck) {
+  view->widget()->setProperty("sceneAudioRequested",true);
+  camera({90,54,93},{0,52,0});
+  scene.setPaused(false);
+  check(!scene.advanceTo(3.25,100).pendingSteps,"audio capture did not reach liftoff");
+  QElapsedTimer wait;wait.start();
+  while(!view->widget()->property("sceneAudioOutputActive").toBool()&&wait.elapsed()<4200){
+   scene.advanceTo(3.25+wait.elapsed()*.001,16);
+   render();pump(25);
+  }
+  check(view->widget()->property("sceneAudioOutputActive").toBool(),"native earth viewport did not open audio output");
+  capture("liftoff-audio-active");
+  scene.setPaused(true);
+  wait.restart();
+  while(view->widget()->property("sceneAudioOutputActive").toBool()&&wait.elapsed()<1600){
+   render();pump(25);
+  }
+  check(!view->widget()->property("sceneAudioOutputActive").toBool(),"native scene audio did not mute on pause");
+  std::ofstream(directory/"scene-audio-native.json")<<json{{"tick",scene.snapshot()->tick},
+      {"seconds",scene.snapshot()->timeSeconds()},{"device_active_in_play",true},{"device_active_in_pause",false}}.dump(2)<<'\n';
+  std::cout<<"PASS: native Taipei scene drove Qt audio output and muted on pause\n";
+  window.hide();pump(20);return;
+ }
+ if(missionCheck) {
+  const auto matrix=[&](const char* id){
+   const auto state=scene.snapshot();
+   return state->objects.at(id).pose(state->tick,state->fixedStep);
+  };
+  const auto position=[&](const char* id){return matrix(id)*vsg::dvec3{};};
+  const auto spacing=[&](const char* a,const char* b){return vsg::length(position(a)-position(b));};
+  const double stackGap=spacing("falcon-booster","falcon-upper");
+  const double releaseGap=spacing("falcon-upper","swot-spacecraft");
+  const auto advance=[&](double seconds){
+   scene.setPaused(false);
+   const auto result=scene.advanceTo(seconds,1024);
+   scene.setPaused(true);
+   check(!result.pendingSteps,"mission playback lost fixed steps");
+  };
+  json cases=json::array();
+  const auto shot=[&](const char* name,vsg::dvec3 point,vsg::dvec3 offset){
+   camera(point+offset,point);
+   for(int i=0;i<3;++i)render();
+   capture(name);
+   const auto state=scene.snapshot();
+   json geometry=json::object();
+   for(const auto& [id,object]:state->objects){
+    check(object.volume==initial->objects.at(id).volume&&object.volume->occupiedCount()>0&&
+       feature->display().placements.at(id)->matrix==object.pose(state->tick,state->fixedStep),
+       "mission component geometry or viewport diverged from the voxel snapshot");
+    const auto p=object.pose(state->tick,state->fixedStep)*vsg::dvec3{};
+    geometry[id]={{"position_m",{p.x,p.y,p.z}},{"occupied_voxels",object.volume->occupiedCount()}};
+   }
+   cases.push_back({{"file",name},{"tick",state->tick},{"seconds",state->timeSeconds()},{"objects",std::move(geometry)}});
+  };
+  shot("01-stacked-on-pad",{0,41,0},{91,13,93});
+  camera({91,54,93},{0,41,0});
+  for(int i=1;i<=25;++i){advance(i*.13);render();}
+  check(position("falcon-booster").y>initial->objects.at("falcon-booster").basePose[3][1]+15.,
+      "stack did not lift off");
+  shot("02-liftoff",position("falcon-booster")+vsg::dvec3(0,29,0),{91,13,93});
+  advance(7.55);
+  check(spacing("falcon-booster","falcon-upper")>stackGap+35.,"first stage did not detach");
+  const auto boosterHeight=position("falcon-booster").y;
+  shot("03-booster-separation",(position("falcon-booster")+position("falcon-upper"))*.5+vsg::dvec3(0,20,0),{98,33,170});
+  advance(10.65);
+  check(spacing("fairing-port","fairing-starboard")>26.,"fairing halves did not clear the payload");
+  shot("04-fairing-separation",position("falcon-upper")+vsg::dvec3(0,8,0),{38,11,86});
+  advance(15.0);
+  check(spacing("falcon-upper","swot-spacecraft")>releaseGap+20.,"upper stage and payload did not separate");
+  shot("05-upper-stage-and-payload",(position("falcon-upper")+position("swot-spacecraft"))*.5,{53,21,93});
+  advance(18.35);
+  check(position("falcon-booster").y<boosterHeight,"released first stage did not descend");
+  const auto partlyOpen=matrix("swot-panel-right");
+  shot("06-solar-array-deploying",position("swot-spacecraft"),{21,16,22});
+  advance(22.);
+  check(matrix("swot-panel-right")!=partlyOpen&&spacing("falcon-upper","swot-spacecraft")>160.,
+      "final payload scene did not advance through deployment");
+  shot("07-swot-deployed",position("swot-spacecraft"),{21,16,22});
+  const auto state=scene.snapshot();
+  const auto retained=scene.sample(state->timeSeconds()-.5*state->fixedStep);
+  check(retained->timeSeconds()<state->timeSeconds()&&retained->objects.at("swot-spacecraft").basePose!=matrix("swot-spacecraft"),
+      "fractional sensor sampling did not follow the authored track");
+  const auto saved=(directory/"mission-checkpoint.json").string();
+  scene.saveCheckpoint(saved);
+  auto restored=VoxelScene::open(saved);
+  check(restored->snapshot()->tick==state->tick&&restored->snapshot()->objects.at("swot-panel-right").basePose==
+       state->objects.at("swot-panel-right").basePose,"checkpoint did not restore the deployed voxel assembly");
+  check(scene.advanceTo(state->timeSeconds()+1,10).steps==0&&scene.snapshot()==state,"mission track advanced during pause");
+  std::ofstream(directory/"mission-timeline.json")<<json{{"executed_as","authored visualization"},
+      {"scene",scenePath},{"utc",initial->utcOrigin},{"cases",std::move(cases)}}.dump(2)<<'\n';
+  std::cout<<"PASS: Falcon 9 / SWOT voxel mission, separation, deployment, pause and checkpoint\n";
+  window.hide();pump(20);return;
+ }
+ if(civilCheck) {
+  const auto configuration=VoxelSceneProject::open(topicPath).equipmentConfig();
+  const auto pose=[&](std::string_view id){
+   const auto state=scene.snapshot();
+   return state->objects.at(std::string(id)).pose(state->tick,state->fixedStep)*vsg::dvec3{};
+  };
+  const auto captureDetail=[&](const char* id,const char* label,const vsg::dvec3& offset){
+   const auto point=pose(id);
+   camera(point+offset,point);
+   render();
+   capture(label);
+  };
+  camera({8.,1804.,9.},{1.8,1800.,1.});
+  for(int i=0;i<3;++i)render();
+  capture("01-civil-fleet");
+  captureDetail("survey-wing","02-skywalker-x8",{3.0,1.65,-2.8});
+  captureDetail("inspection-quad","03-3dr-iris",{1.15,.85,1.2});
+  const auto first=voxelEquipmentPlatformTelemetry(configuration,initial);
+  const auto firstWing=pose("survey-wing");
+  const auto firstQuad=pose("inspection-quad");
+  scene.setPaused(false);
+  const auto advanced=scene.advanceTo(initial->timeSeconds()+25*initial->fixedStep,25);
+  scene.setPaused(true);
+  check(!advanced.pendingSteps&&scene.snapshot()->tick==initial->tick+25,"civil platform scene lost fixed steps");
+  const auto state=scene.snapshot();
+  auto rows=voxelEquipmentPlatformTelemetry(configuration,state);
+  check(rows.size()==2&&rows.at(0).at("model_id")=="skywalker-x8"&&rows.at(1).at("model_id")=="3dr-iris",
+      "civil model IDs failed to publish");
+  check(rows.at(0).at("navigation").at("tick")==state->tick&&rows.at(1).at("navigation").at("tick")==state->tick&&
+      rows.at(1).at("rotors").size()==4&&rows.at(1).at("air_motion").at("near_stationary")==true,
+      "rotor assembly or navigation sample time is incorrect");
+  const double seconds=state->timeSeconds()-initial->timeSeconds();
+  check(vsg::length(pose("survey-wing")-firstWing-vsg::dvec3(0,0,-3.*seconds))<1e-8&&
+      pose("inspection-quad")==firstQuad,
+      "civil platform poses differ from the authored scene motion");
+  render();
+  for(const auto& [id,object]:state->objects)
+   check(feature->display().placements.at(id)->matrix==object.pose(state->tick,state->fixedStep),
+      "civil model display differs from the frozen world pose");
+  check(first.at(1).at("rotors").at("quad-prop-1")!=rows.at(1).at("rotors").at("quad-prop-1"),
+      "quadrotor animation did not advance");
+  camera({8.,1804.,9.},{1.8,1800.,1.});
+  capture("05-civil-fleet-stepped");
+  for(int i=0;i<3;++i)render();
+  check(rows==voxelEquipmentPlatformTelemetry(configuration,scene.snapshot()),"civil telemetry drifted during pause");
+  std::ofstream(directory/"civil-aviation.json")<<json{{"scene",scenePath},{"utc",initial->utcOrigin},
+      {"initial",first},{"stepped",std::move(rows)}}.dump(2)<<'\n';
+  std::cout<<"PASS: native Taipei civil models, scheduled rotor pose, navigation tick and paused scene\n";
+  window.hide();pump(20);return;
+ }
+ if(equipmentCheck) {
+  auto* equipmentView=view->featureAs<SensorFovFeature>(SensorFovFeature::kId);
+  check(equipmentView&&initial->objects.count("vessel"),"equipment overlay capture requires a vessel and the sensor viewport feature");
+  const auto equipment=VoxelSceneProject::open(topicPath).equipmentConfig();
+  check(equipment.equipment.size()==4,"equipment capture needs the four authored preview models");
+  const uint32_t radarId=equipment.equipment.front().sensor.id;
+  const vsg::dvec3 eye(37.,29.,40.),target(0.,2.,0.);
+  camera(eye,target);
+  equipmentView->setEnabled(false);
+  for(int i=0;i<3;++i)render();
+  capture("01-overlay-off");
+  equipmentView->setEnabled(true);
+  const auto inspect=[&](const VoxelSceneSnapshot& state){
+   const auto pose=state.objects.at("vessel").pose(state.tick,state.fixedStep);
+   check(feature->display().placements.at("vessel")->matrix==pose,"ship visual differs from authoritative pose");
+   for(const auto& spec:equipment.equipment){
+    const auto shown=equipmentView->displayedEquipmentPose(spec.sensor.id);
+    check(shown.has_value()&&shown->simulationSeconds==state.timeSeconds(),"equipment pose did not use snapshot time");
+    check(vsg::length(shown->origin-pose*spec.aperture.position)<1e-8,"equipment moved off its ship mount");
+    const double expected=spec.visual->previewPeriodSeconds==0.?0.:
+        std::remainder(spec.visual->phaseDegrees+state.timeSeconds()*360./spec.visual->previewPeriodSeconds,360.);
+    check(std::abs(shown->azimuthDegrees-expected)<1e-9,"model scan phase differs from simulation time");
+    const auto base=spec.aperture.forward;
+    const auto right=vsg::normalize(vsg::cross(spec.aperture.up,base));
+    const double radians=vsg::radians(expected);
+    const auto world=pose*vsg::dvec4(base*std::cos(radians)+right*std::sin(radians),0.);
+    check(vsg::length(shown->direction-vsg::dvec3(world.x,world.y,world.z))<1e-8,"beam direction differs from equipment pose");
+   }
+  };
+  render();
+  inspect(*initial);
+  capture("02-overlay-start");
+  const auto measured=[&]{
+   std::vector<double> sample;
+   for(int i=0;i<3;++i)render();
+   for(int i=0;i<21;++i){render();sample.push_back(lastNativeRenderMs);}
+   std::sort(sample.begin(),sample.end());
+   return json{{"median",sample[10]},{"p95",sample[19]}};
+  };
+  const auto enabledRender=measured();
+  equipmentView->setEnabled(false);
+  const auto baselineRender=measured();
+  check(!equipmentView->displayedEquipmentPose(radarId).has_value(),"disabled equipment overlay remained visible");
+  equipmentView->setEnabled(true);
+  for(int i=0;i<3;++i)render();
+  inspect(*initial);
+  const auto step=[&](double seconds,uint64_t count){
+   scene.setPaused(false);
+   const auto result=scene.advanceTo(seconds,int(count));
+   scene.setPaused(true);
+   check(!result.pendingSteps&&scene.snapshot()->tick==initial->tick+count,"equipment test lost simulation steps");
+   render();inspect(*scene.snapshot());
+  };
+  step(initial->timeSeconds()+initial->fixedStep,1);
+  const auto oneStep=*equipmentView->displayedEquipmentPose(radarId);
+  for(int i=0;i<4;++i){pump(15);render();inspect(*scene.snapshot());}
+  check(equipmentView->displayedEquipmentPose(radarId)->azimuthDegrees==oneStep.azimuthDegrees,
+        "paused radar changed phase as wall time advanced");
+  step(initial->timeSeconds()+25*initial->fixedStep,25);
+  const auto later=*equipmentView->displayedEquipmentPose(radarId);
+  capture("03-overlay-after-25-steps");
+  check(equipmentView->equipmentGeometryBuilds()==4,"phase or movement rebuilt static equipment geometry");
+  equipmentView->configure(json::object());
+  auto stale=voxelEquipmentVisualTelemetry(equipment,*initial);
+  feature->setEquipmentVisuals(std::move(stale));
+  render();
+  check(!equipmentView->displayedEquipmentPose(radarId).has_value(),"stale equipment data remained attached to a newer snapshot");
+  std::ofstream(directory/"equipment-visual.json")<<json{
+      {"scene",scenePath},{"utc",initial->utcOrigin},{"position_local_m",{eye.x,eye.y,eye.z}},
+      {"target_local_m",{target.x,target.y,target.z}},{"model_count",4},
+      {"radar_1_initial_deg",-15.},{"radar_1_after_one_step_deg",oneStep.azimuthDegrees},
+      {"radar_1_after_25_steps_deg",later.azimuthDegrees},{"seconds",later.simulationSeconds},
+      {"geometry_builds",equipmentView->equipmentGeometryBuilds()},
+      {"native_render_ms_disabled",baselineRender},{"native_render_ms_enabled",enabledRender}}.dump(2)<<'\n';
+  std::cout<<"PASS: native Taipei equipment mounts, four models, paused phase, exact single step and stale snapshot rejection\n";
+  window.hide();pump(20);return;
+ }
+ if(std::getenv("VSGRAYSIM_SURFACE_MOTION_CHECK")) {
+  check(initial->objects.count("vessel")!=0,"motion telemetry test requires a vessel");
+  VoxelEquipmentConfig telemetry;telemetry.platforms.push_back({200,"vessel","船状态验收","ship",0.,{}});
+  std::vector<double> renderMs;json outputFrames=json::array();
+  capture("ship-initial");
+  for(int i=1;i<=14;++i){
+   scene.setPaused(false);scene.advanceTo(initial->timeSeconds()+i*initial->fixedStep);scene.setPaused(true);
+   render();renderMs.push_back(lastNativeRenderMs);
+   const auto state=scene.snapshot();const auto& boat=state->objects.at("vessel");
+   const auto pose=boat.pose(state->tick,state->fixedStep);
+   check(feature->display().placements.at("vessel")->matrix==pose,"ship view did not use the authoritative rigid pose");
+   const auto packets=voxelEquipmentPlatformTelemetry(telemetry,state);check(packets.size()==1,"ship telemetry missing");
+   const auto& packet=packets.front();
+   const auto& motion=packet.at("surface_motion");
+   check(std::abs(motion.at("speed_mps").get<double>()-std::hypot(boat.velocity.x,boat.velocity.z))<1e-10&&
+      std::abs(motion.at("vertical_position_m").get<double>()-pose[3][1])<1e-9,"ship speed or height differs from the body state");
+   const auto viewRotation=vsg::rotate(simcore::headingRotation(packet.at("yaw").get<double>(),
+       motion.at("pitch_deg").get<double>(),motion.at("roll_deg").get<double>()));
+   for(int c=0;c<3;++c)for(int r=0;r<3;++r)check(std::abs(pose[c][r]-viewRotation[c][r])<1e-7,"ship attitude telemetry/pose mismatch");
+   outputFrames.push_back({{"tick",state->tick},{"state",motion}});
+  }
+  capture("ship-updated");std::sort(renderMs.begin(),renderMs.end());
+  std::ofstream(directory/"ship-motion.json")<<json{{"scene",scenePath},{"utc",initial->utcOrigin},
+      {"source","Taipei Earth viewport"},{"frames",outputFrames},{"render_p95_ms",renderMs[size_t(.95*(renderMs.size()-1))]}}.dump(2)<<'\n';
+  window.hide();pump(20);return;
  }
  if(std::getenv("VSGRAYSIM_OCEAN_WEATHER_PASS")){runOceanWeatherPass(scene,*feature,*view,directory,scenePath,camera,render,[&]{return lastNativeRenderMs;},capture);window.hide();pump(20);return;}
  if(topicPath){runEarthTopicPass(scene,*feature,*view,directory,topicPath,camera,render,[&]{return lastNativeRenderMs;},capture);window.hide();pump(20);return;}

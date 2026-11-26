@@ -177,6 +177,73 @@ std::shared_ptr<VoxelTerrain> VoxelEarthPatch::initialVolume()const {
     }
     return VoxelTerrain::fromOccupancy({x_,bottom_,z_},cell_,nx_,ny_,nz_,occupied,false);
 }
+json VoxelEarthPatch::inferredThermalMaterials(const VoxelTerrain& volume, double baseK) const {
+    if (!width_ || !height_ || volume.dimensions() != std::array<int,3>{nx_,ny_,nz_})
+        throw std::invalid_argument("RGB thermal classification needs a complete Earth imagery/occupancy patch");
+    // Presets are engineering estimates. VIS/SWIR and radar keep their
+    // authored behaviour because these entries only override thermal fields.
+    const auto material = [](const char* name, double temp, double mwir, double lwir,
+                             double sun, double inertia, double wet) {
+        return json{{"name",name},{"temperature_k",temp},{"eps_mwir",mwir},{"eps_lwir",lwir},
+            {"thermal_response",{{"solar_gain_k",sun},{"inertia_h",inertia},{"wet_cooling_k",wet}}}};
+    };
+    auto palette = json::array({
+        material("soil / mixed",baseK,.86,.92,12,3,5),
+        material("tree cover",baseK-1.1,.94,.97,6,4,2.5),
+        material("low vegetation",baseK-.5,.91,.96,8,2.8,4),
+        material("built / bright mineral",baseK+.8,.85,.93,16,3.4,6),
+        material("inferred open water",baseK,.95,.98,3,10,0)
+    });
+    auto classify = [](double r, double g, double b) {
+        const double brightness = (r+g+b)/3.;
+        if (b > 1.16*r && g > 1.06*r && b > .92*g && brightness > .10 && brightness < .62) return 4;
+        if (g > 1.065*r && g > 1.10*b) return brightness < .34 ? 1 : 2;
+        const double chroma = std::max({r,g,b})-std::min({r,g,b});
+        if (brightness > .46 && chroma < .18) return 3;
+        return 0;
+    };
+
+    // A fixed local grid and multiple taps keep classification stable across
+    // cameras, terrain display modes and scene-package page boundaries.
+    std::vector<uint8_t> classes(size_t(nx_)*nz_);
+    for (int z=0;z<nz_;++z) for (int x=0;x<nx_;++x) {
+        std::array<unsigned,5> votes{};
+        for (const double dz : {.2,.5,.8}) for (const double dx : {.2,.5,.8}) {
+            const auto px = std::min(width_-1,uint32_t((x+dx)*width_/nx_));
+            const auto py = std::min(height_-1,uint32_t((z+dz)*height_/nz_));
+            const auto p = (size_t(py)*width_+px)*4;
+            if (rgba_[p+3]) ++votes[classify(rgba_[p]/255.,rgba_[p+1]/255.,rgba_[p+2]/255.)];
+        }
+        const auto dominant = std::max_element(votes.begin(),votes.end());
+        if (*dominant >= 5) classes[size_t(z)*nx_+x] = uint8_t(dominant-votes.begin());
+    }
+    auto grid = std::vector<uint8_t>(volume.cellCount());
+    const auto& occupied = volume.occupancy();
+    const int pitch = nx_*sub_+1;
+    for (int z=0;z<nz_;++z) for (int x=0;x<nx_;++x) {
+        const auto zone = classes[size_t(z)*nx_+x];
+        if (!zone) continue;
+        // A sloping DSM cap can cross several vertical cells in one column.
+        // Mark every cell it intersects, leaving buried cells as soil.
+        double lowest = std::numeric_limits<double>::infinity();
+        for (int j=0;j<=sub_;++j) for (int i=0;i<=sub_;++i)
+            lowest = std::min(lowest,heights_[size_t(z*sub_+j)*pitch+x*sub_+i]);
+        const int firstSurfaceCell = std::clamp(int(std::floor((lowest-bottom_-1e-9)/cell_)),0,ny_-1);
+        for (int y=firstSurfaceCell;y<ny_;++y) {
+            const auto cell = (size_t(z)*ny_+y)*nx_+x;
+            if (occupied[cell]) grid[cell] = zone;
+            else break;
+        }
+    }
+    auto runs = json::array();
+    for (size_t first=0;first<grid.size();) {
+        size_t end=first+1;
+        while (end<grid.size() && grid[end]==grid[first]) ++end;
+        if (grid[first]) runs.push_back({first,end-first,grid[first]});
+        first=end;
+    }
+    return {{"palette",std::move(palette)},{"cell_runs",std::move(runs)}};
+}
 EarthSurfaceSnapshotPtr VoxelEarthPatch::makeSurface(std::shared_ptr<const VoxelTerrain> volume,const std::string& mode,bool rigidFragment)const {
     if(mode!="hd"&&mode!="voxel")throw std::invalid_argument("Earth terrain mode must be hd or voxel");
     const auto n=volume->dimensions();const auto origin=volume->gridOrigin();

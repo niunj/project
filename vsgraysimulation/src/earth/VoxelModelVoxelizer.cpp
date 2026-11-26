@@ -2,6 +2,9 @@
 #include "VoxelTerrain.h"
 #include "VoxelSourceSurface.h"
 #include "AssimpVoxelImport.h"
+#if VSGRAYSIM_HAVE_USD
+#include "../../lib/usd_bridge/UsdVoxelImport.h"
+#endif
 #include <filesystem>
 #include <vsg/all.h>
 #include <map>
@@ -122,6 +125,9 @@ struct MeshTriangleCollector : public vsg::Visitor {
             VertexSurface attr;attr.emissive=emissive_;vid.getValue("voxel.import.emissive",attr.emissive);attr.metallic=metallic_;attr.roughness=roughness_;vid.getValue("voxel.import.metallic",attr.metallic);vid.getValue("voxel.import.roughness",attr.roughness);attr.normalImage=normalImage_;attr.mrImage=mrImage_;attr.image=texture;
             if(auto* data=vid.getObject<vsg::Data>("voxel.import.normal_image"))attr.normalImage=data;
             if(auto* data=vid.getObject<vsg::Data>("voxel.import.mr_image"))attr.mrImage=data;attr.color=diffuse_;attr.present=appearance;
+            attr.emissionImage=vid.getObject<vsg::Data>("voxel.import.emissive_image");
+            vid.getValue("voxel.import.blend",attr.blend);
+            vid.getValue("voxel.import.alpha_cutoff",attr.alphaCutoff);
             vid.getValue("voxel.import.diffuse",attr.color);
             if(colors&&!colors->empty()){const auto& c=(*colors)[colors->size()==1?0:index];for(int j=0;j<4;++j)attr.color[j]*=c[j];}
             if(normals&&!normals->empty()) {const auto n=normalMatrix*vsg::dvec4(vsg::dvec3((*normals)[normals->size()==1?0:index]),0.);attr.normal=vsg::normalize(vsg::vec3(n.x,n.y,n.z));}
@@ -162,7 +168,14 @@ struct MeshTriangleCollector : public vsg::Visitor {
             apply(*draw);
         }
     }
-    struct VertexSurface {vsg::vec3 normal{},emissive{};vsg::vec2 uv{};vsg::vec4 color{1,1,1,1};vsg::ref_ptr<vsg::Data> image,normalImage,mrImage;float metallic=0,roughness=.65;bool present=false;};
+    struct VertexSurface {
+        vsg::vec3 normal{},emissive{};
+        vsg::vec2 uv{};
+        vsg::vec4 color{1,1,1,1};
+        vsg::ref_ptr<vsg::Data> image,normalImage,mrImage,emissionImage;
+        float metallic=0,roughness=.65,alphaCutoff=-1;
+        bool present=false,blend=false;
+    };
     std::vector<VertexSurface> attributes;
     vsg::dmat4 conversion;
     std::vector<vsg::dvec3> triangles_;  ///< world-space vertex triples (one triangle per 3 entries)
@@ -230,6 +243,13 @@ vsg::ref_ptr<vsg::Node> loadMeshFile(const std::string& path) {
         auto converted = std::filesystem::path(path).replace_extension(".vsgb");
         if (std::filesystem::is_regular_file(converted)) return loadMeshFile(converted.string());
         throw std::runtime_error("Convert legacy OSG/IVE to GLB, OBJ or VSG before importing: "+path);
+    }
+    if (extension==".usd" || extension==".usda" || extension==".usdc") {
+#if VSGRAYSIM_HAVE_USD
+        return loadUsdVoxelMesh(path);
+#else
+        throw std::runtime_error("Enable OpenUSD (VSGRAYSIM_ENABLE_USD) to import " + path);
+#endif
     }
     if (extension==".gltf" || extension==".glb" || extension==".fbx" || extension==".dae" ||
         extension==".ply" || extension==".stl" || extension==".3ds") return loadAssimpVoxelMesh(path);
@@ -449,19 +469,27 @@ VoxelModel voxelizeMesh(vsg::Node* mesh, const VoxelModelConfig& config) {
                     const auto* pixels=image->cast<vsg::ubvec4Array2D>();
                     if(pixels) {
                         const double px=(uv.x-std::floor(uv.x))*pixels->width()-.5,py=(uv.y-std::floor(uv.y))*pixels->height()-.5;
-                        const int ix=int(std::floor(px)),iy=int(std::floor(py));sampled=vsg::vec4(0,0,0,1);
+                        const int ix=int(std::floor(px)),iy=int(std::floor(py));sampled=vsg::vec4(0,0,0,0);
                         for(int dy=0;dy<2;++dy)for(int dx=0;dx<2;++dx) {
                             const int sx=(ix+dx+int(pixels->width()))%pixels->width(),sy=(iy+dy+int(pixels->height()))%pixels->height();
                             const auto texel=(*pixels)(sx,sy);const float weight=float((dx?px-ix:1-px+ix)*(dy?py-iy:1-py+iy));
                             for(int j=0;j<3;++j)sampled[j]+=float(linear(texel[j]/255.))*weight;
+                            sampled.a+=texel.a*(weight/255.f);
                         }
                     }
                 }
                 const size_t dest=4*(size_t(slot/columns*tile+y)*appearance->width+slot%columns*tile+x);
                 for(int j=0;j<3;++j){const double value=std::clamp(double(sampled[j]*color[j]),0.,1.);appearance->rgba[dest+j]=uint8_t(std::lround(255*(value<=.0031308?value*12.92:1.055*std::pow(value,1/2.4)-.055)));}
-                appearance->rgba[dest+3]=255;
-                const auto& attr=collector.attributes[i];if(hasEmission){for(int channel=0;channel<3;++channel)appearance->emissive_rgba[dest+channel]=uint8_t(std::clamp(attr.emissive[channel],0.f,1.f)*255+.5f);appearance->emissive_rgba[dest+3]=255;}const auto mr=attr.mrImage?rawSample(attr.mrImage,uv):vsg::vec4(1,1,1,1);
-                appearance->mr_rgba[dest]=255;appearance->mr_rgba[dest+1]=uint8_t(std::clamp(attr.roughness*mr.g,.04f,1.f)*255+.5f);appearance->mr_rgba[dest+2]=uint8_t(std::clamp(attr.metallic*mr.b,0.f,1.f)*255+.5f);appearance->mr_rgba[dest+3]=255;
+                const auto& attr=collector.attributes[i];
+                appearance->rgba[dest+3]=detail::atlasOpacity(sampled.a*color.a,attr.blend,attr.alphaCutoff);
+                if(hasEmission){
+                    const auto texture=attr.emissionImage?rawSample(attr.emissionImage,uv):vsg::vec4(1,1,1,1);
+                    for(int channel=0;channel<3;++channel)
+                        appearance->emissive_rgba[dest+channel]=uint8_t(std::clamp(attr.emissive[channel]*float(linear(texture[channel])),0.f,1.f)*255+.5f);
+                    appearance->emissive_rgba[dest+3]=255;
+                }
+                const auto mr=attr.mrImage?rawSample(attr.mrImage,uv):vsg::vec4(1,1,1,1);
+                appearance->mr_rgba[dest]=255;appearance->mr_rgba[dest+1]=uint8_t(std::clamp(attr.roughness*mr.g,.04f,1.f)*255+.5f);appearance->mr_rgba[dest+2]=uint8_t(std::clamp(attr.metallic*mr.b,0.f,1.f)*255+.5f);appearance->mr_rgba[dest+3]=attr.blend?0:255;
                 if(hasNormal&&attr.normalImage) {
                     const auto sample=rawSample(attr.normalImage,uv);vsg::dvec3 bump(sample.x*2-1,sample.y*2-1,sample.z*2-1);
                     auto n=vsg::dvec3(attr.normal)*double(weights[0])+vsg::dvec3(collector.attributes[i+1].normal)*double(weights[1])+vsg::dvec3(collector.attributes[i+2].normal)*double(weights[2]);

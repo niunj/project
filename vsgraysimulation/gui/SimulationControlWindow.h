@@ -40,6 +40,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <map>
 #include <string>
 #include <thread>
 
@@ -255,6 +256,7 @@ private:
     // ---- 3D preview (共用 viewport3d 库: simulation_display 预设) ----
     viewport3d::Viewport3DView*         preview_viewport_ = nullptr;
     viewport3d::SimulationDisplayFacade* sim_facade_      = nullptr;
+    std::map<uint32_t,bool> aircraft_fx_alive_; // previous authoritative state for a one-shot visual burst
     std::set<std::string> impact_handled_;   ///< 已播过命中爆炸的交战 (幂等避免重复)
     std::set<std::string> launch_handled_;   ///< 已播过发射特效的拦截弹 (幂等)
     std::set<std::string> miss_handled_;     ///< 已打过脱靶标记的拦截弹 (幂等)

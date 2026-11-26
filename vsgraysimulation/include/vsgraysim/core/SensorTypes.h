@@ -16,6 +16,7 @@ enum class SensorType : int32_t {
     IR    = 2,
     RADAR = 3,
     SAR   = 4,
+    SONAR = 5,
 };
 
 inline const char* sensorTypeName(SensorType t) {
@@ -25,6 +26,7 @@ inline const char* sensorTypeName(SensorType t) {
         case SensorType::IR:    return "ir";
         case SensorType::RADAR: return "radar";
         case SensorType::SAR:   return "sar";
+        case SensorType::SONAR: return "sonar";
     }
     return "unknown";
 }

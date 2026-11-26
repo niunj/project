@@ -67,6 +67,35 @@ int main()try{
     for(size_t i=0;i<glow.size();i+=4)
         lamp|=std::abs(int(glow[i])-51)<=1&&std::abs(int(glow[i+1])-102)<=1&&std::abs(int(glow[i+2])-204)<=1;
     require(lamp,"source emissive lamp was discarded");
+    auto glazing=vsg::VertexIndexDraw::create(*painted);
+    glazing->setValue("voxel.import.diffuse",vsg::vec4(1,1,1,.25f));
+    glazing->setValue("voxel.import.blend",true);
+    auto lampImage=vsg::ubvec4Array2D::create(8,8, vsg::Data::Properties{VK_FORMAT_R8G8B8A8_SRGB});
+    for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x)
+        (*lampImage)(x,y)=vsg::ubvec4(x<4?255:0,0,x<4?0:255,255);
+    glazing->setObject("voxel.import.emissive_image",lampImage);
+    for(bool clipped:{false,true}){
+        auto materialConfig=config;
+        materialConfig.sourceSurface=clipped;
+        auto reference=voxelizeMesh(painted,materialConfig).terrain;
+        auto glass=voxelizeMesh(glazing,materialConfig).terrain;
+        require(glass->occupancy()==reference->occupancy()&&glass->indices()==reference->indices(),
+            "display alpha changed occupied cells or the underlying triangle topology");
+        require(glass->hasMaterialBlend,"blend pass was not preserved");
+        bool alpha=false,redLamp=false,blueLamp=false,dimLamp=false;
+        for(size_t i=0;i<glass->imagery_rgba.size();i+=4){
+            if(glass->mr_rgba[i+3]!=0)continue;
+            alpha|=glass->imagery_rgba[i+3]==64;
+            const auto& e=glass->emissive_rgba;
+            redLamp|=e[i]==51&&e[i+2]==0;
+            blueLamp|=e[i]==0&&e[i+2]==204;
+            dimLamp|=e[i]<51&&e[i+2]<204;
+        }
+        require(alpha&&redLamp&&blueLamp&&(!clipped||dimLamp),"blend alpha or spatial emissive texture was flattened");
+        auto restored=VoxelTerrain::decodeVolume(glass->encodeVolume());
+        require(restored->hasMaterialBlend&&restored->imagery_rgba==glass->imagery_rgba&&
+            restored->emissive_rgba==glass->emissive_rgba,"checkpoint lost display alpha or emission");
+    }
     auto nativeImage=vsg::ubvec4Array2D::create(8,8);for(int y=0;y<8;++y)for(int x=0;x<8;++x)(*nativeImage)(x,y)=vsg::ubvec4(x<4?240:20,20,x<4?20:240,255);
     nativeImage->properties.format=VK_FORMAT_R8G8B8A8_SRGB;
     auto nativeDraw=vsg::VertexIndexDraw::create();nativeDraw->assignArrays({vsg::vec3Array::create({{0,0,0},{4,0,0},{4,4,0},{0,4,0}}),vsg::vec3Array::create(4,vsg::vec3(0,0,1)),vsg::vec2Array::create({{0,0},{1,0},{1,1},{0,1}}),vsg::vec4Array::create(1,vsg::vec4(1,1,1,1))});
@@ -109,7 +138,21 @@ int main()try{
     sourceScene->schedule({{"kind","fracture"},{"object","sheets"},{"tick",2},{"point_m",{2,2,.15}},{"normal",{1,0,0}},{"radius_m",10},{"energy_j",1e9}});sourceScene->advanceTo(.04);auto sourceResume=VoxelScene::load(sourceScene->checkpoint());require(sourceResume->checkpoint()==sourceScene->checkpoint(),"source-clipped fragments did not roundtrip");
     for(const auto& [id,o]:sourceResume->snapshot()->objects)require(o.volume->appearance()->detailed()&&o.volume->imagery_uv.size()==o.volume->vertices().size(),"crop lost source-patch ownership/UVs");
     auto corrupt=separate->encodeVolume();corrupt["surface_appearance"]["source_patches_zlib_cbor"]["raw_bytes"]=300ULL*1024*1024;bool rejected=false;try{VoxelTerrain::decodeVolume(corrupt);}catch(const std::exception&){rejected=true;}require(rejected,"unbounded compressed source allocation accepted");
-    auto largeAppearance=std::make_shared<VoxelSurfaceAppearance>();largeAppearance->origin={0,0,0};largeAppearance->dimensions={1,1,1};largeAppearance->cellSize=1;largeAppearance->width=1100;largeAppearance->height=1000;largeAppearance->rgba.resize(4*1100*1000,127);auto archiveFixture=VoxelTerrain::fromOccupancy({0,0,0},1,1,1,1,{true},false);archiveFixture->setAppearance(largeAppearance);auto compact=archiveFixture->encodeVolume();require(compact["surface_appearance"].contains("rgba_zlib_hex"),"large repetitive atlas was not losslessly compressed");auto expanded=VoxelTerrain::decodeVolume(compact);require(expanded->imagery_rgba==largeAppearance->rgba,"compressed atlas changed source texels");
+    auto largeAppearance=std::make_shared<VoxelSurfaceAppearance>();
+    largeAppearance->origin={0,0,0};largeAppearance->dimensions={1,1,1};largeAppearance->cellSize=1;
+    largeAppearance->width=1100;largeAppearance->height=1000;
+    largeAppearance->rgba.resize(4*1100*1000,127);
+    largeAppearance->normal_rgba.resize(largeAppearance->rgba.size());
+    for(size_t i=0;i<largeAppearance->normal_rgba.size();++i)
+        largeAppearance->normal_rgba[i]=uint8_t(i%251);
+    auto archiveFixture=VoxelTerrain::fromOccupancy({0,0,0},1,1,1,1,{true},false);
+    archiveFixture->setAppearance(largeAppearance);
+    const auto compact=archiveFixture->encodeVolume();
+    require(compact["surface_appearance"].contains("rgba_zlib_hex")&&
+        compact["surface_appearance"].contains("normal_zlib_hex"),"large atlases were not losslessly compressed");
+    const auto expanded=VoxelTerrain::decodeVolume(compact);
+    require(expanded->imagery_rgba==largeAppearance->rgba&&expanded->normal_rgba==largeAppearance->normal_rgba,
+        "compressed atlas changed colour or normal texels");
     std::cout<<"PASS: independent thin structures, deterministic threaded source atlas, canonical collision, damage/crop and compressed checkpoint\n";
     auto restored=VoxelTerrain::decodeVolume(paint->encodeVolume());require(restored->appearance()->emissive_rgba==paint->appearance()->emissive_rgba&&restored->imagery_rgba==paint->imagery_rgba&&restored->imagery_uv==paint->imagery_uv,"surface appearance checkpoint drift");
     auto scene=VoxelScene::load({{"format","voxel-scene-v1"},{"objects",{{{"id","painted"},{"source",{{"type","mesh"},{"path",paintPath},{"voxel_size_m",.25}}},{"physics",{{"motion","static"},{"fracture",true},{"support","none"}}}}}}});

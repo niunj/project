@@ -68,6 +68,73 @@ void steppingAndCheckpoint(){
     auto decoded=VoxelScene::load(erased->checkpoint());check(decoded->snapshot()->objects.at("tiny").massKg()==0,"empty destroyed object cannot round-trip");
     check(!decoded->raycast({4,20,4},{0,-1,0},30),"destroyed object retained collision geometry");
 }
+void rotorSpinUpCheckpoint(){
+    auto carrier=box("carrier");
+    auto rotor=box("rotor");
+    rotor["physics"]={{"motion","prescribed"}};
+    rotor["rotor_drive"]={{"carrier","carrier"},{"pivot_m",{0,12,0}},{"axis",{0,1,0}},
+        {"rpm",-60.},{"phase_deg",30.},{"start_seconds",.4},{"spin_up_seconds",.8}};
+    auto scene=VoxelScene::load({{"format","voxel-scene-v1"},{"fixed_step_seconds",.02},
+        {"objects",json::array({carrier,rotor})}});
+    const auto drive=*scene->snapshot()->objects.at("rotor").rotor;
+    check(drive.rpmAt(.3)==0.&&drive.rpmAt(.4)==0.&&std::abs(drive.angleAt(.3)-vsg::PI/6.)<1e-12,
+        "rotor moved before its start");
+    check(std::abs(drive.rpmAt(.8)+30.)<1e-12&&std::abs(drive.angleAt(.8)-(vsg::PI/6.-.15*vsg::PI))<1e-12,
+        "rotor speed or integrated phase was wrong halfway through spin-up");
+    check(drive.rpmAt(1.4)==-60.&&std::abs(drive.angleAt(1.4)-(vsg::PI/6.-1.2*vsg::PI))<1e-12,
+        "rotor phase was discontinuous after spin-up");
+    scene->setPaused(false);
+    scene->advanceTo(.8);
+    auto restored=VoxelScene::load(scene->checkpoint());
+    restored->setPaused(false);
+    scene->advanceTo(1.4);
+    restored->advanceTo(1.4);
+    check(scene->checkpoint()==restored->checkpoint(),"rotor spin-up did not resume deterministically");
+}
+void environmentalMotionCheckpoint(){
+    auto hull=box("hull");
+    const auto track=[](double altitude){
+        return json::array({
+            {{"seconds",0.},{"position_m",{0.,altitude,0.}},{"rotation_xyzw",{0,0,0,1}}},
+            {{"seconds",6.},{"position_m",{0.,altitude,36.}},{"rotation_xyzw",{0,0,0,1}}},
+        });
+    };
+    hull["pose_track"]=track(-2.);
+    hull["motion_response"]="waves";
+    auto airplane=box("airplane");
+    airplane["pose_track"]=track(150.);
+    airplane["motion_response"]="gusts";
+    const json scenario={{"format","voxel-scene-v1"},{"fixed_step_seconds",.02},
+        {"ocean",{{"wave_height_m",.8},{"swell_height_m",.2}}},
+        {"weather",{{"initial",{{"wind_speed_mps",14.}}}}},{"objects",json::array({hull,airplane})}};
+    auto scene=VoxelScene::load(scenario);
+    scene->setPaused(false);
+    scene->advanceTo(.8,100);
+    const auto fractional=scene->sample(.79);
+    for(const auto* id:{"hull","airplane"}){
+        const auto& object=fractional->objects.at(id);
+        const auto pose=object.pose(fractional->tick,fractional->fixedStep);
+        check(std::abs(pose[0][1])+std::abs(pose[2][1])>.001,"fractional sensor pose lost the environmental response");
+    }
+    auto restored=VoxelScene::load(scene->checkpoint());
+    restored->setPaused(false);
+    scene->advanceTo(1.4,100);
+    restored->advanceTo(1.4,100);
+    check(scene->checkpoint()==restored->checkpoint(),"environmental motion did not continue from a checkpoint");
+    auto calm=scenario;
+    calm["ocean"]={{"wave_height_m",0.},{"swell_height_m",0.}};
+    calm["weather"]["initial"]["wind_speed_mps"]=0.;
+    auto baseline=VoxelScene::load(calm);
+    baseline->setPaused(false);
+    baseline->advanceTo(.8,100);
+    const auto state=baseline->snapshot();
+    for(const auto* id:{"hull","airplane"}){
+        const auto pose=state->objects.at(id).pose(state->tick,state->fixedStep);
+        const double altitude=std::string(id)=="hull"?-2.:150.;
+        check(std::abs(pose[3][2]-4.8)<1e-12&&pose[3][1]==altitude&&pose[0][1]==0.&&pose[2][1]==0.,
+            "motion response displaced a platform in calm conditions");
+    }
+}
 void publicationAndAdapters(){
     auto scene=VoxelScene::load(definition());scene->setPaused(false);auto old=scene->snapshot();
     scene->setPreparePublication([](auto){throw std::runtime_error("injected renderer allocation failure");});
@@ -143,5 +210,5 @@ void taskAndProcessIsolation(){
     std::cout<<"PASS: bounded category tasks, normal exception recovery, subprocess crash/timeout isolation and real asset compilation\n";
 }
 #include "scene_weather_checks.h"
-int main()try{sceneWeatherChecks();taskAndProcessIsolation();authoringAndQueries();steppingAndCheckpoint();publicationAndAdapters();meshImportPersistence();codecAndPersistence();std::cout<<"PASS: atomic voxel authoring, deterministic events/motion, immutable publication, sensor/display topology and checkpoints\n";return 0;}
+int main()try{sceneWeatherChecks();taskAndProcessIsolation();authoringAndQueries();steppingAndCheckpoint();rotorSpinUpCheckpoint();environmentalMotionCheckpoint();publicationAndAdapters();meshImportPersistence();codecAndPersistence();std::cout<<"PASS: atomic voxel authoring, deterministic events/motion, immutable publication, sensor/display topology and checkpoints\n";return 0;}
 catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}

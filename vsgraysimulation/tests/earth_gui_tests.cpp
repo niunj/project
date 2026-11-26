@@ -4,6 +4,7 @@
 #include "earth_unified_capture.h"
 #include "earth_detail_capture.h"
 #include "earth_ocean_capture.h"
+#include "earth_aviation_capture.h"
 #include "viewport3d/GeoTerrainExporter.h"
 #include <vsg/app/Viewer.h>
 #include <vsg/app/View.h>
@@ -56,10 +57,11 @@ class NativeDeadline {
     std::mutex mutex_;std::condition_variable changed_;bool finished_=false;
     std::thread watchdog_;
 public:
-    NativeDeadline():watchdog_([this]{
+    explicit NativeDeadline(int recordingAllowance=0):watchdog_([this,recordingAllowance]{
         std::unique_lock<std::mutex> lock(mutex_);
-        if(!changed_.wait_for(lock,std::chrono::seconds(120+(std::getenv("VSGRAYSIM_SOAK_SECONDS")?std::stoi(std::getenv("VSGRAYSIM_SOAK_SECONDS")):0)),[this]{return finished_;})){
-            std::fputs("FAIL: native Earth GUI acceptance exceeded 120 seconds\n",stderr);std::fflush(stderr);std::_Exit(EXIT_FAILURE);
+        const int seconds=120+recordingAllowance+(std::getenv("VSGRAYSIM_SOAK_SECONDS")?std::stoi(std::getenv("VSGRAYSIM_SOAK_SECONDS")):0);
+        if(!changed_.wait_for(lock,std::chrono::seconds(seconds),[this]{return finished_;})){
+            std::fprintf(stderr,"FAIL: native Earth GUI acceptance exceeded %d seconds\n",seconds);std::fflush(stderr);std::_Exit(EXIT_FAILURE);
         }
     }){}
     ~NativeDeadline(){
@@ -648,6 +650,31 @@ int main(int argc,char** argv){
     if(std::getenv("VSGRAYSIM_GPU_DEBUG"))vsg::Logger::instance()->level=vsg::Logger::LOGGER_DEBUG;
     try{
         const auto arguments=application.arguments();if(arguments.size()==1)topicContracts(root.path());
+        if(arguments.size()==3&&arguments[1]=="--aviation-fx-capture"){NativeDeadline deadline;runEarthAviationCapture(arguments[2]);return 0;}
+        if(arguments.size()==3&&arguments[1]=="--aviation-video-frames"){NativeDeadline deadline(180);runEarthAviationCapture(arguments[2],true);return 0;}
+        if(arguments.size()==3&&arguments[1]=="--aircraft-debris-capture"){NativeDeadline deadline;runEarthAircraftDebrisCapture(arguments[2]);return 0;}
+        if(arguments.size()==4&&arguments[1]=="--ah64-rotor-capture"){
+            NativeDeadline deadline(180);runEarthAh64RotorCapture(arguments[2],arguments[3]);return 0;
+        }
+        if(arguments.size()>=4&&arguments.size()<=5&&arguments[1]=="--platform-motion-capture"){
+            NativeDeadline deadline(180);
+            // A shared asset directory can still be used for a compact capture command.
+            if(arguments.size()==4)runEarthPlatformMotionCapture(arguments[2],arguments[3],arguments[2]);
+            else runEarthPlatformMotionCapture(arguments[2],arguments[4],arguments[3]);
+            return 0;
+        }
+        if(arguments.size()==4&&arguments[1]=="--published-platform-motion-capture"){
+            NativeDeadline deadline(180);runEarthPublishedMotionCapture(arguments[2],arguments[3]);return 0;
+        }
+        if(arguments.size()==5&&(arguments[1]=="--formal-platform-motion-capture"||arguments[1]=="--formal-platform-motion-broker")){
+            NativeDeadline deadline(180);runEarthFormalPlatformCapture(arguments[2],arguments[3],arguments[4],arguments[1]=="--formal-platform-motion-broker");return 0;
+        }
+        if(arguments.size()==3&&arguments[1]=="--vehicle-effects-capture"){
+            NativeDeadline deadline;runEarthPlatformMotionCapture({},arguments[2],{},true);return 0;
+        }
+        if(arguments.size()==4&&arguments[1]=="--m1a2-motion-capture"){
+            NativeDeadline deadline;runEarthPlatformMotionCapture(arguments[2],arguments[3]);return 0;
+        }
         if(arguments.size()==2&&arguments[1]=="--scene-detail-view") {
             runEarthDetailCapture({},true);return 0;
         }
@@ -731,11 +758,63 @@ int main(int argc,char** argv){
             NativeDeadline deadline;runEarthUrbanCapture(arguments[2],arguments[2],arguments[4],arguments[3],true);return 0;
         }
         if(arguments.size()==4&&arguments[1]=="--equipment-capture"){NativeDeadline deadline;return vsgraysim::gui::display::runVoxelEquipmentWorkbench(QFileInfo(arguments[2]).absoluteFilePath(),QFileInfo(arguments[3]).absoluteFilePath());}
+        if(arguments.size()==4&&arguments[1]=="--earth-g63-motion"){
+            NativeDeadline deadline(180);
+            runEarthTopicStillCapture(arguments[2],arguments[3],EarthTopicCapture::G63Motion);
+            return 0;
+        }
+        if(arguments.size()==4&&arguments[1]=="--earth-deck-takeoff"){
+            NativeDeadline deadline(180);
+            runEarthTopicStillCapture(arguments[2],arguments[3],EarthTopicCapture::DeckTakeoff);
+            return 0;
+        }
+        if(arguments.size()==4&&arguments[1]=="--earth-sonar-crossing"){
+            NativeDeadline deadline(180);
+            runEarthTopicStillCapture(arguments[2],arguments[3],EarthTopicCapture::SonarCrossing);
+            return 0;
+        }
+        if(arguments.size()==4&&arguments[1]=="--earth-diesel-propeller"){
+            NativeDeadline deadline(180);
+            runEarthTopicStillCapture(arguments[2],arguments[3],EarthTopicCapture::DieselPropeller);
+            return 0;
+        }
+        if(arguments.size()==4&&arguments[1]=="--earth-environment-motion"){
+            runEarthTopicStillCapture(arguments[2],arguments[3],EarthTopicCapture::EnvironmentMotion);
+            return 0;
+        }
+        if(arguments.size()==4&&arguments[1]=="--earth-marine-audio"){
+            NativeDeadline deadline(180);
+            runEarthTopicStillCapture(arguments[2],arguments[3],EarthTopicCapture::MarineAudio);
+            return 0;
+        }
         if(arguments.size()==4&&(arguments[1]=="--scene-topic-capture"||arguments[1]=="--scene-topic-demo")){qputenv("VSGRAYSIM_SCENE_TOPIC",QFileInfo(arguments[2]).absoluteFilePath().toUtf8());NativeDeadline deadline;runEarthOceanCapture(arguments[3],arguments[1]=="--scene-topic-demo");return 0;}
         if(arguments.size()==3&&arguments[1]=="--scene-ocean-capture") {NativeDeadline deadline;runEarthOceanCapture(arguments[2]);return 0;}
         if(arguments.size()==2&&arguments[1]=="--scene-ocean-demo") {runEarthOceanCapture({},true);return 0;}
+        if(arguments.size()>=4&&arguments.size()<=6&&arguments[1]=="--earth-compare-model"){
+            NativeDeadline deadline(180);
+            bool valid=true;
+            const double scale=arguments.size()>=5?arguments[4].toDouble(&valid):1.;
+            require(valid&&scale>0.,"comparison assets require a positive metre scale");
+            const int dimension=arguments.size()==6?arguments[5].toInt():180;
+            runEarthTargetDestruction(arguments[3],dimension,arguments[2],scale);return 0;
+        }
         if((arguments.size()==3||arguments.size()==4)&&arguments[1]=="--scene-target-destruction-capture") {
             NativeDeadline deadline;runEarthTargetDestruction(arguments[2],arguments.size()==4?arguments[3].toInt():512);return 0;
+        }
+        if (arguments.size()==4 && arguments[1]=="--scene-topic-still") {
+            NativeDeadline deadline;
+            runEarthTopicStillCapture(arguments[2], arguments[3]);
+            return 0;
+        }
+        if (arguments.size()==4 && arguments[1]=="--scene-terrain-page-traverse") {
+            NativeDeadline deadline;
+            runEarthTopicStillCapture(arguments[2], arguments[3], EarthTopicCapture::TerrainTraverse);
+            return 0;
+        }
+        if (arguments.size()==4 && arguments[1]=="--scene-thermal-capture") {
+            NativeDeadline deadline;
+            runEarthTopicStillCapture(arguments[2], arguments[3], EarthTopicCapture::Thermal);
+            return 0;
         }
         if(arguments.size()==5&&arguments[1]=="--unified-scene-capture") {
             NativeDeadline deadline;runUnifiedEarth(arguments[3],arguments[4],arguments[2],false);return 0;

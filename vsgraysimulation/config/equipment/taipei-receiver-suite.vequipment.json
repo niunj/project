@@ -297,6 +297,7 @@
       "object": "aircraft",
       "name": "F-16 体素平台",
       "kind": "aircraft",
+      "model_id": "f16c",
       "model_heading_deg": 180
     }
   ]

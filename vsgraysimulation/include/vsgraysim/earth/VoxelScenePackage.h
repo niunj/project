@@ -1,4 +1,6 @@
 #pragma once
+#include <array>
+#include <future>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
@@ -11,6 +13,10 @@ class VoxelScenePackage {
     static bool extension(const std::string &);
     static nlohmann::json inspect(const std::string &);
     static nlohmann::json checkpoint(const std::string &);
+    /// Read only the pages intersecting a local XZ rectangle on the terrain worker.
+    /// The caller supplies its full measurement/physics footprint and any required fringe.
+    static std::future<nlohmann::json> terrainPagesAsync(const std::string &,
+                                                        std::array<double, 4> boundsXZ);
     static nlohmann::json save(const std::string &, const nlohmann::json &topic,
                                const nlohmann::json &checkpoint);
     static std::string resolveResource(const std::string &, const std::string &manifest);

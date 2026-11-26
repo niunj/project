@@ -3,7 +3,7 @@
 #include "display/ControlWorkbench.h"
 #include "display/EarthPanel.h"
 #include "display/FlightPanel.h"
-#include "display/TexturedCockpit.h"
+#include "display/PlatformInstruments.h"
 #include "display/ConsoleSelector.h"
 #include "display/JoystickInput.h"
 #include "display/SensorPanels.h"
@@ -67,32 +67,32 @@ void acknowledge(const FlightControlCommand& c){BrokerNet::instance().completeFl
 void drain(){FlightControlCommand c;while(BrokerNet::instance().pollFlightControl(&c))acknowledge(c);}
 void key(QWidget& panel,int k,bool down){QKeyEvent event(down?QEvent::KeyPress:QEvent::KeyRelease,k,Qt::NoModifier);QApplication::sendEvent(&panel,&event);}
 void mouse(QWidget& panel,QEvent::Type type,const QPoint& point,Qt::MouseButton button,Qt::MouseButtons buttons){QMouseEvent event(type,QPointF(point),QPointF(panel.mapToGlobal(point)),button,buttons,Qt::NoModifier);QApplication::sendEvent(&panel,&event);}
-void textureContract(){
+void instrumentContract(){
     const auto profile=CockpitProfile::load("config/cockpits/f16c.json");require(profile.engineCount==1&&profile.stick.center().x()>.5&&profile.throttle.center().x()<.5,"F-16 panel did not use a single engine/right sidestick/left throttle layout");
     std::ifstream source("config/cockpits/f16c.json");json definition;source>>definition;auto alternate=definition;alternate["id"]="other_airframe";alternate["engine_count"]=2;alternate["controls"]["maximum_axis_demand"]=.5;alternate["instruments"][3]["max"]=450;
     const auto other=CockpitProfile::parse(alternate,QDir::currentPath()+"/config/cockpits");require(other.engineCount==2&&other.maximumAxisDemand==.5&&other.instruments[3].maximum==450,"airframe presentation parameters were hardcoded");
     auto invalid=definition;invalid["instruments"][3]["max"]=-1;bool rejected=false;try{CockpitProfile::parse(invalid,QDir::currentPath());}catch(const std::exception&){rejected=true;}require(rejected,"invalid gauge range was accepted");
-    auto sample=telemetry();require(!TexturedCockpit::measurement(sample,"air_data.ias_mps"),"panel invented indicated airspeed from ground speed");require(!TexturedCockpit::measurement(sample,"engine.rpm_pct"),"panel invented engine instrumentation");
-    sample["air_data"]["ias_mps"]=89.;require(TexturedCockpit::measurement(sample,"air_data.ias_mps")==89.,"configured instrument binding did not read its actual field");
+    auto sample=telemetry();require(!PlatformInstruments::measurement(sample,"air_data.ias_mps"),"panel invented indicated airspeed from ground speed");require(!PlatformInstruments::measurement(sample,"engine.rpm_pct"),"panel invented engine instrumentation");
+    sample["air_data"]["ias_mps"]=89.;require(PlatformInstruments::measurement(sample,"air_data.ias_mps")==89.,"configured instrument binding did not read its actual field");
     initializeBroker();auto& net=BrokerNet::instance();AircraftCockpitPanel panel;widget<QComboBox>(panel,"cockpit_view_mode")->setCurrentIndex(0);panel.resize(1400,950);panel.show();pump(20);auto samples=json::array({telemetry()});
-    auto update=[&]{panel.updateState(json::object(),samples,2.5,true,false,net.flightSessionId(),true,77);};update();auto* canvas=panel.instrumentPanel();require(canvas->profile().id=="f16c","cockpit did not load the selected textured profile");
+    auto update=[&]{panel.updateState(json::object(),samples,2.5,true,false,net.flightSessionId(),true,77);};update();auto* canvas=panel.instrumentPanel();require(canvas->profile().id=="f16c","cockpit did not load the selected instrument profile");
     QString error;require(!canvas->loadProfile("/no/such/cockpit.json",error)&&canvas->profile().id=="f16c","failed profile load destroyed the current panel");
     const auto beforePage=canvas->grab().toImage();auto osb=canvas->controlPosition("right_eng");mouse(*canvas,QEvent::MouseButtonPress,osb,Qt::LeftButton,Qt::LeftButton);mouse(*canvas,QEvent::MouseButtonRelease,osb,Qt::LeftButton,Qt::NoButton);require(canvas->grab().toImage()!=beforePage,"configured physical OSB button did not change its MFD page");FlightControlCommand localOnly;require(!net.pollFlightControl(&localOnly),"local avionics page change sent a flight command");
     osb=canvas->controlPosition("right_ctrl");mouse(*canvas,QEvent::MouseButtonPress,osb,Qt::LeftButton,Qt::LeftButton);mouse(*canvas,QEvent::MouseButtonRelease,osb,Qt::LeftButton,Qt::NoButton);
     auto at=canvas->controlPosition("stick");mouse(*canvas,QEvent::MouseButtonPress,at,Qt::LeftButton,Qt::LeftButton);require(!canvas->interacting(),"unauthorized joystick acquired control");drain();
     widget<QPushButton>(panel,"flight_take_control")->click();acknowledge(command());pump(30);update();
-    mouse(*canvas,QEvent::MouseButtonPress,at,Qt::LeftButton,Qt::LeftButton);acknowledge(command());const auto moved=at+QPoint(35,35);mouse(*canvas,QEvent::MouseMove,moved,Qt::NoButton,Qt::LeftButton);auto demand=command();require(demand.elevator>0&&demand.aileron>0&&demand.elevator<=profile.maximumAxisDemand&&demand.aileron<=profile.maximumAxisDemand,"textured sidestick did not submit bounded pitch/roll demands");acknowledge(demand);
+    mouse(*canvas,QEvent::MouseButtonPress,at,Qt::LeftButton,Qt::LeftButton);acknowledge(command());const auto moved=at+QPoint(35,35);mouse(*canvas,QEvent::MouseMove,moved,Qt::NoButton,Qt::LeftButton);auto demand=command();require(demand.elevator>0&&demand.aileron>0&&demand.elevator<=profile.maximumAxisDemand&&demand.aileron<=profile.maximumAxisDemand,"Qt sidestick did not submit bounded pitch/roll demands");acknowledge(demand);
     mouse(*canvas,QEvent::MouseButtonRelease,moved,Qt::LeftButton,Qt::NoButton);auto centre=command();require(centre.elevator==0&&centre.aileron==0&&!canvas->interacting(),"physical joystick release did not spring to centre");acknowledge(centre);
-    at=canvas->controlPosition("throttle");mouse(*canvas,QEvent::MouseButtonPress,at,Qt::LeftButton,Qt::LeftButton);acknowledge(command());mouse(*canvas,QEvent::MouseMove,at-QPoint(0,45),Qt::NoButton,Qt::LeftButton);auto throttle=command();require(throttle.throttle>.5&&throttle.throttle<=1,"textured throttle travel did not map to normalized demand");acknowledge(throttle);mouse(*canvas,QEvent::MouseButtonRelease,at,Qt::LeftButton,Qt::NoButton);
+    at=canvas->controlPosition("throttle");mouse(*canvas,QEvent::MouseButtonPress,at,Qt::LeftButton,Qt::LeftButton);acknowledge(command());mouse(*canvas,QEvent::MouseMove,at-QPoint(0,45),Qt::NoButton,Qt::LeftButton);auto throttle=command();require(throttle.throttle>.5&&throttle.throttle<=1,"Qt throttle travel did not map to normalized demand");acknowledge(throttle);mouse(*canvas,QEvent::MouseButtonRelease,at,Qt::LeftButton,Qt::NoButton);
     require(panel.controls()->selectedTelemetry()["flight_control"]["actual"]["throttle"]==.6,"throttle graphic replaced measured actuator feedback");
-    require(QDir().mkpath("build/f16c-panel"),"cannot create textured panel artifacts");require(panel.grab().save("build/f16c-panel/f16c-workbench.png"),"cannot capture textured control panel");require(canvas->grab().save("build/f16c-panel/f16c-instruments.png"),"cannot capture instrument texture composition");
-    panel.hide();drain();std::cout<<"PASS: F-16 textures, configurable airframes/gauges, honest missing channels, pointer HOTAS, spring return and throttle latch\n";
+    require(QDir().mkpath("build/f16c-panel"),"cannot create instrument panel artifacts");require(panel.grab().save("build/f16c-panel/f16c-workbench.png"),"cannot capture Qt control panel");require(canvas->grab().save("build/f16c-panel/f16c-instruments.png"),"cannot capture instrument composition");
+    panel.hide();drain();std::cout<<"PASS: F-16 instruments, configurable airframes/gauges, honest missing channels, pointer HOTAS, spring return and throttle latch\n";
 }
 void fleetContract(){
     const auto profiles=CockpitProfile::builtInProfiles();require(profiles.size()==4,"startup selector did not discover four complete consoles");require(QDir().mkpath("build/fleet-cockpit-ui"),"cannot create fleet UI artifacts");
     ConsoleSelector selector(nullptr,"mq9");selector.show();pump(20);const auto cards=selector.findChildren<QPushButton*>(QRegularExpression("console_.*"));require(cards.size()==4,"startup cards omitted an airframe");for(auto* card:cards)require(card->height()>=240&&card->width()>=300,"global button styling collapsed the console preview cards");require(selector.grab().save("build/fleet-cockpit-ui/selector.png"),"cannot capture startup selector");widget<QPushButton>(selector,"console_ah64d")->click();require(selector.result()==QDialog::Accepted&&selector.selectedProfile().endsWith("ah64d.json"),"startup selection opened the wrong console");
     auto options=vsg::Options::create();options->add(vsgXchange::all::create());auto& net=BrokerNet::instance();
-    for(const auto& path:profiles){const auto profile=CockpitProfile::load(path);AircraftCockpitPanel panel;widget<QComboBox>(panel,"cockpit_view_mode")->setCurrentIndex(0);QString error;require(panel.loadCockpitProfile(path,error),"airframe console/texture load failed");panel.resize(1440,980);panel.show();panel.updateState(json::object(),json::array({telemetry()}),2.5,true,false,net.flightSessionId(),true,77);pump(20);
+    for(const auto& path:profiles){const auto profile=CockpitProfile::load(path);AircraftCockpitPanel panel;widget<QComboBox>(panel,"cockpit_view_mode")->setCurrentIndex(0);QString error;require(panel.loadCockpitProfile(path,error),"airframe console load failed");panel.resize(1440,980);panel.show();panel.updateState(json::object(),json::array({telemetry()}),2.5,true,false,net.flightSessionId(),true,77);pump(20);
         require(panel.instrumentPanel()->profile().id==profile.id,"runtime model selection retained the prior panel");require(panel.grab().save("build/fleet-cockpit-ui/"+profile.id+"-panel.png"),"cannot capture fleet panel");
         bool representative=false;const auto model=vsgraysim::viewport3d::loadAircraftExterior(profile.modelPath.toStdString(),profile.modelUpAxis.toStdString(),profile.modelKind.toStdString(),profile.modelMaximumDimension,options,representative);require(bool(model)&&representative==(profile.id=="a320"),"existing aircraft model did not load or airliner placeholder was concealed");
         vsg::ComputeBounds bounds;model->accept(bounds);require(bounds.bounds.valid(),"exterior model has no display bounds");const auto extent=bounds.bounds.max-bounds.bounds.min;require(std::abs(std::max({extent.x,extent.y,extent.z})-profile.modelMaximumDimension)<.01,"per-airframe exterior dimensions were ignored");
@@ -115,12 +115,26 @@ void cameraContract(){
     sample["roll"]=25;const auto before=sample;camera=AircraftCockpitFeature::pilotCamera(anchor,sample,25,-15);require(sample==before&&std::abs(vsg::dot(vsg::normalize(camera.center-camera.eye),camera.up))<1e-8,"head look modified truth or broke camera orthogonality");
     auto invalid=sample;invalid["velocity"][0]=std::numeric_limits<double>::infinity();require(!AircraftCockpitFeature::validTelemetry(invalid),"nonfinite cockpit telemetry accepted");
     bool rejected=false;try{AircraftCockpitFeature::pilotCamera(anchor,invalid);}catch(const std::exception&){rejected=true;}require(rejected,"invalid pose produced an operational pilot camera");
-    const auto original=AircraftCockpitFeature::hud(sample,true);require(original.pixelColor(0,0).alpha()==0,"HUD glass background is opaque");auto vertical=sample;vertical["velocity"][1]=100;vertical["speed"]=156;
-    require(original==AircraftCockpitFeature::hud(vertical,true),"HUD GS was total speed instead of horizontal ground speed");
-    require(original!=AircraftCockpitFeature::hud(sample,false),"stale telemetry was visually identical to live telemetry");
-    auto malformed=sample;malformed["flight_control"]=nullptr;require(!AircraftCockpitFeature::instruments(malformed,true).isNull(),"malformed optional actuators crashed the cockpit");
-    require(!AircraftCockpitFeature::instruments(json::object(),false).isNull(),"waiting instrument panel unavailable");
-    std::cout<<"PASS: ENU camera, heading/pitch/roll, independent head look, real GS, invalid and stale telemetry\n";
+    auto vertical=sample;vertical["velocity"][1]=100;vertical["speed"]=156;
+    require(PlatformInstruments::measurement(sample,"ground_speed_kt")==PlatformInstruments::measurement(vertical,"ground_speed_kt"),"GS was total speed instead of horizontal ground speed");
+    std::cout<<"PASS: ENU camera, heading/pitch/roll, independent head look and horizontal GS\n";
+}
+void presentationContract(){
+    initializeBroker();auto& net=BrokerNet::instance();AircraftCockpitPanel panel;panel.resize(1320,910);panel.show();pump(20);
+    auto* mode=widget<QComboBox>(panel,"cockpit_view_mode");auto* canvas=panel.instrumentPanel();
+    require(mode->currentData()=="panel"&&canvas->isVisible()&&!panel.earthDisplay()->isVisible(),"Qt mode must open without the 3D viewport");
+    auto sample=telemetry();
+    auto state=[&](bool online=true){panel.updateState(json::object(),json::array({sample}),2.5,online,false,net.flightSessionId(),true,77);pump(12);};
+    state();const auto original=canvas->grab().toImage();sample["pitch"]=19.;sample["flight_control"]=nullptr;state();
+    require(original!=canvas->grab().toImage(),"Qt attitude did not redraw after telemetry changed");
+    const auto live=canvas->grab().toImage();state(false);
+    require(live!=canvas->grab().toImage(),"held telemetry lacks a visible state change");
+    sample["category"]="NavalVessel";state();const auto ship=canvas->grab().toImage();
+    require(!widget<QPushButton>(panel,"flight_take_control")->isEnabled(),"ship used an aircraft control lease");
+    sample["category"]="GroundVehicle";state();require(ship!=canvas->grab().toImage(),"naval and land speed instruments used the same presentation");
+    mode->setCurrentIndex(mode->findData("hud"));require(!canvas->isVisible()&&panel.earthDisplay()->isVisible(),"HUD mode did not switch presentation");
+    mode->setCurrentIndex(mode->findData("panel"));require(canvas->isVisible()&&!panel.earthDisplay()->isVisible(),"switch back did not restore Qt instruments");
+    panel.hide();drain();
 }
 void operatorContract(){
     initializeBroker();auto& net=BrokerNet::instance();AircraftCockpitPanel panel;panel.resize(1180,800);panel.show();pump();
@@ -133,6 +147,9 @@ void operatorContract(){
     key(panel,Qt::Key_D,true);auto bank=command();require(bank.aileron==.6&&bank.elevator==.6,"combined axes were lost");acknowledge(bank);
     key(panel,Qt::Key_W,false);auto stopPitch=command();require(stopPitch.elevator==0&&stopPitch.aileron==.6,"key release left the pitch axis stuck");acknowledge(stopPitch);
     require(panel.controls()->selectedTelemetry()["flight_control"]["actual"]["aileron"]==0,"keyboard demand was presented as measured actuator feedback");
+    auto* views=widget<QComboBox>(panel,"cockpit_view_mode");views->setCurrentIndex(views->findData("hud"));
+    const auto switched=command();require(!switched.release&&switched.aileron==0&&switched.elevator==0&&panel.controls()->controlActive(),"switching presentation lost ownership or left a held input");acknowledge(switched);
+    views->setCurrentIndex(views->findData("panel"));
     QEvent deactivated(QEvent::WindowDeactivate);QApplication::sendEvent(&panel,&deactivated);require(command().release&&!panel.controls()->controlActive()&&!keyboard->isChecked(),"focus loss retained manual control");drain();
     update();widget<QPushButton>(panel,"flight_take_control")->click();acknowledge(command());pump();update();keyboard->click();key(panel,Qt::Key_A,true);acknowledge(command());
     update(false);require(!panel.controls()->controlActive()&&!keyboard->isChecked()&&command().release,"offline telemetry retained keyboard authority");drain();
@@ -190,11 +207,11 @@ void nativeCapture(const QString& output,const QString& map){
     ControlWorkbench workbench("aircraft",{},nullptr,false);workbench.resize(1520,1050);AircraftCockpitPanel* panel=nullptr;
     for(auto* dock:workbench.findChildren<QDockWidget*>())if(auto* value=dynamic_cast<AircraftCockpitPanel*>(dock->widget()))panel=value;
     require(panel,"native console missing");widget<QComboBox>(*panel,"cockpit_view_mode")->setCurrentIndex(0);workbench.show();pump(180);
-    require(panel&&panel->instrumentPanel()->profile().id=="f16c","product did not assemble the F-16 textured panel");
+    require(panel&&panel->instrumentPanel()->profile().id=="f16c","product did not assemble the F-16 Qt panel");
     for(auto* timer:workbench.findChildren<QTimer*>())if(timer->interval()==50)timer->stop();
     auto refresh=[&]{const auto meta=net.lastSimMeta();panel->updateState(json::parse(meta.earth_json),json::parse(meta.platforms_json),time,true,false,meta.session_id,true,id);};refresh();
     auto* canvas=panel->instrumentPanel();require(!panel->earthDisplay()->isVisible()&&!panel->earthDisplay()->viewport(),"panel-only mode opened a hidden Vulkan globe");
-    auto install=[&]{FlightControlCommand c;while(net.pollFlightControl(&c)){auto result=manager.applyFlightControl(c,time);require(result.stage=="applied","real flight model rejected textured HOTAS demand");net.completeFlightControl(result);}};
+    auto install=[&]{FlightControlCommand c;while(net.pollFlightControl(&c)){auto result=manager.applyFlightControl(c,time);require(result.stage=="applied","real flight model rejected panel HOTAS demand");net.completeFlightControl(result);}};
     widget<QPushButton>(*panel,"flight_take_control")->click();install();pump(30);publish();refresh();
     const auto before=manager.getPlatformSnapshot(id);const auto stick=canvas->controlPosition("stick");
     mouse(*canvas,QEvent::MouseButtonPress,stick,Qt::LeftButton,Qt::LeftButton);mouse(*canvas,QEvent::MouseMove,stick+QPoint(35,35),Qt::NoButton,Qt::LeftButton);install();
@@ -203,14 +220,14 @@ void nativeCapture(const QString& output,const QString& map){
     const auto after=manager.getPlatformSnapshot(id);require(std::abs(after["pitch"].get<double>()-before["pitch"].get<double>())>.1&&std::abs(after["roll"].get<double>()-before["roll"].get<double>())>.1,"pointer-operated sidestick did not change authoritative flight attitude");
     require(workbench.grab().save(output+"/f16c-workbench.png"),"native workbench capture failed");require(canvas->grab().save(output+"/f16c-instruments.png"),"native instrument composition capture failed");
     const auto held=manager.getPlatformSnapshot(id);canvas->repaint();pump(30);canvas->repaint();const auto redrawn=manager.getPlatformSnapshot(id);for(const auto* field:{"position","velocity","pitch","roll","yaw"})require(redrawn[field]==held[field],"panel paint integrated a second flight model");
-    json report={{"workspace","actual ControlWorkbench aircraft"},{"profile",canvas->profile().id.toStdString()},{"capture","native Qt textured instrument panel; no Vulkan Earth rendering requested"},{"before",before},{"after",after},{"mouse_HOTAS_to_Bullet_flight",true},{"spring_return",after["flight_control"]["command"]["elevator"]==0&&after["flight_control"]["command"]["aileron"]==0},{"paused_paint_preserved_physics",true},{"missing_IAS_not_fabricated",!TexturedCockpit::measurement(panel->controls()->selectedTelemetry(),"air_data.ias_mps").has_value()},{"voxel_architecture_changed",false}};
-    std::ofstream(output.toStdString()+"/f16c-acceptance.json")<<report.dump(2)<<'\n';workbench.hide();install();manager.shutdown();std::cout<<"PASS: actual native F-16 textured panel, pointer HOTAS to real flight/Bullet, spring return, honest instrumentation and paused paint\n";
+    json report={{"workspace","actual ControlWorkbench aircraft"},{"profile",canvas->profile().id.toStdString()},{"capture","native Qt dynamic instruments"},{"before",before},{"after",after},{"mouse_HOTAS_to_Bullet_flight",true},{"spring_return",after["flight_control"]["command"]["elevator"]==0&&after["flight_control"]["command"]["aileron"]==0},{"paused_paint_preserved_physics",true},{"missing_IAS_not_fabricated",!PlatformInstruments::measurement(panel->controls()->selectedTelemetry(),"air_data.ias_mps").has_value()},{"voxel_architecture_changed",false}};
+    std::ofstream(output.toStdString()+"/f16c-acceptance.json")<<report.dump(2)<<'\n';workbench.hide();install();manager.shutdown();std::cout<<"PASS: actual native F-16 Qt panel, pointer HOTAS to real flight/Bullet, spring return, honest instrumentation and paused paint\n";
 }
 
 }
 int main(int argc,char** argv){
     const bool native=argc==4&&(std::string(argv[1])=="--native-capture"||std::string(argv[1])=="--external-capture");if(!native)qputenv("QT_QPA_PLATFORM","offscreen");QApplication app(argc,argv);app.setQuitOnLastWindowClosed(false);
     QTemporaryDir settings;QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::NativeFormat,QSettings::UserScope,settings.path());ui::ThemeManager::applyDarkTheme(&app);
-    try{if(native){if(std::string(argv[1])=="--external-capture")nativeCockpitExteriors(argv[2],argv[3]);else nativeCapture(argv[2],argv[3]);}else{require(argc==1,"usage: sim_aircraft_cockpit_tests [--native-capture|--external-capture OUT MAP]");cameraContract();operatorContract();textureContract();fleetContract();uavPayloadContract();workspaceContract();}BrokerNet::instance().stop();SimDataBroker::instance().serverOnline(false);return 0;}
+    try{if(native){if(std::string(argv[1])=="--external-capture")nativeCockpitExteriors(argv[2],argv[3]);else nativeCapture(argv[2],argv[3]);}else{require(argc==1,"usage: sim_aircraft_cockpit_tests [--native-capture|--external-capture OUT MAP]");cameraContract();operatorContract();instrumentContract();presentationContract();fleetContract();uavPayloadContract();workspaceContract();}BrokerNet::instance().stop();SimDataBroker::instance().serverOnline(false);return 0;}
     catch(const std::exception& e){BrokerNet::instance().stop();SimDataBroker::instance().serverOnline(false);std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}
 }

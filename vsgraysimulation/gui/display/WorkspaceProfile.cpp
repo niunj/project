@@ -8,14 +8,15 @@
 #include <QSet>
 #include <cmath>
 namespace vsgraysim::gui::display {
-QStringList WorkspaceProfile::presetIds(){ return {"mission","aircraft","radar","infrared","optical","uav","helicopter","airliner"}; }
-QStringList WorkspaceProfile::panelKinds(){ return {"radar","ir","vis","sar","flight","cockpit","earth","links","events"}; }
+QStringList WorkspaceProfile::presetIds(){ return {"mission","aircraft","radar","infrared","optical","sonar","uav","helicopter","airliner"}; }
+QStringList WorkspaceProfile::panelKinds(){ return {"radar","ir","vis","sar","sonar","flight","cockpit","earth","links","events"}; }
 WorkspaceProfile WorkspaceProfile::preset(const QString& id) {
     WorkspaceProfile p; p.id=id;
-    if(id=="aircraft"||id=="helicopter"||id=="airliner") {p.title=QStringLiteral("飞机操作台"); p.panels={{"cockpit","cockpit",QStringLiteral("飞机座舱 · 实景与操纵"),0,"left"},{"radar","radar",QStringLiteral("机载雷达"),0},{"vision","vis",QStringLiteral("前视图像"),0}};}
+    if(id=="aircraft"||id=="helicopter"||id=="airliner") {p.title=QStringLiteral("平台操作台"); p.panels={{"cockpit","cockpit",QStringLiteral("平台操作 · 动态仪表与三维 HUD"),0,"left"},{"radar","radar",QStringLiteral("机载雷达"),0},{"vision","vis",QStringLiteral("前视图像"),0}};}
     else if(id=="radar") {p.title=QStringLiteral("雷达显控台"); p.panels={{"radar","radar",QStringLiteral("雷达信号与航迹"),0,"left"}};}
     else if(id=="infrared") {p.title=QStringLiteral("红外显控台");p.panels={{"ir","ir",QStringLiteral("红外观测 · 选择独立设备"),0,"left"}};}
     else if(id=="optical") {p.title=QStringLiteral("光学显控台");p.panels={{"vision","vis",QStringLiteral("可见光观测 · 选择独立设备"),0,"left"}};}
+    else if(id=="sonar") {p.title=QStringLiteral("船载声呐测深");p.panels={{"sonar","sonar",p.title,0,"left"}};}
     else if(id=="uav") {p.title=QStringLiteral("无人机操作台");p.cockpit_profile="config/cockpits/mq9.json"; p.panels={{"cockpit","cockpit",QStringLiteral("无人机地面站 · 操纵与载荷"),0,"left"},{"vision","vis",QStringLiteral("可见光载荷"),0},{"ir","ir",QStringLiteral("红外载荷"),0}};}
     else { p.id="mission"; p.panels={{"radar","radar",QStringLiteral("雷达任务"),0,"left"},{"ir","ir",QStringLiteral("红外任务"),0},{"vision","vis",QStringLiteral("光学任务"),0},{"cockpit","cockpit",QStringLiteral("飞机操作台"),0}}; }
     if(id=="helicopter"){p.title=QStringLiteral("直升机操作台");p.cockpit_profile="config/cockpits/ah64d.json";}

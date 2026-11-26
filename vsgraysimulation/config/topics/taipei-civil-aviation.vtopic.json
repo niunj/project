@@ -1,0 +1,57 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北 Skywalker X8 与 3DR Iris",
+  "scene": "../earth/taipei-civil-aviation.vscene.json",
+  "earth_map": "../earth/taipei-region.map.json",
+  "camera": {
+    "eye_m": [
+      8,
+      1804,
+      9
+    ],
+    "target_m": [
+      1.8,
+      1800,
+      1
+    ]
+  },
+  "clouds": {
+    "cover": 0.0
+  },
+  "paused": true,
+  "equipment": {
+    "format": "voxel-equipment-v1",
+    "visual_only": true,
+    "platforms": [
+      {
+        "id": 801,
+        "object": "survey-wing",
+        "name": "Skywalker X8",
+        "kind": "uav",
+        "model_id": "skywalker-x8"
+      },
+      {
+        "id": 802,
+        "object": "inspection-quad",
+        "name": "3DR Iris",
+        "kind": "uav",
+        "model_id": "3dr-iris"
+      }
+    ],
+    "equipment": [],
+    "navigation": [
+      {
+        "id": 811,
+        "name": "Skywalker X8 定位真值",
+        "model_id": "navigation-truth",
+        "platform_id": 801
+      },
+      {
+        "id": 812,
+        "name": "3DR Iris 定位真值",
+        "model_id": "navigation-truth",
+        "platform_id": 802
+      }
+    ]
+  }
+}

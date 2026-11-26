@@ -13,11 +13,21 @@ struct OceanSurfaceSample {double height=0;vsg::dvec3 normal{0,1,0},hessian{};};
 struct OceanWake {double x=0,z=0,birth=0,amplitude=0,width=1,speed=2,lifetime=8,k=1,dirX=0,dirZ=-1,bodySpeed=0;};
 // Deterministic visual spray event from a swept rigid-body water entry.
 // Droplets are optical decoration, not additional rigid collision bodies.
-struct OceanSplash {double x=0,z=0,birth=0,height=0,speed=0,radius=1,lifetime=2;uint32_t seed=0;};
+struct OceanSplash {
+    double x=0,z=0,birth=0,height=0,speed=0,radius=1,lifetime=2;
+    uint32_t seed=0;
+    vsg::dvec3 drift{};
+};
 // Checkpointed optical foam deposits, independent of the short-lived wave
 // packets. They never contribute displacement, mass, drag or colliders.
 struct OceanFoam {double x=0,z=0,birth=0,length=1,width=1,dirX=0,dirZ=-1,strength=0,lifetime=24;uint32_t seed=0;};
 struct VoxelSceneSnapshot;
+struct OceanPropellerJet {
+    vsg::dvec3 hub, axis, plume;
+    double radius, speed, spin, age, phase;
+};
+inline constexpr size_t maximumOceanPropellerJets=4;
+std::vector<OceanPropellerJet> oceanPropellerJets(const VoxelSceneSnapshot&);
 struct OceanVoxelState {double waterFraction=0,density=0,temperature=0;vsg::dvec3 velocity{},absorption{},scattering{};};
 // Immutable fluid volume in the scene's east/up/south chart. Water is a
 // continuous occupancy/density field, never millions of solid cube colliders.
@@ -29,7 +39,7 @@ public:
     std::pair<double,double> meanBounds(double minX,double minZ,double maxX,double maxZ)const;
     vsg::dvec3 meanSurface(double x,double z)const; // height, dH/dx, dH/dz
     OceanSample sample(double x,double z,double seconds,double y=1e30)const;
-    OceanSurfaceSample surface(double x,double z,double seconds)const;
+    OceanSurfaceSample surface(double x,double z,double seconds,bool includeWakes=true)const;
     double localCurvature(double x,double z,double seconds,double horizontalRadius)const;
     void refreshBounds();
     static void advanceWakes(VoxelSceneSnapshot&,const VoxelSceneSnapshot* previous=nullptr);

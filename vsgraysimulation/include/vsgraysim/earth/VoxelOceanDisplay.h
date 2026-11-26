@@ -8,7 +8,7 @@
 #include <vsg/nodes/VertexIndexDraw.h>
 namespace rockyenv {struct CloudGpuResources;}
 namespace vsgraysim::earth {
-inline constexpr size_t voxelOceanUniformCount=796;
+inline constexpr size_t voxelOceanUniformCount=824;
 static_assert(voxelOceanUniformCount*sizeof(vsg::vec4)<=16384);
 vsg::ref_ptr<vsg::floatArray2D> makeOceanReferenceImage(const VoxelOcean&);
 void writeVoxelOceanField(vsg::vec4Array&,const VoxelOcean&,double seconds);

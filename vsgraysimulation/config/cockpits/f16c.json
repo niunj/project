@@ -1,10 +1,14 @@
 {
   "schema": "vsgraysim.cockpit",
   "version": 1,
+  "layout": "vector-flow",
+  "photo_panel": {
+    "mount": "fighter",
+    "background": "../../assets/cockpit/f16c/panel-clean.png",
+    "grips": "../../assets/cockpit/f16c/control-grips.png"
+  },
   "id": "f16c",
   "name": "F-16C · 单发 / 右侧操作杆",
-  "background": "../../assets/cockpit/f16c/panel-base.png",
-  "grips": "../../assets/cockpit/f16c/control-grips.png",
   "engine_count": 1,
   "controls": {
     "stick": [

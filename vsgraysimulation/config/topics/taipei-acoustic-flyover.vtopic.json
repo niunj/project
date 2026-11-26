@@ -1,0 +1,109 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北空气声学 · 固定声源与飞越",
+  "scene": "../earth/taipei-acoustic-flyover.vscene.json",
+  "earth_map": "../earth/taipei-region.map.json",
+  "camera": {
+    "eye_m": [
+      -46,
+      6,
+      -17
+    ],
+    "target_m": [
+      0,
+      60,
+      20
+    ]
+  },
+  "clouds": {
+    "cover": 0
+  },
+  "paused": true,
+  "equipment": {
+    "format": "voxel-equipment-v1",
+    "visual_only": true,
+    "equipment": [],
+    "platforms": [
+      {
+        "id": 880,
+        "object": "flyover",
+        "name": "Skywalker X8 飞越演示",
+        "kind": "uav",
+        "model_id": "skywalker-x8"
+      }
+    ]
+  },
+  "acoustics": {
+    "version": 1,
+    "sources": [
+      {
+        "id": "reference-speaker",
+        "cue": "equipment_fan",
+        "mount_object": "speaker",
+        "position_m": [
+          0,
+          6,
+          0
+        ],
+        "acoustic_reference_m": 10,
+        "spl_bands_db": [
+          62,
+          67,
+          68,
+          72,
+          74,
+          73,
+          66,
+          58
+        ]
+      },
+      {
+        "id": "x8-engine",
+        "cue": "propeller",
+        "mount_object": "flyover",
+        "position_m": [
+          0,
+          0,
+          0.6
+        ],
+        "owner": "platforms",
+        "owner_id": 880,
+        "states": [
+          "flying",
+          "climbing",
+          "descending"
+        ],
+        "replace_default": true,
+        "acoustic_reference_m": 10,
+        "spl_bands_db": [
+          76,
+          82,
+          85,
+          89,
+          86,
+          83,
+          77,
+          70
+        ]
+      }
+    ],
+    "probes": [
+      {
+        "id": "无遮拦",
+        "position_m": [
+          -48,
+          6,
+          0
+        ]
+      },
+      {
+        "id": "屏障后",
+        "position_m": [
+          48,
+          6,
+          0
+        ]
+      }
+    ]
+  }
+}

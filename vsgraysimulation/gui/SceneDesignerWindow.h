@@ -287,6 +287,8 @@ private slots:
     void onLoadScenario();
     void loadScenarioFromFile(const QString& path);
     bool saveScenarioFile(const QString& path) { return saveScenarioToPath(path); }
+    bool saveUsdTargetEdits(const QString& path);
+    bool applyUsdTargetEdits(const QString& path);
 
     // ---- terrain editing (自原地形编辑软件迁入) ----
     void onGenerateTerrain();
@@ -315,6 +317,7 @@ private:
     QString topic_path_;
     nlohmann::json topic_document_;
     bool topic_baseline_pending_=false;
+    bool publishing_scene_=false;
     void buildCentralWidget();
     void buildScenarioInfoDock();     ///< 左: 场景信息 (已并入右侧属性变量面板)
     void buildSceneTreeDock();        ///< 左: 场景树 (默认, 空显示空/非空显示树)
@@ -363,7 +366,7 @@ private:
     int  selectedSensorIndex() const;
     int  selectedFaceGroupIndex() const;
     void updateStatusCounts();
-    bool saveScenarioToPath(const QString& path);
+    bool saveScenarioToPath(const QString& path, bool terrainPages = false);
     nlohmann::json sceneDocument() const;
     bool confirmUnsavedChanges();
     std::string saved_document_;

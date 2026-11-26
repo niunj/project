@@ -1,0 +1,58 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北近海 · Alvin 科考潜器与船载测深",
+  "scene": "../earth/taipei-underwater-survey.vscene.json",
+  "earth_map": "../earth/taipei-region.map.json",
+  "paused": true,
+  "clouds": {
+    "cover": 0.0
+  },
+  "camera": {
+    "eye_m": [
+      1.4,
+      -4.8,
+      -10.5
+    ],
+    "target_m": [
+      7.5,
+      -5.5,
+      -1.1
+    ]
+  },
+  "equipment": {
+    "format": "voxel-equipment-v1",
+    "equipment": [],
+    "platforms": [
+      {
+        "id": 853,
+        "object": "alvin",
+        "name": "Alvin 载人科考潜器",
+        "kind": "submersible",
+        "model_id": "alvin-hov"
+      },
+      {
+        "id": 854,
+        "object": "survey-vessel",
+        "name": "近岸测量船",
+        "kind": "ship",
+        "model_id": "surface-vessel"
+      }
+    ],
+    "depth_sounders": [
+      {
+        "id": 855,
+        "name": "船载单波束测深仪",
+        "model_id": "single-beam-depth-sounder",
+        "platform_id": 854,
+        "seabed_object": "assumed-bed",
+        "mount_position_m": [
+          0,
+          -1.3,
+          0
+        ],
+        "period_seconds": 0.4,
+        "range_m": 45
+      }
+    ]
+  }
+}

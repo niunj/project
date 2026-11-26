@@ -43,6 +43,7 @@ find_program(earth_glslang glslangValidator HINTS "${VULKAN_SDK}/bin" "$ENV{VULK
     viewport/surface_cluster_select.comp
     viewport/terrain_cloud_shadow.vert viewport/terrain_cloud_shadow.frag
     viewport/voxel_ocean.vert viewport/voxel_ocean.frag viewport/voxel_ocean_foam.vert viewport/voxel_ocean_foam.frag
+    viewport/voxel_ocean_plume.frag
     viewport/planet_weather.vert viewport/planet_sea.frag viewport/planet_cloud.frag
     viewport/precipitation.vert viewport/precipitation.frag
     viewport/cloud_light_field.comp
@@ -77,6 +78,9 @@ foreach(shader IN LISTS earth_shaders)
     set(extra_input "")
     if(name MATCHES "^voxel_ocean")
         list(APPEND extra_input "${earth_repo}/shaders/viewport/voxel_ocean_field.glsl" "${earth_repo}/shaders/earth_atmosphere_optics.glsl")
+    endif()
+    if(name STREQUAL "voxel_ocean.vert" OR name STREQUAL "voxel_ocean_plume.frag")
+        list(APPEND extra_input "${earth_repo}/shaders/viewport/voxel_ocean_plume.glsl")
     endif()
     if(name MATCHES "^planet_(sea|cloud)")
         set(extra_input "${earth_repo}/shaders/viewport/planet_shell.glsl")
@@ -157,12 +161,20 @@ add_library(vsgraysim_voxel_earth STATIC
     ${earth_repo}/src/earth/TiledVoxelTerrainPhysics.cpp
     ${earth_repo}/src/earth/VoxelModelVoxelizer.cpp ${earth_repo}/src/earth/AssimpVoxelImport.cpp
     ${earth_repo}/src/earth/VoxelVolumeCodec.cpp ${earth_repo}/src/earth/VoxelScene.cpp
-    ${earth_repo}/src/earth/VoxelScenePackage.cpp ${earth_repo}/src/earth/SceneWeather.cpp
+    ${earth_repo}/src/earth/VoxelScenePackage.cpp ${earth_repo}/src/earth/VoxelTerrainPages.cpp
+    ${earth_repo}/src/earth/SceneWeather.cpp
     ${earth_repo}/src/earth/VoxelSculpt.cpp
     ${earth_repo}/src/earth/VoxelFracture.cpp ${earth_repo}/src/earth/VoxelDynamics.cpp
     ${earth_repo}/src/earth/VoxelSceneSensors.cpp ${earth_repo}/src/earth/VoxelSensorMaterials.cpp
     ${earth_repo}/src/earth/VoxelEarthPatch.cpp ${earth_repo}/src/earth/VoxelOcean.cpp ${earth_repo}/src/earth/VoxelBuoyancy.cpp ${earth_repo}/src/earth/VoxelOceanOptics.cpp
-    ${earth_repo}/src/earth/SurfaceMesh.cpp)
+    ${earth_repo}/src/earth/SurfaceMesh.cpp
+    ${earth_repo}/lib/usd_bridge/VoxelUsdEdits.cpp)
+
+if(VSGRAYSIM_ENABLE_USD)
+    target_sources(vsgraysim_voxel_earth PRIVATE "${earth_repo}/lib/usd_bridge/UsdVoxelImport.cpp")
+    target_compile_definitions(vsgraysim_voxel_earth PRIVATE VSGRAYSIM_HAVE_USD=1)
+    target_link_libraries(vsgraysim_voxel_earth PRIVATE ${VSGRAYSIM_PXR_LIBS})
+endif()
 
 add_library(vsgraysim_meshoptimizer STATIC
     "${earth_repo}/third_party/support/meshoptimizer/allocator.cpp"

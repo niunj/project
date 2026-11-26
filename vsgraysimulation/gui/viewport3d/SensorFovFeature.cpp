@@ -5,13 +5,21 @@
 #include "FeatureRegistry.h"
 #include "ViewportContext.h"
 #include "ViewportKit.h"
+#include "VoxelSceneFeature.h"
+#include <vsgraysim/model_packages/equipment/VisualRegistry.h>
 
+#pragma push_macro("slots")
+#undef slots
+#include <vsgraysim/earth/VoxelEquipmentRuntime.h>
+#pragma pop_macro("slots")
+#include <simcore/GeoFrame.h>
 #include <vsg/maths/transform.h>
 #include <vsg/nodes/Group.h>
 #include <vsg/nodes/StateGroup.h>
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace vsgraysim { namespace viewport3d {
 
@@ -40,15 +48,183 @@ bool sameWorldFovs(const std::vector<SensorFovFeature::WorldFov>& a,
 void SensorFovFeature::onAttach(ViewportContext& ctx)
 {
     ctx_ = &ctx;
+    holder_ = vsg::Switch::create();
     world_root_ = vsg::Group::create();
-    if (auto root = ctx.contentRoot()) root->addChild(world_root_);
+    equipment_root_ = vsg::Group::create();
+    holder_->addChild(enabled_, world_root_);
+    holder_->addChild(enabled_, equipment_root_);
+    if (auto root = ctx.contentRoot()) root->addChild(holder_);
 }
 
 void SensorFovFeature::onDetach(ViewportContext& ctx)
 {
-    if (world_root_) ctx.removeFromWorld(world_root_);
+    if (holder_) ctx.removeFromWorld(holder_);
+    holder_ = {};
     world_root_ = {};
+    equipment_root_ = {};
+    equipment_.clear();
+    last_equipment_source_ = nullptr;
+    last_fovs_.clear();
+    sweeps_.clear();
     ctx_ = nullptr;
+}
+
+void SensorFovFeature::setEnabled(bool on)
+{
+    IViewportFeature::setEnabled(on);
+    if (holder_) holder_->setAllChildren(on);
+    if (on && ctx_) ctx_->requestCompile();
+}
+
+void SensorFovFeature::configure(const nlohmann::json& params)
+{
+    if (const auto it = params.find("preview_equipment"); it != params.end())
+        preview_equipment_ = std::make_shared<const earth::VoxelEquipmentConfig>(
+            earth::VoxelEquipmentConfig::parse(*it));
+    else
+        preview_equipment_.reset();
+    last_equipment_source_ = nullptr;
+}
+
+std::optional<SensorFovFeature::EquipmentPose> SensorFovFeature::displayedEquipmentPose(uint32_t id) const
+{
+    const auto it = equipment_.find(id);
+    if (!enabled_ || it == equipment_.end()) return {};
+    return it->second.pose;
+}
+
+void SensorFovFeature::syncEquipment(ViewportContext& ctx)
+{
+    const auto* source = ctx.featureAs<VoxelSceneFeature>(VoxelSceneFeature::kId);
+    if (source && !source->enabled()) source = nullptr;
+    const auto generation = source ? source->equipmentVisualGeneration() : 0;
+    const auto snapshot = source ? source->snapshot() : nullptr;
+    const auto tick = snapshot ? snapshot->tick : 0;
+    const auto revision = snapshot ? snapshot->revision : 0;
+    const auto contentModel = ctx.contentModel();
+    if (!equipment_root_ || (source == last_equipment_source_ &&
+        generation == equipment_generation_ && tick == equipment_tick_ &&
+        revision == equipment_revision_ && contentModel == equipment_content_model_)) return;
+    last_equipment_source_ = source;
+    equipment_generation_ = generation;
+    equipment_tick_ = tick;
+    equipment_revision_ = revision;
+    equipment_content_model_ = contentModel;
+
+    const auto* data = snapshot ? &source->equipmentVisuals() : nullptr;
+    nlohmann::json preview;
+    if (snapshot && source->runtime() && preview_equipment_) {
+        preview = earth::voxelEquipmentVisualTelemetry(*preview_equipment_,*snapshot);
+        data = &preview;
+    }
+    std::set<uint32_t> seen;
+    bool needsCompile = false;
+    if (data && data->is_object() && data->contains("items") && (*data)["items"].is_array() &&
+        (*data)["items"].size() <= 16 && data->contains("version") && (*data)["version"] == 1 &&
+        data->contains("tick") && (*data)["tick"] == snapshot->tick &&
+        (!data->contains("state_revision") || (*data)["state_revision"] == snapshot->revision) &&
+        data->contains("content_revision") && (*data)["content_revision"] == snapshot->contentRevision) {
+        const auto fromScene = vsg::inverse(contentModel) * simcore::geo::makeEnuToWorldMatrix(snapshot->anchor);
+        const double seconds = snapshot->timeSeconds();
+        const auto readVector = [](const nlohmann::json& item, const char* key) {
+            const auto v = item.at(key).get<std::array<double,3>>();
+            return vsg::dvec3(v[0],v[1],v[2]);
+        };
+        const auto finite = [](const vsg::dvec3& v) {
+            return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+        };
+        for (const auto& item : (*data)["items"]) {
+            try {
+                const auto id = item.at("id").get<uint32_t>();
+                const auto* model = model_packages::equipmentVisual(item.at("model_id").get<std::string>());
+                if (!model || seen.count(id)) continue;
+                const model_sdk::ApertureDisplay aperture{
+                    item.at("horizontal_deg").get<double>(), item.at("vertical_deg").get<double>(),
+                    item.at("range_m").get<double>(), item.at("preview_period_seconds").get<double>(),
+                    item.at("phase_deg").get<double>()};
+                const auto style = model->style(aperture);
+                if (!(style.horizontalDegrees > 0 && style.horizontalDegrees < 180 &&
+                    style.verticalDegrees > 0 && style.verticalDegrees < 180 &&
+                    style.rangeMetres > 0 && style.rangeMetres <= 1000000)) continue;
+                if (!std::isfinite(aperture.previewPeriodSeconds) || !std::isfinite(aperture.phaseDegrees)) continue;
+                const auto origin = readVector(item,"origin");
+                const auto rawForward = readVector(item,"forward");
+                const auto rawUp = readVector(item,"up");
+                const auto cross = vsg::cross(rawUp,rawForward);
+                if (!finite(origin) || !finite(rawForward) || !finite(cross) ||
+                    vsg::length(rawForward) < 1e-8 || vsg::length(cross) < 1e-8) continue;
+                const auto forward = vsg::normalize(rawForward);
+                const auto right = vsg::normalize(cross);
+                const auto up = vsg::cross(forward,right);
+                const vsg::dmat4 basis(right.x,right.y,right.z,0., up.x,up.y,up.z,0.,
+                    forward.x,forward.y,forward.z,0., origin.x,origin.y,origin.z,1.);
+                const auto angle = item.find("preview_angle_deg");
+                const double azimuth = angle==item.end()?model->azimuthDegrees(aperture,seconds):angle->get<double>();
+                if (!std::isfinite(azimuth)) continue;
+                const auto swing = vsg::rotate(vsg::radians(azimuth),0.,1.,0.);
+                auto& overlay = equipment_[id];
+                const auto& old = overlay.style;
+                if (!overlay.mount || old.rgb != style.rgb || old.azimuthRing != style.azimuthRing ||
+                    old.rangeMetres != style.rangeMetres || old.horizontalDegrees != style.horizontalDegrees ||
+                    old.verticalDegrees != style.verticalDegrees) {
+                    if (overlay.mount) {
+                        auto& children = equipment_root_->children;
+                        children.erase(std::remove(children.begin(),children.end(),overlay.mount),children.end());
+                    }
+                    overlay.style = style;
+                    overlay.mount = vsg::MatrixTransform::create();
+                    overlay.beam = vsg::MatrixTransform::create();
+                    const QColor color(style.rgb[0],style.rgb[1],style.rgb[2]);
+                    const vsg::dvec3 zero{}, x(1.,0.,0.), y(0.,1.,0.), z(0.,0.,1.);
+                    auto points = gui::ViewportKit::frustumSegments(zero,z,x,y,style.horizontalDegrees,
+                        style.verticalDegrees,style.rangeMetres,false,true);
+                    if (auto lines = gui::ViewportKit::makeLineSegments(points,color,kFovLineStyle))
+                        overlay.beam->addChild(lines);
+                    if (auto walls = gui::ViewportKit::makeFrustumWalls(zero,z,x,y,style.rangeMetres,
+                        style.horizontalDegrees,style.verticalDegrees,color,0.24f,0.07f))
+                        overlay.beam->addChild(walls);
+                    overlay.mount->addChild(overlay.beam);
+                    if (style.azimuthRing) {
+                        constexpr size_t segments = 64;
+                        points.clear();
+                        points.reserve(2*segments);
+                        const auto edge = [&](size_t index) {
+                            const double a = index * (2. * vsg::PI / segments);
+                            return vsg::vec3(float(style.rangeMetres*std::sin(a)),0.f,
+                                             float(style.rangeMetres*std::cos(a)));
+                        };
+                        for (size_t i=0;i<segments;++i) {
+                            points.push_back(edge(i));
+                            points.push_back(edge(i+1));
+                        }
+                        const auto ringColor = color.darker(145);
+                        if (auto ring = gui::ViewportKit::makeLineSegments(points,ringColor))
+                            overlay.mount->addChild(ring);
+                    }
+                    equipment_root_->addChild(overlay.mount);
+                    ++equipment_geometry_builds_;
+                    needsCompile = true;
+                }
+                overlay.mount->matrix = fromScene*basis;
+                overlay.beam->matrix = swing;
+                const auto direction = basis*swing*vsg::dvec4(0.,0.,1.,0.);
+                overlay.pose = {origin,{direction.x,direction.y,direction.z},azimuth,seconds};
+                seen.insert(id);
+            } catch (const nlohmann::json::exception&) {
+                continue;
+            }
+        }
+    }
+    auto& children = equipment_root_->children;
+    for (auto it = equipment_.begin(); it != equipment_.end();) {
+        if (seen.count(it->first)) {
+            ++it;
+        } else {
+            children.erase(std::remove(children.begin(),children.end(),it->second.mount),children.end());
+            it = equipment_.erase(it);
+        }
+    }
+    if (needsCompile) ctx.requestCompile();
 }
 
 // ---------------------------------------------------------------------------
@@ -180,8 +356,9 @@ void SensorFovFeature::clearWorldFovs()
     }
 }
 
-void SensorFovFeature::onFrame(ViewportContext& /*ctx*/, const FrameTick& tick)
+void SensorFovFeature::onFrame(ViewportContext& ctx, const FrameTick& tick)
 {
+    syncEquipment(ctx);
     if (sweeps_.empty()) return;
     // §7.2 指向时间函数 (表现层简化: sector 三角波 / circular 匀速周扫,
     // 其余模式按同速率往复近似; 精确 8 模式指向在仿真端 GimbalModel)。

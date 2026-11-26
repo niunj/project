@@ -3,7 +3,7 @@
 #include "ControlWorkbench.h"
 #include "AircraftCockpitPanel.h"
 #include "FlightPanel.h"
-#include "TexturedCockpit.h"
+#include "PlatformInstruments.h"
 #include "viewport3d/Viewport3DView.h"
 #include "viewport3d/VoxelSceneFeature.h"
 #include <vsg/all.h>
@@ -37,7 +37,7 @@ int runVoxelEquipmentWorkbench(const QString& path,const QString& captureDirecto
         if(entry.id=="rocky_sky"&&entry.params.value("time_scale",1.)!=1)throw std::invalid_argument("equipment sky and acquisition must share simulation UTC (time_scale 1)");
     }
     vc.add("rocky_sky",{{"visibility",config.visibilityM}});vc.add("rocky_cloud",{{"visibility",config.visibilityM}});
-    auto* view=new Viewport3DView;
+    auto* view=new Viewport3DView;window.setSharedViewport(view);
     for(const auto& entry:vc.entries())if(entry.id=="voxel_scene"){auto params=entry.params;params["background_loading"]=false;params["advance_from_frames"]=false;params["paused"]=false;vc.add(entry.id,params);break;}
     view->applyConfig(vc);auto* dock=new QDockWidget(QObject::tr("地球三维场景 · 与装备测量共用体素真值"),&window);dock->setObjectName("voxel_equipment_earth");dock->setWidget(view);window.addDockWidget(Qt::LeftDockWidgetArea,dock);dock->setMinimumSize(470,370);
     auto* tools=window.addToolBar(QObject::tr("体素仿真"));auto* play=tools->addAction(QObject::tr("暂停仿真"));auto* status=new QLabel(QObject::tr("正在载入台北新数据及装备…"));tools->addWidget(status);

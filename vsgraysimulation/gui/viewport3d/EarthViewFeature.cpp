@@ -230,7 +230,7 @@ struct EarthViewFeature::Stream {
     using Result=std::pair<earth::EarthSurfaceSnapshotPtr,std::function<void()>>;
     std::future<Result> job;
     std::future<Result> initialLoad;
-    std::string initialKey;
+    std::string initialKey, initialRetryKey;
     nlohmann::json initialScenario;
     std::string initialPath;
 };
@@ -594,9 +594,22 @@ void EarthViewFeature::onFrame(ViewportContext& ctx,const FrameTick& tick) {
     if(stream_->initialLoad.valid() && stream_->initialLoad.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
         try {
             auto [surface,publish]=stream_->initialLoad.get();publish();bindSurface(surface,false);
+            stream_->initialRetryKey.clear();
             earth_scenario_=stream_->initialScenario;earth_scenario_["earth"]=surface->declaration;earth_scenario_path_=stream_->initialPath;
             if(ctx.widget())ctx.widget()->setProperty("earthLoading",false);
-        }catch(const std::exception& e){if(ctx.widget()){ctx.widget()->setProperty("earthLoading",false);ctx.widget()->setProperty("earthLoadError",QString::fromUtf8(e.what()));}spdlog::error("Earth background load failed: {}",e.what());}
+        }catch(const std::exception& e){
+            if(stream_->initialRetryKey!=stream_->initialKey) {
+                stream_->initialRetryKey=stream_->initialKey;
+                stream_->initialKey.clear();
+                std::string retryError;
+                if(loadEarthScenario(stream_->initialScenario,stream_->initialPath,retryError)) {
+                    spdlog::warn("Earth background load retry: {}",e.what());
+                    return;
+                }
+            }
+            if(ctx.widget()){ctx.widget()->setProperty("earthLoading",false);ctx.widget()->setProperty("earthLoadError",QString::fromUtf8(e.what()));}
+            spdlog::error("Earth background load failed: {}",e.what());
+        }
     }
     if(scene_query_){if(showsSceneContext()&&planet_)updateWeather(ctx,tick);return;}
     if (planet_ && surface_) updateWeather(ctx,tick);

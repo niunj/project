@@ -12,6 +12,8 @@
 
 #include "IViewportFeature.h"
 #include "ViewportKit.h"
+#include "AviationParticles.h"
+#include "SceneEffectsAdapter.h"
 
 #include <vsg/core/ref_ptr.h>
 #include <vsg/maths/vec3.h>
@@ -20,6 +22,7 @@
 
 #include <deque>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -34,6 +37,7 @@ public:
     void onAttach(ViewportContext& ctx) override;
     void onDetach(ViewportContext& ctx) override;
     void onFrame(ViewportContext& ctx, const FrameTick& tick) override;
+    void configure(const nlohmann::json&) override;
     /// 整体显隐开关 (从世界场景根增删本特性节点)。
     void setEnabled(bool on) override;
 
@@ -78,6 +82,11 @@ public:
         vsg::vec3   pos;
         vsg::vec3   dir{0.0f, 0.0f, 1.0f};  ///< 飞行方向 (尾焰向后)
         int         faction = 2;
+        bool jet = false;
+        float strength = 1.f;
+        float radius = .45f;
+        std::optional<AviationParticles::Style> visualStyle;
+        visual_effects::ExhaustAppearance exhaust{};
     };
     struct MissMark {         ///< 脱靶标注 (X 交叉 + 小环, 到期移除)
         vsg::vec3 pos;
@@ -96,10 +105,17 @@ public:
     void setEngagements(const std::vector<Engagement>& engs);
     /// 全量刷新在飞导弹尾焰 (位置 + 飞行方向; 尾焰朝 -dir 喷出)。
     void setPlumes(const std::vector<Plume>& plumes);
+    void setPlatformPlumes(const std::string& owner, std::vector<Plume>);
     /// 发射瞬间: 起推闪光 + 扬尘环 + 上升烟柱 (内部按时间淡出)。
     void addLaunch(const vsg::vec3& pos, int faction);
+    void addPreviewFlash(const vsg::vec3& pos,const vsg::vec3& direction,float scale);
     /// 命中/爆炸: 世界位置 + 阵营 (内部按时间淡出)。
     void addImpact(const vsg::vec3& pos, int faction);
+    size_t burningDebrisCount() const {return burningDebrisCount_;}
+    size_t smokeHistoryCount() const {return particles_.historyCount();}
+    unsigned visibleParticles() const {return particles_.visibleCount();}
+    unsigned visibleJetFlames() const {return particles_.visibleJetFlames();}
+    bool particleMode() const {return !legacy_fx_&&particles_.node()!=nullptr;}
     /// 脱靶标注: 命中但未摧毁时的落点标记 (内部按时间淡出)。
     void addMiss(const vsg::vec3& pos, int faction);
     /// 全量刷新受损平台冒烟 (健康度低的存活平台)。
@@ -116,15 +132,26 @@ public:
 
 private:
     void rebuild();
+    void refreshLegacyPlumes();
+    template<class Visitor> void visitPlumes(Visitor&& visit) const {
+        for(const auto& plume:plumes_)visit(plume);
+        for(const auto& entry:platformPlumes_)for(const auto& plume:entry.second)visit(plume);
+    }
+    SceneEffectsAdapter sceneEffects_;
+    size_t burningDebrisCount_=0;
+    void updateParticles(ViewportContext&,const FrameTick&);
     void setInWorld(bool add);
 
+    AviationParticles particles_;
+    bool legacy_fx_=false, annotations_=false;
     ViewportContext* ctx_ = nullptr;
-    vsg::ref_ptr<vsg::Group> root_;
+    vsg::ref_ptr<vsg::Group> root_, attachedRoot_;
     std::vector<Engagement> engs_;
     std::vector<Impact> impacts_;
     std::vector<Wreck> wrecks_;
     std::vector<Launch> launches_;
     std::vector<Plume> plumes_;
+    std::map<std::string,std::vector<Plume>> platformPlumes_;
     std::vector<MissMark> miss_marks_;
     std::vector<DamageSmoke> damage_smokes_;
     // 损伤冒烟节点 (unit 烟团柱 + 矩阵循环上升, 按平台 id 索引)。

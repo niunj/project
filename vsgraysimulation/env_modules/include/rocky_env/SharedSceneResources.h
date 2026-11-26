@@ -98,6 +98,7 @@ public:
     // ---- TV 彩色批次: uv/贴图槽通道 (band_shade.comp bindings 10-12 消费) ----
     vsg::ref_ptr<vsg::BufferInfo> uvFlatInfo;     ///< 平铺 uv (vec2/顶点, 直传或零填充)
     vsg::ref_ptr<vsg::BufferInfo> slotInfo;       ///< 逐顶点贴图槽号 (uint/顶点)
+    vsg::ref_ptr<vsg::BufferInfo> thermalNormalInfo;  ///< Optional terrain shading normals (vec4/vertex)
     vsg::ref_ptr<vsg::BufferInfo> texSlotDataInfo;///< 槽表 (Kd.rgb, hasTex) — 槽0=缺省
     vsg::ref_ptr<vsg::ImageView> texArrayView;    ///< texture2DArray (层 = 槽-1; 空 = 无贴图)
     uint32_t texLayerCount = 0;

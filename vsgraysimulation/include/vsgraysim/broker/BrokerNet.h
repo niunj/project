@@ -81,6 +81,7 @@ public:
     void forwardSar(const SarFrame& f);
     void forwardIr(const IrFrame& f);
     void forwardVis(const VisFrame& f);
+    void forwardSonar(const SonarFrame& f);
 
     // ==================== 显控进程 (订阅方) ====================
     void startDisplayRole(const Config& cfg = Config::load());

@@ -99,6 +99,10 @@ struct EnvAnswer {
     double sea_surface_temp_k = 0.0;   ///< 海表温度 (K); 0 = 场景无海洋
     double foam_fraction = 0.0;        ///< 代表性白沫覆盖率 0..1 (原点周边均值)
     int    beaufort = -1;              ///< 蒲福风级 0..12; -1 = 无海洋
+    double thermal_local_hour = 12.0;
+    double thermal_air_delta_k = 0.0;
+    double thermal_wetness = 0.0;
+    double thermal_scene_seconds = 0.0;
     /// 沿路径透过率 τ(R) = exp(-σ·R_km)
     static double transmittance(double sigma_per_km, double range_m);
 };

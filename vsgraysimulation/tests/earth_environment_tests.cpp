@@ -85,14 +85,22 @@ void sparseWindTransport() {
 }
 void graphicsShaderContracts(){
     auto compiler=vsg::ShaderCompiler::create();
+    const auto options=vsg::Options::create();
+    const auto stage=[&](VkShaderStageFlagBits type,const char* name){
+        auto result=vsg::ShaderStage::read(type,"main",std::string(SIM_SOURCE_ROOT)+"/shaders/env/"+name,options);
+        check(bool(result),"environment shader source missing");
+        return result;
+    };
     for(const char* vertex:{"ocean.vert","ocean_fft.vert","cloud_volume.vert","sensor_rad.vert"}){
         const char* fragment=std::string(vertex)=="cloud_volume.vert"?"cloud_volume.frag":std::string(vertex)=="sensor_rad.vert"?"sensor_vis.frag":"ocean.frag";
-        auto source=[](const char* name){std::ifstream file(std::string(SIM_SOURCE_ROOT)+"/shaders/env/"+name);std::ostringstream contents;contents<<file.rdbuf();check(bool(file),"environment shader source missing");return contents.str();};
-        vsg::ShaderStages stages{vsg::ShaderStage::create(VK_SHADER_STAGE_VERTEX_BIT,"main",source(vertex)),vsg::ShaderStage::create(VK_SHADER_STAGE_FRAGMENT_BIT,"main",source(fragment))};
+        vsg::ShaderStages stages{stage(VK_SHADER_STAGE_VERTEX_BIT,vertex),stage(VK_SHADER_STAGE_FRAGMENT_BIT,fragment)};
         if(!compiler->compile(stages))throw std::runtime_error(std::string("environment graphics shader interface mismatch: ")+vertex+"/"+fragment);
     }
-    std::ifstream file(std::string(SIM_SOURCE_ROOT)+"/shaders/env/band_shade.comp");std::ostringstream input;input<<file.rdbuf();
-    vsg::ShaderStages compute{vsg::ShaderStage::create(VK_SHADER_STAGE_COMPUTE_BIT,"main",input.str())};check(compiler->compile(compute),"production band shader compile");
+    vsg::ShaderStages rasterIR{stage(VK_SHADER_STAGE_VERTEX_BIT,"sensor_rad.vert"),
+        stage(VK_SHADER_STAGE_FRAGMENT_BIT,"sensor_rad.frag")};
+    check(compiler->compile(rasterIR),"production raster infrared shader compile");
+    vsg::ShaderStages compute{stage(VK_SHADER_STAGE_COMPUTE_BIT,"band_shade.comp")};
+    check(compiler->compile(compute),"production band shader compile");
     std::cout<<"PASS: production cloud/ocean/sensor shader stage interfaces\n";
 }
 void cloudGpuParity(sensor::GpuContext& context){
@@ -251,7 +259,7 @@ void sensorCloudGpuParity(sensor::GpuContext& context){
         for(const char* functionName:{"cHash3","cNoise3","cFbm3","coverageThreshold","continuousCloudDensity","cloudDensityCore","cloudDensity"})declarations+=function(production,functionName);
         float maximum=0;size_t positive=0;
         for(const auto& p:cases){
-            auto values=vsg::floatArray::create(visible?12:92);for(auto& value:*values)value=0;
+            auto values=vsg::floatArray::create(visible?12:96);for(auto& value:*values)value=0;
             if(visible){(*values)[0]=p.base;(*values)[1]=.7f;(*values)[2]=p.base+p.thickness;(*values)[3]=p.coverage;(*values)[4]=p.density;(*values)[5]=p.speed;(*values)[6]=p.windX;(*values)[7]=p.windZ;(*values)[8]=p.time;(*values)[9]=17.2f;(*values)[10]=3;}
             else {(*values)[6]=p.base;(*values)[7]=.7f;(*values)[8]=p.base+p.thickness;(*values)[9]=p.coverage;(*values)[10]=p.density;(*values)[11]=p.speed;(*values)[12]=p.windX;(*values)[13]=p.windZ;(*values)[14]=p.time;(*values)[15]=17.2f;(*values)[88]=3;}
             const auto main="\nvoid main(){uint i=gl_GlobalInvocationID.x;if(i>=4096)return;vec3 p=vec3((float(i%17)-8)*180,"+std::to_string(p.base)+"+(float((i/17)%17)/16.0)*("+std::to_string(p.thickness)+"+200.0)-100.0,(float((i/289)%17)-8)*170);float distance=float(i%2)*35000.0;result[i]=cloudDensity(p,distance);result[4096+i]=cloudDensityCore(p,distance);}\n";

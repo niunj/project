@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<MaterialProject>
+    <Item type="target" objfilename="M1A2.obj">
+        <Images>
+            <Image filename="M1A2.png" shapename="M1A2">
+                <OtherRegion temperature="303" materialID="2027" materialName="高硬度装甲钢" color="black" materialDensity="7850" materialSpecificHeat="470" materialThermalConductivity="38" materialCategory="金属/合金" isThermalRegion="0" materialMwirEmissivity="0.55" materialLwirEmissivity="0.76" materialVisibleReflectance="0.32"/>
+                <Regions>
+                    <Region name="Custom_Region_0" temperature="333" color="blue" materialID="2050" materialName="钢制履带板" materialDensity="7850" materialSpecificHeat="470" materialThermalConductivity="45" materialCategory="金属/合金" isThermalRegion="0" materialMwirEmissivity="0.72" materialLwirEmissivity="0.88" materialVisibleReflectance="0.2">
+                        <Polygon>
+                            <Point x="4" y="931"/>
+                            <Point x="7" y="2047"/>
+                            <Point x="725" y="2042"/>
+                            <Point x="707" y="1967"/>
+                            <Point x="605" y="1887"/>
+                            <Point x="520" y="1862"/>
+                            <Point x="500" y="1849"/>
+                            <Point x="529" y="1740"/>
+                            <Point x="547" y="1631"/>
+                            <Point x="551" y="1547"/>
+                            <Point x="527" y="1491"/>
+                            <Point x="447" y="1431"/>
+                            <Point x="349" y="1338"/>
+                            <Point x="311" y="1218"/>
+                            <Point x="247" y="916"/>
+                            <Point x="4" y="931"/>
+                        </Polygon>
+                    </Region>
+                    <Region name="Custom_Region_1" temperature="333" color="red" materialID="2060" materialName="油箱钢/铝外壳" materialDensity="7800" materialSpecificHeat="500" materialThermalConductivity="45" materialCategory="金属/合金" isThermalRegion="1" materialMwirEmissivity="0.75" materialLwirEmissivity="0.9" materialVisibleReflectance="0.25">
+                        <Polygon>
+                            <Point x="598" y="1772"/>
+                            <Point x="598" y="1810"/>
+                            <Point x="671" y="1810"/>
+                            <Point x="673" y="1773"/>
+                            <Point x="598" y="1772"/>
+                        </Polygon>
+                    </Region>
+                    <Region name="Custom_Region_2" temperature="333" color="red" materialID="2060" materialName="油箱钢/铝外壳" materialDensity="7800" materialSpecificHeat="500" materialThermalConductivity="45" materialCategory="金属/合金" isThermalRegion="1" materialMwirEmissivity="0.75" materialLwirEmissivity="0.9" materialVisibleReflectance="0.25">
+                        <Polygon>
+                            <Point x="705" y="1775"/>
+                            <Point x="706" y="1810"/>
+                            <Point x="780" y="1810"/>
+                            <Point x="778" y="1775"/>
+                            <Point x="705" y="1775"/>
+                        </Polygon>
+                    </Region>
+                    <Region name="Custom_Region_3" temperature="333" color="red" materialID="2060" materialName="油箱钢/铝外壳" materialDensity="7800" materialSpecificHeat="500" materialThermalConductivity="45" materialCategory="金属/合金" isThermalRegion="1" materialMwirEmissivity="0.75" materialLwirEmissivity="0.9" materialVisibleReflectance="0.25">
+                        <Polygon>
+                            <Point x="1757" y="1937"/>
+                            <Point x="1756" y="1996"/>
+                            <Point x="1978" y="1997"/>
+                            <Point x="1978" y="1936"/>
+                            <Point x="1757" y="1937"/>
+                        </Polygon>
+                    </Region>
+                </Regions>
+            </Image>
+        </Images>
+    </Item>
+</MaterialProject>

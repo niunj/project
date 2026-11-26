@@ -1,0 +1,151 @@
+{
+  "format": "voxel-equipment-v1",
+  "topic": "../topics/taipei-thermal.vtopic.json",
+  "visibility_m": 30000,
+  "equipment": [
+    {
+      "id": 7101,
+      "name": "可见光相机",
+      "band": "TV",
+      "platform_id": 71,
+      "platform_name": "台北红外实景观测站",
+      "platform_kind": "sensor_site",
+      "period_seconds": 0.1,
+      "width": 192,
+      "height": 144,
+      "fov_deg": 30,
+      "output": "P0",
+      "aperture": {
+        "position_m": [
+          -7,
+          489,
+          -7
+        ],
+        "look_at_m": [
+          -16,
+          477.7,
+          -16
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      },
+      "detector": {
+        "integration_ms": 5
+      }
+    },
+    {
+      "id": 7102,
+      "name": "中波红外热像仪",
+      "band": "MWIR",
+      "platform_id": 71,
+      "platform_name": "台北红外实景观测站",
+      "platform_kind": "sensor_site",
+      "period_seconds": 0.1,
+      "width": 192,
+      "height": 144,
+      "fov_deg": 30,
+      "output": "P0",
+      "aperture": {
+        "position_m": [
+          -7,
+          489,
+          -7
+        ],
+        "look_at_m": [
+          -16,
+          477.7,
+          -16
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      },
+      "detector": {
+        "integration_ms": 5
+      }
+    },
+    {
+      "id": 7103,
+      "name": "长波红外热像仪",
+      "band": "LWIR",
+      "platform_id": 71,
+      "platform_name": "台北红外实景观测站",
+      "platform_kind": "sensor_site",
+      "period_seconds": 0.2,
+      "width": 192,
+      "height": 144,
+      "fov_deg": 30,
+      "output": "P0",
+      "aperture": {
+        "position_m": [
+          -7,
+          489,
+          -7
+        ],
+        "look_at_m": [
+          -16,
+          477.7,
+          -16
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      },
+      "detector": {
+        "integration_ms": 5
+      }
+    },
+    {
+      "id": 7104,
+      "name": "X 波段雷达 RD",
+      "band": "RADAR",
+      "platform_id": 71,
+      "platform_name": "台北红外实景观测站",
+      "platform_kind": "sensor_site",
+      "period_seconds": 0.08,
+      "width": 33,
+      "height": 25,
+      "fov_deg": 30,
+      "output": "P2",
+      "aperture": {
+        "position_m": [
+          -7,
+          489,
+          -7
+        ],
+        "look_at_m": [
+          -16,
+          477.7,
+          -16
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      },
+      "detector": {
+        "integration_ms": 5
+      },
+      "radar": {
+        "lambda_m": 0.03,
+        "prf_hz": 400,
+        "cpi_pulses": 32,
+        "range_min_m": 0,
+        "range_max_m": 500,
+        "n_fast": 128,
+        "bandwidth_hz": 30000000.0,
+        "sample_rate_hz": 30000000.0,
+        "beam_width_rad": 0.4,
+        "transmit_power_w": 1
+      }
+    }
+  ]
+}

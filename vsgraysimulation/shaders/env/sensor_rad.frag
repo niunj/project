@@ -6,6 +6,8 @@
 // 背景(无几何) = 天空背景辐亮度。
 // b1 = 普朗克波段出射度 LUT (512×1, R=x: M_band(T), T∈[band.x, band.y])。
 #version 460
+#extension GL_GOOGLE_include_directive : require
+#include "surface_thermal.glsl"
 
 layout(set = 0, binding = 0) uniform SensorUBO {
     mat4 vp;
@@ -17,13 +19,17 @@ layout(set = 0, binding = 0) uniform SensorUBO {
     vec4 det2;   // readNoiseE, pitchUm, adcBits, agcLo
     vec4 elec;   // agcHi, gamma, texW, texH
     vec4 env2;   // sunDir ENU xyz (批次1, 指向太阳), pad
+    vec4 thermalState;
+    vec4 thermalSetup; // cloud coverage, band ID, day factor, padding
 } ub;
 
 layout(set = 0, binding = 1) uniform sampler2D lutTex;
+layout(set = 0, binding = 2) readonly buffer SpectralMaterials { vec4 mats[]; };
 layout(set = 1, binding = 0) uniform SensorView { mat4 vp; vec4 cam; vec4 misc; vec4 eye; } pc;
 
 layout(location = 0) in vec2 vProps;
 layout(location = 1) in vec3 vWorld;
+layout(location = 4) flat in uint vMaterial;
 
 layout(location = 0) out vec4 outRad;
 
@@ -38,6 +44,25 @@ float bandExitance(float T) {
 void main() {
     float T = vProps.x;
     float eps = vProps.y;
+
+    const uint band = uint(ub.thermalSetup.y);
+    if (vMaterial < uint(mats.length()) / 4u) {
+        const uint offset = vMaterial * 4u;
+        const vec4 response = mats[offset+2u];
+        if (band == 2u || band == 3u) {
+            const float selected = band == 2u ? mats[offset].z : mats[offset].w;
+            if (selected >= 0.0) eps = selected;
+        }
+        if (response.x > 0.5) {
+            vec3 normal = cross(dFdx(vWorld), dFdy(vWorld));
+            normal = length(normal) > 1e-10 ? normalize(normal) : vec3(0,1,0);
+            if (dot(normal,pc.eye.xyz-vWorld) < 0.0) normal = -normal;
+            const float daylight = ub.thermalSetup.z * max(ub.env2.y,0.0);
+            const float exposure = (max(dot(normal,ub.env2.xyz),0.0) - max(ub.env2.y,0.0)) * daylight;
+            T = surfaceTemperature(T, response, mats[offset+3u], ub.thermalState, ub.thermalSetup.x, exposure);
+            eps = wetSurfaceEmissivity(eps, response, ub.thermalState.z);
+        }
+    }
 
     // Physical slant range, independent of projection/depth convention. VSG
     // uses reverse-Z; a forward-depth inversion also gave axial rather than

@@ -40,7 +40,8 @@ public:
     std::vector<uint8_t> imagery_rgba;
     std::vector<vsg::vec2> imagery_uv;
     std::vector<vsg::vec3> surface_normals;
-    std::vector<uint8_t> normal_rgba,mr_rgba;
+    std::vector<uint8_t> normal_rgba,mr_rgba,emissive_rgba;
+    bool hasMaterialBlend=false;
     double dem_spacing_m=0, imagery_spacing_m=0; // worst native north-south spacing in the active set
     uint32_t imagery_width=0, imagery_height=0;
     std::size_t resident_tiles=0, reused_tiles=0;

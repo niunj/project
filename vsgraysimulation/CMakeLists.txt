@@ -131,6 +131,9 @@ file(GLOB_RECURSE VSGRAYSIM_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/earth/VoxelTerrainDebris.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/earth/VoxelSensorSession.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/earth/VoxelEquipmentRuntime.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/earth/ScenePresentation.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/earth/SceneAcoustics.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/earth/DepthSounder.cpp"
 )
 
 add_library(vsgraysim_core STATIC ${VSGRAYSIM_SRC})
@@ -286,7 +289,7 @@ if(VSGRAYSIM_BUILD_GUI)
     if(NOT Qt6_DIR AND EXISTS "${QT6_PREFIX}/lib/cmake/Qt6/Qt6Config.cmake")
         set(Qt6_DIR "${QT6_PREFIX}/lib/cmake/Qt6" CACHE PATH "Qt6 CMake package directory")
     endif()
-    find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets)
+    find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets OPTIONAL_COMPONENTS Multimedia)
 
     # Qt6 RPATH (供 gui/ 和 app/ 共用)
     set(VSGRAYSIM_GUI_RPATH_DIRS

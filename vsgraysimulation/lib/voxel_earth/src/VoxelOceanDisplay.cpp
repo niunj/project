@@ -226,37 +226,43 @@ VoxelOceanDisplay::VoxelOceanDisplay(const VoxelSceneSnapshot &scene, const Voxe
     bg->indexCount = 3;
     bg->instanceCount = 1;
     background = pipeline(nullptr, bg, 2);
-    constexpr int particles = 48;
-    auto sp = vsg::vec3Array::create(VoxelOcean::maximumSplashes * particles * 4);
-    auto sn = vsg::vec3Array::create(sp->size(), vsg::vec3(0, 1, 0));
-    auto st = vsg::vec2Array::create(sp->size());
-    std::vector<uint32_t> si;
-    for (size_t event = 0; event < VoxelOcean::maximumSplashes; ++event)
-        for (int particle = 0; particle < particles; ++particle) {
-            const uint32_t k = (event * particles + particle) * 4;
-            for (int c = 0; c < 4; ++c) {
-                (*sp)[k + c] = vsg::vec3(float(event), float(particle), 0);
-                (*st)[k + c] = vsg::vec2(c & 1 ? 1.f : -1.f, c & 2 ? 1.f : -1.f);
+    const auto makeCards=[](size_t emitterCount,int cardsPerEmitter) {
+        auto positions=vsg::vec3Array::create(emitterCount*cardsPerEmitter*4);
+        auto normals=vsg::vec3Array::create(positions->size(),vsg::vec3(0,1,0));
+        auto texcoords=vsg::vec2Array::create(positions->size());
+        auto indices=vsg::uintArray::create(emitterCount*cardsPerEmitter*6);
+        for(size_t emitter=0;emitter<emitterCount;++emitter)
+            for(int card=0;card<cardsPerEmitter;++card){
+                const size_t index=emitter*cardsPerEmitter+card;
+                const uint32_t base=uint32_t(index*4);
+                for(int c=0;c<4;++c){
+                    (*positions)[base+c]=vsg::vec3(float(emitter),float(card),0);
+                    (*texcoords)[base+c]=vsg::vec2(c&1?1.f:-1.f,c&2?1.f:-1.f);
+                }
+                const uint32_t corners[]={base,base+1,base+2,base+2,base+1,base+3};
+                for(size_t i=0;i<6;++i)(*indices)[index*6+i]=corners[i];
             }
-            si.insert(si.end(), {k, k + 1, k + 2, k + 2, k + 1, k + 3});
-        }
-    auto sx = vsg::uintArray::create(si.size());
-    std::copy(si.begin(), si.end(), sx->begin());
-    auto sd = vsg::VertexIndexDraw::create();
-    sd->assignArrays({sp, sn, st});
-    sd->assignIndices(sx);
-    sd->indexCount = si.size();
-    sd->instanceCount = 1;
-    spray = vsg::Switch::create();
-    spray->addChild(false, pipeline(nullptr, sd, 3));
+        auto draw=vsg::VertexIndexDraw::create();
+        draw->assignArrays({positions,normals,texcoords});
+        draw->assignIndices(indices);
+        draw->indexCount=indices->size();
+        draw->instanceCount=1;
+        return draw;
+    };
+    spray=vsg::Switch::create();
+    spray->addChild(false,pipeline(nullptr,makeCards(VoxelOcean::maximumSplashes,48),3));
+    spray->addChild(false,pipeline(nullptr,makeCards(maximumOceanPropellerJets,1),4));
 }
 vsg::ref_ptr<vsg::ImageInfo> VoxelOceanDisplay::foamImage() const { return effects_->foam; }
 vsg::ref_ptr<vsg::StateGroup> VoxelOceanDisplay::pipeline(const VoxelSceneObject *object,
                                                           vsg::ref_ptr<vsg::VertexIndexDraw> draw, int mode,
                                                           bool depthOnly) {
     auto shader = vsg::ShaderSet::create(
-        vsg::ShaderStages{earthShader("voxel_ocean.vert"), earthShader("voxel_ocean.frag")});
-    shader->addPushConstantRange("camera", "", VK_SHADER_STAGE_VERTEX_BIT, 0, 128);
+        vsg::ShaderStages{earthShader("voxel_ocean.vert"),
+            earthShader(mode==4?"voxel_ocean_plume.frag":"voxel_ocean.frag")});
+    const VkShaderStageFlags cameraStages=mode==4?VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT:
+        VK_SHADER_STAGE_VERTEX_BIT;
+    shader->addPushConstantRange("camera", "", cameraStages, 0, 128);
     shader->addAttributeBinding("position", "", 0, VK_FORMAT_R32G32B32_SFLOAT, {});
     shader->addAttributeBinding("normal", "", 1, VK_FORMAT_R32G32B32_SFLOAT, {});
     shader->addAttributeBinding("uv", "", 2, VK_FORMAT_R32G32_SFLOAT, {});
@@ -343,7 +349,7 @@ vsg::ref_ptr<vsg::StateGroup> VoxelOceanDisplay::pipeline(const VoxelSceneObject
             auto colorMask = vsg::ColorBlendState::create();
             colorMask->attachments[0].colorWriteMask = 0;
             cfg->pipelineStates.push_back(colorMask);
-        } else if (mode == 1 || mode == 2 || mode == 3) {
+        } else if (mode >= 1 && mode <= 4) {
             auto blend = vsg::ColorBlendState::create();
             blend->attachments[0].blendEnable = VK_TRUE;
             blend->attachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -400,6 +406,7 @@ void writeVoxelOceanField(vsg::vec4Array &p, const VoxelOcean &water, double sec
         const auto &e = water.splashes[i];
         p[168 + i * 2] = vsg::vec4(float(e.x), float(e.z), float(e.birth - base), float(e.height));
         p[169 + i * 2] = vsg::vec4(float(e.speed), float(e.radius), float(e.lifetime), float(e.seed % 65521));
+        p[808 + i] = vsg::vec4(float(e.drift.x),float(e.drift.z),0,0);
     }
     p[218] = vsg::vec4(float(water.foam.size()), 0, 0, 0);
     for (size_t i = 0; i < water.foam.size(); ++i) {
@@ -454,7 +461,11 @@ void VoxelOceanDisplay::update(const VoxelSceneSnapshot &scene, const vsg::dmat4
         effects_->pendingOcean = scene.ocean;
     }
     const auto &water = *scene.ocean;
-    spray->setAllChildren(!water.splashes.empty() && !std::getenv("VSGRAYSIM_OCEAN_LEGACY_EFFECTS"));
+    const auto jets=oceanPropellerJets(scene);
+    const bool effectsEnabled=!std::getenv("VSGRAYSIM_OCEAN_LEGACY_EFFECTS");
+    spray->children[0].mask=effectsEnabled&&!water.splashes.empty()?vsg::MASK_ALL:vsg::MASK_OFF;
+    spray->children[1].mask=effectsEnabled&&!jets.empty()&&eye.y<water.surface(eye.x,eye.z,scene.timeSeconds()).height+.06
+        ?vsg::MASK_ALL:vsg::MASK_OFF;
     const auto chart = simcore::geo::makeEnuToWorldMatrix(scene.anchor);
     std::vector<vsg::vec4> regions;
     for (const auto &[id, o] : scene.objects)
@@ -536,6 +547,14 @@ void VoxelOceanDisplay::update(const VoxelSceneSnapshot &scene, const vsg::dmat4
     for (auto &binding : bindings_) {
         auto &p = *binding.data;
         writeVoxelOceanField(p, water, scene.timeSeconds());
+        p[218].y=float(jets.size());
+        for(size_t i=0;i<jets.size();++i){
+            const auto& jet=jets[i];
+            p[796+3*i]=vsg::vec4(vsg::vec3(jet.hub),float(jet.radius));
+            p[797+3*i]=vsg::vec4(vsg::vec3(jet.plume),float(jet.age));
+            p[798+3*i]=vsg::vec4(float(jet.spin),float(jet.phase),
+                float(std::clamp(std::abs(jet.spin)*jet.radius/12.,0.,1.)),0);
+        }
         if(scene.weather.enabled) {
             p[166].x=weather.visibility;p[166].y=weather.fogHeight;
             p[166].z=std::min(1.,weather.rain/40.);

@@ -4,15 +4,45 @@
 #include <vsg/utils/GraphicsPipelineConfigurator.h>
 #include <vsg/utils/ShaderSet.h>
 #include <vsg/state/material.h>
+#include <vsg/state/ColorBlendState.h>
+#include <vsg/state/DepthStencilState.h>
+#include <vsg/nodes/DepthSorted.h>
+#include <vsg/utils/ComputeBounds.h>
 #include <vsg/core/Array2D.h>
+#include <vsg/core/Version.h>
 #include <cstring>
 #include <stdexcept>
+#include <string_view>
 #include <vsg/core/Array.h>
 #include <vsg/maths/transform.h>
 #include <limits>
 
 namespace vsgraysim::earth {
 namespace {
+vsg::ref_ptr<vsg::ShaderSet> atlasPbrShaderSet() {
+#ifdef VSG_SUPPORTS_ShaderCompiler
+    static const auto shaders=[] {
+        auto shaderSet=vsg::createPhysicsBasedRenderingShaderSet();
+        for(auto& stage:shaderSet->stages){
+            if(stage->stage!=VK_SHADER_STAGE_FRAGMENT_BIT)continue;
+            auto& module=*stage->module;
+            constexpr std::string_view declaration="layout(location = 4) in vec2 texCoord[";
+            const auto input=module.source.find(declaration);
+            if(input==std::string::npos)continue;
+            // With MSAA a tiny clipped triangle can cover samples without
+            // covering the pixel centre. Do not extrapolate UVs into other tiles.
+            module.source.insert(input+declaration.find("in vec2"),"centroid ");
+            module.code.clear();
+            shaderSet->variants.clear();
+        }
+        return shaderSet;
+    }();
+    return shaders;
+#else
+    return vsg::createPhysicsBasedRenderingShaderSet();
+#endif
+}
+
 vsg::ref_ptr<vsg::vec3Array> surfaceNormals(const EarthSurfaceSnapshot& surface) {
     const auto& vertices=surface.vertices();
     const auto& indices=surface.indices();
@@ -56,7 +86,7 @@ vsg::ref_ptr<vsg::VertexIndexDraw> makeSurfaceDraw(const EarthSurfaceSnapshot& s
     return draw;
 }
 
-vsg::ref_ptr<vsg::StateGroup> makeTerrainDisplay(const EarthSurfaceSnapshot& surface) {
+vsg::ref_ptr<vsg::StateGroup> makeTerrainDisplay(const EarthSurfaceSnapshot& surface,std::optional<vsg::vec4> tint) {
     vsg::StateInfo state;
     state.lighting=true;
     if (!surface.imagery_rgba.empty()) {
@@ -69,16 +99,84 @@ vsg::ref_ptr<vsg::StateGroup> makeTerrainDisplay(const EarthSurfaceSnapshot& sur
         image->properties.format=VK_FORMAT_R8G8B8A8_SRGB;
         state.image=image;
     }
+    auto draw=makeSurfaceDraw(surface,true);
+    if(tint)draw->arrays[3]->data=vsg::vec4Array::create(1,*tint);
     if(!surface.mr_rgba.empty()) {
-        auto pipeline=vsg::GraphicsPipelineConfigurator::create(vsg::createPhysicsBasedRenderingShaderSet());
-        pipeline->enableArray("vsg_Vertex",VK_VERTEX_INPUT_RATE_VERTEX,12);pipeline->enableArray("vsg_Normal",VK_VERTEX_INPUT_RATE_VERTEX,12);
-        pipeline->enableArray("vsg_TexCoord0",VK_VERTEX_INPUT_RATE_VERTEX,8);pipeline->enableArray("vsg_Color",VK_VERTEX_INPUT_RATE_INSTANCE,16);
         auto sampler=vsg::Sampler::create();sampler->addressModeU=sampler->addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         auto image=[&](const std::vector<uint8_t>& bytes,VkFormat format){if(bytes.size()!=size_t(surface.imagery_width)*surface.imagery_height*4)throw std::invalid_argument("PBR atlas size mismatch");auto data=vsg::ubvec4Array2D::create(surface.imagery_width,surface.imagery_height);std::memcpy(data->dataPointer(),bytes.data(),bytes.size());data->properties.format=format;return data;};
-        pipeline->assignTexture("diffuseMap",state.image,sampler);pipeline->assignTexture("mrMap",image(surface.mr_rgba,VK_FORMAT_R8G8B8A8_UNORM),sampler);
-        if(!surface.normal_rgba.empty())pipeline->assignTexture("normalMap",image(surface.normal_rgba,VK_FORMAT_R8G8B8A8_UNORM),sampler);
-        auto material=vsg::PbrMaterialValue::create();material->value().metallicFactor=1;material->value().roughnessFactor=1;
-        pipeline->assignDescriptor("material",material);pipeline->init();auto group=vsg::StateGroup::create();pipeline->copyTo(group);group->addChild(makeSurfaceDraw(surface,true));return group;
+        auto mr=image(surface.mr_rgba,VK_FORMAT_R8G8B8A8_UNORM);
+        auto normal=surface.normal_rgba.empty()?nullptr:image(surface.normal_rgba,VK_FORMAT_R8G8B8A8_UNORM);
+        auto emission=surface.emissive_rgba.empty()?nullptr:image(surface.emissive_rgba,VK_FORMAT_R8G8B8A8_UNORM);
+        auto pass=[&](bool blend){
+            auto pipeline=vsg::GraphicsPipelineConfigurator::create(atlasPbrShaderSet());
+            pipeline->enableArray("vsg_Vertex",VK_VERTEX_INPUT_RATE_VERTEX,12);
+            pipeline->enableArray("vsg_Normal",VK_VERTEX_INPUT_RATE_VERTEX,12);
+            pipeline->enableArray("vsg_TexCoord0",VK_VERTEX_INPUT_RATE_VERTEX,8);
+            pipeline->enableArray("vsg_Color",VK_VERTEX_INPUT_RATE_INSTANCE,16);
+            pipeline->assignTexture("diffuseMap",state.image,sampler);
+            pipeline->assignTexture("mrMap",mr,sampler);
+            if(normal)pipeline->assignTexture("normalMap",normal,sampler);
+            auto material=vsg::PbrMaterialValue::create();
+            material->value().metallicFactor=1;material->value().roughnessFactor=1;
+            if(emission){
+                pipeline->assignTexture("emissiveMap",emission,sampler);
+                material->value().emissiveFactor=vsg::vec4(1,1,1,1);
+            }
+            if(blend){
+                material->value().alphaMask=0;
+                for(auto& state:pipeline->pipelineStates){
+                    if(auto depth=state.cast<vsg::DepthStencilState>())depth->depthWriteEnable=VK_FALSE;
+                    if(auto color=state.cast<vsg::ColorBlendState>())color->configureAttachments(true);
+                }
+            }
+            pipeline->assignDescriptor("material",material);
+            pipeline->init();
+            auto group=vsg::StateGroup::create();
+            pipeline->copyTo(group);
+            return group;
+        };
+        auto opaque=pass(false);
+        if(!surface.hasMaterialBlend){opaque->addChild(draw);return opaque;}
+        std::vector<uint32_t> solidIndices,blendIndices;
+        const auto& indices=surface.indices();
+        const auto& uv=surface.imagery_uv;
+        if(uv.size()!=surface.vertices().size())throw std::invalid_argument("PBR atlas UV count mismatch");
+        for(size_t i=0;i<indices.size();i+=3){
+            const auto centre=(uv[indices[i]]+uv[indices[i+1]]+uv[indices[i+2]])/3.f;
+            const auto x=std::clamp(int(centre.x*surface.imagery_width),0,int(surface.imagery_width)-1);
+            const auto y=std::clamp(int(centre.y*surface.imagery_height),0,int(surface.imagery_height)-1);
+            auto& batch=(*mr)(x,y).a==0?blendIndices:solidIndices;
+            batch.insert(batch.end(),indices.begin()+i,indices.begin()+i+3);
+        }
+        if(blendIndices.empty()){opaque->addChild(draw);return opaque;}
+        auto blend=pass(true);
+        if(solidIndices.empty())blend->addChild(draw);
+        else {
+            // VSG packs indices and attributes in the same allocation for
+            // VertexIndexDraw. Use two ranges of a single shared buffer.
+            auto elements=vsg::uintArray::create(indices.size());
+            const auto solidEnd=std::copy(solidIndices.begin(),solidIndices.end(),elements->begin());
+            std::copy(blendIndices.begin(),blendIndices.end(),solidEnd);
+            draw->assignIndices(elements);
+            auto glass=vsg::VertexIndexDraw::create();
+            glass->arrays=draw->arrays;
+            glass->assignIndices(elements);
+            glass->indices=draw->indices;
+            glass->firstIndex=solidIndices.size();
+            glass->indexCount=blendIndices.size();
+            glass->instanceCount=1;
+            blend->addChild(glass);
+            draw->indexCount=solidIndices.size();
+            opaque->addChild(draw);
+        }
+        auto sorted=vsg::DepthSorted::create();
+        sorted->binNumber=10;
+        const auto bounds=vsg::visit<vsg::ComputeBounds>(draw).bounds;
+        const auto centre=(bounds.min+bounds.max)*.5;
+        sorted->bound={centre,vsg::length(bounds.max-bounds.min)*.5};
+        sorted->child=blend;
+        opaque->addChild(sorted);
+        return opaque;
     }
     // The stock Phong material has a narrow plastic specular highlight. Land
     // imagery represents diffuse surface colour; adding that white highlight
@@ -90,7 +188,7 @@ vsg::ref_ptr<vsg::StateGroup> makeTerrainDisplay(const EarthSurfaceSnapshot& sur
     for(auto& binding:builder->shaderSet->descriptorBindings)if(binding.name=="material")binding.data=land;
     auto group=builder->createStateGroup(state);
     if (!group) throw std::runtime_error("cannot create terrain display pipeline");
-    group->addChild(makeSurfaceDraw(surface,true));
+    group->addChild(draw);
     return group;
 }
 vsg::ref_ptr<vsg::StateGroup> makeTerrainContextDisplay(const EarthSurfaceSnapshot& source,

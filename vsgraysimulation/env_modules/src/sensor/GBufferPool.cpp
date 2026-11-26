@@ -31,7 +31,7 @@ namespace {
 
 bool loadStage(VkShaderStageFlagBits stage, const char* name,
                vsg::ref_ptr<vsg::ShaderStage>& out) {
-    out = vsg::ShaderStage::read(stage, "main", resolveEnvShader(name));
+    out = vsg::ShaderStage::read(stage, "main", resolveEnvShader(name), vsg::Options::create());
     if (!out) {
         std::fprintf(stderr, "[GBuffer] shader 加载失败: %s\n", name);
         return false;
@@ -81,6 +81,7 @@ GBufferPool::Result GBufferPool::build(vsg::Device& deviceArg,
     // ---- 几何 SSBO + 加速结构: 池复用 或 自抽取 (迁移期回退路径) ----
     vsg::ref_ptr<vsg::BufferInfo> posFlatInfo, idxInfo, matIdInfo;
     vsg::ref_ptr<vsg::BufferInfo> uvInfo, slotIdInfo;   // TV 彩色: uv/贴图槽号
+    vsg::ref_ptr<vsg::BufferInfo> thermalNormalInfo;
     vsg::ref_ptr<vsg::TopLevelAccelerationStructure> tlas;
     uint32_t nVerts = 0, nTris = 0;
 
@@ -98,6 +99,7 @@ GBufferPool::Result GBufferPool::build(vsg::Device& deviceArg,
         spectralDataInfo = pool->spectralDataInfo;   // 批次1: 谱材质表同源复用
         uvInfo      = pool->uvFlatInfo;              // TV 彩色: uv/槽号池复用
         slotIdInfo  = pool->slotInfo;
+        thermalNormalInfo = pool->thermalNormalInfo;
         tlas        = pool->tlas;
         nVerts = pool->vertexCount;
         nTris  = pool->triangleCount;
@@ -187,7 +189,7 @@ GBufferPool::Result GBufferPool::build(vsg::Device& deviceArg,
         // 谱材质表 SSBO (回退路径自建; 打包规则与 SharedSceneResources 同构):
         //   a = (ρ_tv, ρ_swir, ε_mwir, ε_lwir)   b = (镜面强度, GGX 粗糙度, 0, 0)
         {
-            auto specData = vsg::floatArray::create(size_t(nMats) * 8);
+            auto specData = vsg::floatArray::create(size_t(nMats) * 16);
             const RadarMaterial defMat{};
             for (uint32_t m = 0; m < nMats; ++m) {
                 const RadarMaterial& r = (materials && m < materials->size())
@@ -195,13 +197,17 @@ GBufferPool::Result GBufferPool::build(vsg::Device& deviceArg,
                 const float epsBase = r.emissivity > 0.0f ? r.emissivity : 0.90f;
                 const float eMw = r.eps_mwir >= 0.0f ? r.eps_mwir : -1.0f;
                 const float eLw = r.eps_lwir >= 0.0f ? r.eps_lwir : -1.0f;
-                float* s = specData->data(uint32_t(m) * 8);
+                float* s = specData->data(uint32_t(m) * 16);
                 s[0] = r.rho_tv >= 0.0f ? r.rho_tv : 1.0f - epsBase;
                 s[1] = r.rho_swir >= 0.0f ? r.rho_swir : 1.0f - epsBase;
                 s[2] = eMw;
                 s[3] = eLw;
                 s[4] = r.spec_strength;
                 s[5] = r.spec_roughness;
+                s[6] = (r.dielectric_model == 1) ? 1.0f : 0.0f;
+                s[7] = 0.0f;
+                std::copy(r.thermal_surface.begin(), r.thermal_surface.end(), s + 8);
+                std::copy(r.thermal_source.begin(), r.thermal_source.end(), s + 12);
             }
             spectralDataInfo = vsg::BufferInfo::create(specData);
         }
@@ -250,6 +256,7 @@ GBufferPool::Result GBufferPool::build(vsg::Device& deviceArg,
         dsl->addBinding(b, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     dsl->addBinding(10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     dsl->addBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    dsl->addBinding(16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     vsg::ref_ptr<vsg::BufferInfo> propsInfo;
     if (pool) {
@@ -257,6 +264,9 @@ GBufferPool::Result GBufferPool::build(vsg::Device& deviceArg,
     } else {
         auto vid = scene->cast<vsg::VertexIndexDraw>();
         propsInfo = vsg::BufferInfo::create(vid->arrays[1]->data);
+        const auto* normals = vid->arrays.size()>5 ? vid->arrays[5]->data->cast<vsg::vec4Array>() : nullptr;
+        thermalNormalInfo = vsg::BufferInfo::create(normals && normals->size()==nVerts
+            ? vid->arrays[5]->data : vsg::ref_ptr<vsg::Data>(vsg::vec4Array::create(1,vsg::vec4{})));
     }
 
     auto g0Info = vsg::ImageInfo::create(vsg::ref_ptr<vsg::Sampler>{}, g0, VK_IMAGE_LAYOUT_GENERAL);
@@ -275,6 +285,7 @@ GBufferPool::Result GBufferPool::build(vsg::Device& deviceArg,
         vsg::DescriptorBuffer::create(vsg::BufferInfoList{matIdInfo}, 6, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
         vsg::DescriptorBuffer::create(vsg::BufferInfoList{uvInfo}, 10, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
         vsg::DescriptorBuffer::create(vsg::BufferInfoList{slotIdInfo}, 11, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
+        vsg::DescriptorBuffer::create(vsg::BufferInfoList{thermalNormalInfo}, 16, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
     });
 
     // ---- RT shader (rgen/rmiss/rchit, 源码树优先) ----
@@ -391,7 +402,8 @@ GBufferPool::Result GBufferPool::buildCompute(vsg::Device& device,SharedSceneRes
         vsg::ImageInfo::create(vsg::ref_ptr<vsg::Sampler>{},images[i],VK_IMAGE_LAYOUT_GENERAL),imageBindings[i],0,VK_DESCRIPTOR_TYPE_STORAGE_IMAGE));
     const std::pair<uint32_t,vsg::ref_ptr<vsg::BufferInfo>> buffers[]={
         {3,shared->posFlatInfo},{4,shared->indicesInfo},{5,shared->propsInfo},{6,shared->matIdxInfo},
-        {10,shared->uvFlatInfo},{11,shared->slotInfo},{13,shared->bvhInfo},{14,shared->primitiveInfo},{15,shared->instanceInfo}};
+        {10,shared->uvFlatInfo},{11,shared->slotInfo},{13,shared->bvhInfo},{14,shared->primitiveInfo},{15,shared->instanceInfo},
+        {16,shared->thermalNormalInfo}};
     for(const auto& [binding,buffer]:buffers) {
         layout->addBinding(binding,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT);
         descriptors.push_back(vsg::DescriptorBuffer::create(vsg::BufferInfoList{buffer},binding,0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER));

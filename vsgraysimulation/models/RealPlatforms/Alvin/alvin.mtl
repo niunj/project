@@ -1,0 +1,10 @@
+newmtl white
+Kd 0.78 0.78 0.73
+newmtl red
+Kd 0.66 0.065 0.035
+newmtl steel
+Kd 0.24 0.28 0.3
+newmtl glass
+Kd 0.041 0.096 0.13
+newmtl yellow
+Kd 0.73 0.51 0.1

@@ -262,6 +262,23 @@ void SceneAuthoringPanel::material() {
     auto *swir = number(f, tr("短波红外反射率"), m.at("rho_swir"), 0, 1);
     auto *mwir = number(f, tr("中波红外发射率"), m.value("eps_mwir", m.at("emissivity").get<double>()), 0, 1);
     auto *lwir = number(f, tr("长波红外发射率"), m.value("eps_lwir", m.at("emissivity").get<double>()), 0, 1);
+    auto* thermal = new QCheckBox(tr("使用昼夜、湿润和工作热响应"));
+    thermal->setChecked(m.contains("thermal_response"));
+    f->addRow(thermal);
+    const auto response = m.value("thermal_response", json::object());
+    const std::array<const char*,7> heatKeys{"solar_gain_k","inertia_h","wet_cooling_k",
+        "source_gain_k","source_start_s","source_run_s","source_tau_s"};
+    const std::array<QString,7> heatLabels{tr("日照响应（K）"),tr("地表热时间常数（h）"),tr("湿地降温（K）"),
+        tr("工作热源稳定温升（K）"),tr("热源启动（仿真 s）"),tr("工作时长（s）"),tr("热源时间常数（s）")};
+    constexpr std::array<double,7> heatDefault{8,3,0,0,0,0,60};
+    constexpr std::array<double,7> heatMin{0,.05,0,0,0,0,.01};
+    constexpr std::array<double,7> heatMax{80,48,25,400,1e7,1e7,1e7};
+    std::array<QDoubleSpinBox*,7> heatFields{};
+    for (size_t i=0;i<heatKeys.size();++i) {
+        heatFields[i] = number(f,heatLabels[i],response.value(heatKeys[i],heatDefault[i]),heatMin[i],heatMax[i]);
+        heatFields[i]->setEnabled(thermal->isChecked());
+        connect(thermal,&QCheckBox::toggled,heatFields[i],&QWidget::setEnabled);
+    }
     const auto r = m.value("radar", json::object());
     auto *real = number(f, tr("介电常数实部"), r.value("dielectric_real", 6.), 1, 1e8);
     auto *imag = number(f, tr("介电常数虚部"), r.value("dielectric_imag", 0.), 0, 1e8);
@@ -302,9 +319,14 @@ void SceneAuthoringPanel::material() {
                          {"sigma0_db", sigma->value()},
                          {"surface_rough", rough->value()},
                          {"rcs_scale", scale->value()}}}};
+    if (thermal->isChecked()) {
+        for (size_t i=0;i<heatKeys.size();++i)
+            properties["thermal_response"][heatKeys[i]] = heatFields[i]->value();
+    }
     if (scope->currentData() == "whole") {
         auto merged = m;
         merged.update(properties);
+        if (!thermal->isChecked()) merged.erase("thermal_response");
         w.edit(json::array({{{"kind", "material"}, {"object", id}, {"material", merged}},
                             {{"kind", "sensor_materials"}, {"object", id}, {"sensor_materials", nullptr}}}),
                snapshot->revision);
@@ -327,9 +349,11 @@ void SceneAuthoringPanel::import(bool terrain) {
     const auto file = QFileDialog::getOpenFileName(
         this, terrain ? tr("导入地形影像高程源") : tr("导入目标模型"), terrain ? "config/earth" : "",
         terrain ? tr("地图工程 (*.json *.ter *.vsgterrain)")
-                : tr("目标模型 (*.vsg *.vsgt *.vsgb *.obj *.glb *.gltf *.fbx *.dae *.ply *.stl *.3ds)"));
+                : tr("目标模型 (*.vsg *.vsgt *.vsgb *.obj *.glb *.gltf *.fbx *.dae *.ply *.stl *.3ds *.usd *.usda *.usdc)"));
     if (file.isEmpty())
         return;
+    const auto suffix = QFileInfo(file).suffix().toLower();
+    const bool usd = suffix == "usd" || suffix == "usda" || suffix == "usdc";
     QDialog d(this);
     d.setWindowTitle(terrain ? tr("地形物理工作区") : tr("目标体素化"));
     auto *f = new QFormLayout(&d);
@@ -340,6 +364,7 @@ void SceneAuthoringPanel::import(bool terrain) {
     QDoubleSpinBox *minx = nullptr, *maxx = nullptr, *minz = nullptr, *maxz = nullptr, *bottom = nullptr,
                    *units = nullptr;
     QSpinBox *sub = nullptr, *detail = nullptr;
+    QCheckBox* inferThermal = nullptr;
     QComboBox *up = nullptr;
     QDoubleSpinBox *position[3]{};
     if (terrain) {
@@ -352,6 +377,8 @@ void SceneAuthoringPanel::import(bool terrain) {
         sub->setRange(1, 8);
         sub->setValue(2);
         f->addRow(tr("每格显示细分（不增加真实数据）"), sub);
+        inferThermal = new QCheckBox(tr("按影像推定红外地表分类"));
+        f->addRow(inferThermal);
     } else {
         units = number(f, tr("源单位到米"), 1, 1e-9, 1e6, 9);
         up = new QComboBox;
@@ -359,6 +386,11 @@ void SceneAuthoringPanel::import(bool terrain) {
         if (file.endsWith(".ive") || file.endsWith(".osg") || file.endsWith(".osgb"))
             up->setCurrentText("z");
         f->addRow(tr("向上轴"), up);
+        if (usd) {
+            units->setEnabled(false);
+            up->setEnabled(false);
+            f->addRow(tr("坐标与单位"), new QLabel(tr("从 USD 场景读取"), &d));
+        }
         detail = new QSpinBox;
         detail->setRange(16, 512);
         detail->setValue(512);
@@ -408,6 +440,7 @@ void SceneAuthoringPanel::import(bool terrain) {
         object["position_m"] = {position[0]->value(), position[1]->value(), position[2]->value()};
         object["physics"] = {{"motion", "prescribed"}, {"fracture", true}};
     }
+    if (inferThermal && inferThermal->isChecked()) source["thermal_landcover"] = "rgb-inferred-v1";
     object["source"] = source;
     const auto &a = snapshot->anchor;
     json document = {

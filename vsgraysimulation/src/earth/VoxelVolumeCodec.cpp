@@ -16,18 +16,36 @@ nlohmann::json VoxelTerrain::encodeVolume() const {
         {"origin_m",{min_x,base_y_,min_z}},{"cell_size_m",resolution_m},{"occupied_runs",runs},
         {"revision",revision}};
     if(appearance_) {
-        const auto& a=*appearance_;const char* digits="0123456789abcdef";bool compressedColour=false;std::vector<uint8_t> packedColour;
-        if(a.rgba.size()>4*1024*1024){uLongf size=compressBound(a.rgba.size());packedColour.resize(size);if(compress2(packedColour.data(),&size,a.rgba.data(),a.rgba.size(),1)==Z_OK&&size*2<a.rgba.size()){packedColour.resize(size);compressedColour=true;}else packedColour.clear();}
-        const auto& bytes=compressedColour?packedColour:a.rgba;std::string hex(bytes.size()*2,'0');for(size_t i=0;i<bytes.size();++i){hex[2*i]=digits[bytes[i]>>4];hex[2*i+1]=digits[bytes[i]&15];}
+        const auto& a=*appearance_;const char* digits="0123456789abcdef";
+        const auto packAtlas=[](const std::vector<uint8_t>& pixels)->std::vector<uint8_t> {
+            if(pixels.size()<=4*1024*1024)return {};
+            uLongf length=compressBound(pixels.size());
+            std::vector<uint8_t> packed(length);
+            if(compress2(packed.data(),&length,pixels.data(),pixels.size(),1)!=Z_OK||length*2>=pixels.size())
+                return {};
+            packed.resize(length);
+            return packed;
+        };
+        const auto toHex=[&](const std::vector<uint8_t>& bytes){
+            std::string hex(bytes.size()*2,'0');
+            for(size_t i=0;i<bytes.size();++i){hex[2*i]=digits[bytes[i]>>4];hex[2*i+1]=digits[bytes[i]&15];}
+            return hex;
+        };
+        const auto packedColour=packAtlas(a.rgba);
         auto faces=nlohmann::json::array();for(const auto& [key,tile]:a.faceTiles)faces.push_back({key,tile});
         auto corners=nlohmann::json::array();for(const auto& [key,c]:a.corners)corners.push_back({key,c.position.x,c.position.y,c.position.z,c.normal.x,c.normal.y,c.normal.z});
         auto pixelRuns=[](const std::vector<uint8_t>& pixels){auto runs=nlohmann::json::array();for(size_t i=0;i<pixels.size();) {size_t end=i+4;while(end<pixels.size()&&std::equal(pixels.begin()+i,pixels.begin()+i+4,pixels.begin()+end))end+=4;runs.push_back({(end-i)/4,pixels[i],pixels[i+1],pixels[i+2],pixels[i+3]});i=end;}return runs;};
         result["surface_appearance"]={{"origin_m",{a.origin.x,a.origin.y,a.origin.z}},{"dimensions",a.dimensions},{"cell_size_m",a.cellSize},
             {"width",a.width},{"height",a.height},{"face_tiles",faces}};
-        result["surface_appearance"][compressedColour?"rgba_zlib_hex":"rgba_hex"]=std::move(hex);
+        result["surface_appearance"][packedColour.empty()?"rgba_hex":"rgba_zlib_hex"]=
+            toHex(packedColour.empty()?a.rgba:packedColour);
         if(!corners.empty())result["surface_appearance"]["corners"]=corners;
         if(!a.mr_rgba.empty())result["surface_appearance"]["mr_runs"]=pixelRuns(a.mr_rgba);
-        if(!a.normal_rgba.empty())result["surface_appearance"]["normal_runs"]=pixelRuns(a.normal_rgba);
+        if(!a.normal_rgba.empty()){
+            const auto packed=packAtlas(a.normal_rgba);
+            if(packed.empty())result["surface_appearance"]["normal_runs"]=pixelRuns(a.normal_rgba);
+            else result["surface_appearance"]["normal_zlib_hex"]=toHex(packed);
+        }
         if(!a.emissive_rgba.empty())result["surface_appearance"]["emissive_runs"]=pixelRuns(a.emissive_rgba);
         if(a.detailed()){
             auto original=nlohmann::json::array();for(size_t i=0;i<a.originalOccupancy.size();){if(!a.originalOccupancy[i]){++i;continue;}size_t end=i+1;while(end<a.originalOccupancy.size()&&a.originalOccupancy[end])++end;original.push_back({i,end-i});i=end;}
@@ -76,11 +94,22 @@ std::shared_ptr<VoxelTerrain> VoxelTerrain::decodeVolume(const nlohmann::json& j
         if(!a->width||!a->height||uint64_t(a->width)*a->height>16'777'216||!std::isfinite(a->cellSize)||a->cellSize<=0||a->cellSize!=result->resolution_m)throw std::invalid_argument("invalid target appearance atlas");
         size_t cells=1;for(int axis=0;axis<3;++axis){if(!std::isfinite(a->origin[axis])||a->dimensions[axis]<1||a->dimensions[axis]>4'000'000||cells>4'000'000ULL/a->dimensions[axis])throw std::invalid_argument("invalid target appearance chart");cells*=a->dimensions[axis];}
         const bool compressedColour=encoded.contains("rgba_zlib_hex");if(compressedColour&&encoded.contains("rgba_hex"))throw std::invalid_argument("ambiguous colour atlas encoding");
-        const auto& hex=encoded.at(compressedColour?"rgba_zlib_hex":"rgba_hex").get_ref<const std::string&>();const size_t byteCount=size_t(a->width)*a->height*4;
-        if(hex.empty()||hex.size()%2||(compressedColour?hex.size()>byteCount*2:hex.size()!=byteCount*2))throw std::invalid_argument("invalid target atlas byte count");
+        const size_t byteCount=size_t(a->width)*a->height*4;
         auto digit=[](char c)->int {if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;throw std::invalid_argument("invalid target atlas encoding");};
-        std::vector<uint8_t> bytes(hex.size()/2);for(size_t i=0;i<bytes.size();++i)bytes[i]=uint8_t(digit(hex[2*i])*16+digit(hex[2*i+1]));
-        if(compressedColour){a->rgba.resize(byteCount);uLongf length=byteCount;if(uncompress(a->rgba.data(),&length,bytes.data(),bytes.size())!=Z_OK||length!=byteCount)throw std::invalid_argument("invalid compressed colour atlas");}else a->rgba=std::move(bytes);
+        const auto decodeAtlas=[&](const char* name,bool compressed){
+            const auto& hex=encoded.at(name).get_ref<const std::string&>();
+            if(hex.empty()||hex.size()%2||(compressed?hex.size()>byteCount*2:hex.size()!=byteCount*2))
+                throw std::invalid_argument("invalid target atlas byte count");
+            std::vector<uint8_t> bytes(hex.size()/2);
+            for(size_t i=0;i<bytes.size();++i)bytes[i]=uint8_t(digit(hex[2*i])*16+digit(hex[2*i+1]));
+            if(!compressed)return bytes;
+            std::vector<uint8_t> pixels(byteCount);
+            uLongf length=byteCount;
+            if(uncompress(pixels.data(),&length,bytes.data(),bytes.size())!=Z_OK||length!=byteCount)
+                throw std::invalid_argument("invalid compressed target atlas");
+            return pixels;
+        };
+        a->rgba=decodeAtlas(compressedColour?"rgba_zlib_hex":"rgba_hex",compressedColour);
         const auto& faces=encoded.at("face_tiles");if(!faces.is_array()||faces.size()>2'000'000)throw std::invalid_argument("invalid target face map");
         for(const auto& pair:faces) {
             if(!pair.is_array()||pair.size()!=2||!pair[0].is_number_integer()||!pair[1].is_number_integer()||pair[0].get<double>()<0||pair[1].get<double>()<0)throw std::invalid_argument("invalid target face binding");
@@ -111,7 +140,11 @@ std::shared_ptr<VoxelTerrain> VoxelTerrain::decodeVolume(const nlohmann::json& j
             }
         }
         auto decodePixels=[&](const char* name,std::vector<uint8_t>& pixels){if(!encoded.contains(name))return;const auto& runs=encoded.at(name);if(!runs.is_array()||runs.size()>a->rgba.size()/4)throw std::invalid_argument("invalid PBR runs");for(const auto& run:runs){if(!run.is_array()||run.size()!=5||!run[0].is_number_integer())throw std::invalid_argument("invalid PBR run");const auto count=run[0].get<uint64_t>();if(!count||count>(a->rgba.size()-pixels.size())/4)throw std::invalid_argument("PBR run outside atlas");uint8_t rgba[4];for(int c=0;c<4;++c){if(!run[c+1].is_number_integer()||run[c+1].get<double>()<0||run[c+1].get<double>()>255)throw std::invalid_argument("invalid PBR channel");rgba[c]=run[c+1].get<uint8_t>();}for(size_t i=0;i<count;++i)pixels.insert(pixels.end(),rgba,rgba+4);}if(pixels.size()!=a->rgba.size())throw std::invalid_argument("incomplete PBR atlas");};
-        decodePixels("mr_runs",a->mr_rgba);decodePixels("normal_runs",a->normal_rgba);decodePixels("emissive_runs",a->emissive_rgba);
+        decodePixels("mr_runs",a->mr_rgba);decodePixels("emissive_runs",a->emissive_rgba);
+        if(encoded.contains("normal_zlib_hex")){
+            if(encoded.contains("normal_runs"))throw std::invalid_argument("ambiguous normal atlas encoding");
+            a->normal_rgba=decodeAtlas("normal_zlib_hex",true);
+        }else decodePixels("normal_runs",a->normal_rgba);
         result->setAppearance(a);
     }
     return result;

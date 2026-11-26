@@ -365,7 +365,10 @@ void VoxelDynamics::step(const VoxelSceneSnapshot& previous,VoxelSceneSnapshot& 
                 const auto timing=applyVoxelWater(*body.rigid,*body.shape->hydro,pose,staged->origin,*previous.ocean,previous.timeSeconds()+s*dt,dt,previous.gravity,(std::getenv("VSGRAYSIM_OCEAN_REFERENCE_HYDRO")?nullptr:body.shape->hydroTree.get()),std::getenv("VSGRAYSIM_OCEAN_REFERENCE_HYDRO")?nullptr:body.shape->pressureColumns.get(),std::getenv("VSGRAYSIM_OCEAN_REFERENCE_HYDRO")?nullptr:body.shape->pressureTree.get());buoyancyMs+=timing.pressureMs;waterDragMs+=timing.dragMs;waterMs+=timing.totalMs;
             }
             if(o.body.motion!="prescribed")continue;
-            auto placement=o.pose(previous.tick,previous.fixedStep);const auto delta=o.velocity*((s+1)*dt);
+            const auto lead=(s+1)*dt;
+            auto placement=o.rotor?drivenVoxelRotorPose(previous,o,lead):
+                o.poseTrack?voxelTrackPose(previous,o,previous.timeSeconds()+lead):o.pose(previous.tick,previous.fixedStep);
+            const auto delta=o.rotor||o.poseTrack?vsg::dvec3{}:o.velocity*lead;
             for(int a=0;a<3;++a)placement[3][a]+=delta[a]-staged->origin[a];
             const auto transform=bt(placement)*body.shape->bodyToModel;
             body.motion->setWorldTransform(transform);body.rigid->setWorldTransform(transform);
@@ -416,7 +419,7 @@ std::optional<VoxelSceneHit> VoxelDynamics::raycast(const VoxelSceneSnapshot& sn
             if(!ClosestRayResultCallback::needsCollision(proxy))return false;
             const auto* object=static_cast<const btCollisionObject*>(proxy->m_clientObject);
             const auto* body=static_cast<const Body*>(object->getUserPointer());
-            return body&&(body->shape->terrain||body->shape->contactMesh);
+            return body && body->shape->terrain;
         }
     } ray(from,to);
     ray.m_flags=btTriangleRaycastCallback::kF_UseGjkConvexCastRaytest|btTriangleRaycastCallback::kF_KeepUnflippedNormal;
@@ -425,6 +428,24 @@ std::optional<VoxelSceneHit> VoxelDynamics::raycast(const VoxelSceneSnapshot& sn
     if(ray.hasHit()) {
         const auto* body=static_cast<const Body*>(ray.m_collisionObject->getUserPointer());
         result=VoxelSceneHit{body->id,double(ray.m_closestHitFraction)*distance,vec(ray.m_hitPointWorld)+staged->origin,vec(ray.m_hitNormalWorld)};
+    }
+    // GImpact uses these same triangles for contacts. Query their original
+    // double-precision vertices and pose so that float recentering and Bullet's
+    // triangle edge tolerance do not turn a grazing miss into a false hit.
+    for (const auto& body : staged->bodies) {
+        if (!body.shape->contactMesh) continue;
+        const auto& object = snapshot.objects.at(body.id);
+        const auto pose = object.pose(snapshot.tick, snapshot.fixedStep);
+        const auto inverse = vsg::inverse(pose);
+        const auto d = inverse * vsg::dvec4(direction, 0.);
+        vsg::dvec3 localPoint, localNormal;
+        if (!object.surface().intersectLocal(inverse * origin, {d.x, d.y, d.z}, distance,
+                                             localPoint, localNormal)) continue;
+        const auto point = pose * localPoint;
+        const auto along = vsg::dot(point - origin, direction);
+        if (result && along >= result->distance) continue;
+        const auto normal = pose * vsg::dvec4(localNormal, 0.);
+        result = VoxelSceneHit{body.id, along, point, {normal.x, normal.y, normal.z}};
     }
     // Use the supporting planes of the same Bullet cell hulls. A GJK ray cast
     // can miss thin boundary cells because its cast tolerance is too coarse.

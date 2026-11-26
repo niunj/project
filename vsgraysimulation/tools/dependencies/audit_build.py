@@ -23,7 +23,7 @@ REQUIRED_TARGETS = {"vsg", "vsgXchange", "vsgImGui", "vsgbCollision", "vsgbDynam
 _MANAGED_NAMES = (
     r"vsgXchange|vsgImGui|vsgbCollision|vsgbDynamics|vsg|rocky|assimp|"
     r"BulletDynamics|BulletCollision|BulletSoftBody|BulletWorldImporter|BulletFileLoader|"
-    r"ConvexDecomposition|LinearMath|usd_(?:usd|usdGeom|sdf|tf|gf|vt)"
+    r"ConvexDecomposition|LinearMath|usd_(?:usd|usdGeom|usdShade|sdf|tf|gf|vt)"
 )
 MANAGED_LIBRARY = re.compile(rf"^(?:lib)?(?:{_MANAGED_NAMES})(?:d)?(?:\.a|\.so(?:\..*)?|\.dylib|\.lib|\.dll)$")
 MANAGED_LFLAG = re.compile(rf"^-l(?:{_MANAGED_NAMES})(?:d)?$")

@@ -32,6 +32,67 @@
 
 本地体素配置可声明 `platforms: [{"id":72,"object":"aircraft","name":"F-16 体素平台","kind":"aircraft","model_heading_deg":180}]`。仪表读取该对象的实际局部位置、地速、姿态与时间；外部三维视图复用同一个场景。物理对象没有提供发动机或飞行控制器时，相应仪表显示缺失，接管按钮禁用；没有用面板选择推定飞行动力学。
 
+## 平台状态与场景音效
+
+场景设计器的“场景专题”菜单、仿真主控的“仿真”菜单，以及大显控地球视图里的“音效”开关，都能为各自的三维视口启用声音。音效默认关闭，便于同时打开多个客户端时选择一个视口收听。构建时检测 Qt Multimedia，运行时通过 `QAudioSink` 输出；没有音频后端也能继续接收和显示状态。可用 `VSGRAYSIM_AUDIO_DEVICE` 指定 Qt 音频设备 ID。
+
+体素专题发布与场景 `tick`、`revision` 对齐的只读 `scene_presentation`。飞机的飞行状态来自当前运动和接地接触。地面平台和船舶根据当前速度报告运动或静止。火箭分离和载荷展开状态来自已有回放的 `presentation_phases`，已有导弹轨迹可展示回放飞行状态。破碎提示来自体素事件日志。传感器分别报告关机、待命、等待首帧、工作或不可用，状态绑定平台 ID、装备 ID 和型号。设计器预览可以显示装备位置和预览状态。
+
+`SceneSoundProfiles.h` 维护平台和装备型号的音色参数。三维相机充当听者，声源随平台和传感器位置移动，后台线程按距离和左右方向混音。连续运行动作使用循环声，接地、破碎和分离事件使用单次音效。暂停、关闭视口和数据失联时静音。当前音源为程序合成，空间音频使用双声道距离衰减与声像定位。
+
+### 空气传播与声级测点
+
+打开 `config/topics/taipei-acoustic-flyover.vtopic.json` 可以看到固定参考声源、加装的示例隔声屏和 Skywalker X8。地球视图的监听点下拉框支持“相机听者”与专题里的命名测点，打开“音效”可以收听选定位置。正式仿真后台按仿真时钟更新固定测点，即使显控没有打开声音也能读取这些测点。
+
+专题的 `acoustics` 对象使用 `version: 1`。`sources` 支持静态声源或随模型运动的挂载。为单个型号配置多条记录即能分开挂载发动机、进排气口或装备风扇。示例中的参考声源和飞越频谱均为假设值。
+
+```json
+{
+  "version": 1,
+  "sources": [{
+    "id": "x8-engine",
+    "cue": "propeller",
+    "mount_object": "flyover",
+    "position_m": [0, 0, 0.6],
+    "owner": "platforms",
+    "owner_id": 880,
+    "states": ["flying", "climbing", "descending"],
+    "replace_default": true,
+    "acoustic_reference_m": 10,
+    "spl_bands_db": [76, 82, 85, 89, 86, 83, 77, 70]
+  }],
+  "probes": [{"id": "无遮拦", "position_m": [-48, 6, 0]}]
+}
+```
+
+`owner` 可取 `platforms` 或 `equipment`。省略 `mount_object` 时使用场景局部米制坐标，提供时使用对象局部坐标。频带顺序是 63 Hz 至 8 kHz 的八个倍频带，按 `acoustic_reference_m` 处自由场声压级填写。可配置 `forward` 和 `rear_loss_db` 表达简化方向性。参考数据默认标为估算。如果填写 `estimated_source: false`，同时填写 `calibration.source` 和 `calibration.operating_condition`，用于记录来源与工况。
+
+空气求解包括直达声、亚音速移动声源的发声时刻与多普勒、温湿度相关大气吸收、地形与结构遮挡、一次镜像反射。遮挡使用工程近似频带损失，地面反射使用近水平局部表面和频带损失。功率按频带合成并输出 `dB SPL re 20 µPa`、`dBA`、`Pa RMS`、`LAeq`、估算 `LAFmax` 及测量窗口累计 `SEL`。测点级别受声源标定和场景材料精度限制。Qt 播放音量是独立的数字增益。首版工程范围为最多 20 秒传播延时，海水声学、跨介质传播和实机声谱标定留在独立的后续工作。
+
+### 型号包的默认声源挂点
+
+固定翼由 `model_packages/platform/fixed_wing/Acoustics.h` 提供 `engine`、`engine_nozzle` 或 `engine_left` / `engine_right`。F-16C 的喷口坐标与三维尾焰共用。场景可以在平台 `mounts` 中声明同名坐标进行覆盖。工程默认坐标是模型相对位置，安装标定以具体的导入资产和实例覆盖为准。
+
+直升机的 `main_rotor` 和 `tail_rotor` 优先跟随实际旋翼体素对象的桨毂。旋翼转速影响声音的音高和强度，停转的部件停止发声。整体旋翼声的位置在桨毂，随载机移动。光学、红外、雷达和 SAR 的 `fan` 由装备型号包给出相对于已解算装备坐标架的偏移，按装备工作状态发声。若需要覆盖默认声源，可在专题声明对应实例的 `acoustics.sources` 并设置 `replace_default: true`，它会替换该实例的全部默认循环声。
+
+物理接地取地面侧接触点。普通碰撞按碰撞对合并刚接触时刻的多个接触点，优先使用冲量最大的记录。最后一个子步没有保留冲量时，使用接触前沿法线的相对速度判断是否发声。两个运动体之间使用接触两侧坐标的中点。声学路径记录发声位置、传播长度和时延。
+
+运行 `python3 tools/prepare_named_sound_fixture.py build/named-sound-mounts/scene` 可生成台北验收专题。用地球测试程序的 `--scene-ocean-capture` 入口，设置 `VSGRAYSIM_SCENE_TOPIC` 指向生成的 `mounts.vtopic.json`，同时设置 `VSGRAYSIM_NAMED_SOUND_MOUNTS_CHECK=1`。验收使用实际 Vulkan 图像产品驱动相机风扇，比较具名挂点与传播得到的发声点，并核对物理碰撞点和接收声压。
+
+## 台北近海科考与海床测深
+
+在现有场景设计器打开 `config/topics/taipei-underwater-survey.vtopic.json`，保存后交给仿真主控。大显控勾选在线的“船载单波束测深仪”并连接，打开该设备的子显控。子显控显示水深、换能器距海床、仿真往返时间、最近 60 秒水深曲线和电源回报。切换到地球三维视图选择 Alvin 可看潜深、速度及水面、下潜、悬停、水下巡航、上浮状态。
+
+`alvin-hov` 是按 WHOI 公开尺寸绘制的体素外观模型。样例中的下潜航迹由场景时钟播放。海岸使用台北新数据，海床是独立的合成示例地形。`depth_sounders` 配置船体局部安装点、指定的 `seabed_object`、采样周期和量程。后端沿场景垂直方向对该海床的现有表面取样，用固定声速估算往返时间。样例按订阅在世界后台进程中运行，使用 CPU 生成小型测深帧。潜器推进器声和测深提示音均为各型号的合成音效。
+
+针对近距离科考演示，可在单波束设备上启用 `water_column_returns`。更近的体素表面收到回波时，显控用黄点显示水体回波深度，暂停绘制海床读数。回波离开后，青色海床曲线恢复。回波数据含距离和场景时序，沿用现有装备租约及独立声呐显控。原海床测量主题默认沿用海床模式。
+
+运行 `python3 tools/prepare_sonar_crossing.py build/sonar-crossing/scene` 生成 `taipei-sonar-crossing.vtopic.json`。使用 `sim_earth_gui_tests --earth-sonar-crossing <主题文件> <输出目录>` 检查水上、水下和恢复海床三个阶段，设置 `VSGRAYSIM_SONAR_FRAMES=1` 同时导出三维与声呐面板的 25 帧/秒连续帧。
+
+生成时加 `--diesel` 可使用 `models/RealPlatforms/CC0-DieselSubmarine` 中的 65 米级全尺寸模型，生成 `taipei-diesel-submarine.vtopic.json`。该主题使用台北新数据及更深的合成验收海床，沿用已有船载单波束回波、网络帧和显控。
+
+该模型的螺旋桨是独立体素部件，`rotor_drive` 按场景仿真时钟更新轴心姿态、转速和角度。运行 `sim_earth_gui_tests --earth-diesel-propeller <主题文件> <输出目录>` 可录制 50 帧/秒的水下近景，并核对转速回报和旋转后的桨叶射线。
+
 也可直接选择启动界面，例如 `--voxel-equipment=/绝对路径/配置.vequipment.json --workmode=infrared` 或 `--workmode=aircraft`。选择机型面板只改变显示与操纵布局，不会把场景中现有目标自动替换成该机型。
 
 ## 专题保存和正式运行边界
@@ -141,3 +202,66 @@ ctest --test-dir build -R 'voxel_formal_project_link|voxel_equipment_channels|si
 验证器启动原场景设计软件保存专题，退出后用第二个真实进程重开，再启动正式仿真和原显控。测试驱动点击原在线树、链接按钮及电源按钮；检查未链接时不出数、四台设备接收真实产品、单通道关闭不影响其他设备、重新开机恢复和暂停保留数据。暂停后校验源端与显控每个最新产品的帧号及原始载荷 SHA-256。截图来自各软件实际 Vulkan 读回与其所在 Qt 窗口，不替换传感器画面。
 
 测试自动化仅在 `BUILD_TESTING` 构建且显式设置 `VSGRAYSIM_FORMAL_CHAIN_DIR` 时启用，不改变正常启动流程。验收条件、截图、JSON 与日志见 `build/formal-chain/accepted`；这些是晴空陆地四设备链路验收，不是全天候、海洋光谱或长期性能验收。
+
+## 装备型号与三维视场
+
+装备实例由原有的 `id`、`platform_id` 和在线装备注册定位。三维显示由实例的 `visual.model_id` 选择。型号名称与在线实例编号互相独立，因此一个型号可以安装多套，使用各自的挂点和显示参数。缺少 `visual` 的旧专题照常加载。
+
+- `include/vsgraysim/model_sdk/EquipmentVisual.h` 定义纯 C++ 的三维显示接口。型号返回视场尺寸、配色和仿真时刻对应的显示角度。公共视口负责 VSG 几何、缓存和世界坐标变换。
+- `include/vsgraysim/model_packages/equipment/` 按装备族存放型号实现。同族可以复用实现，使用独立型号 ID。当前注册 `maritime-radar-1`、`maritime-radar-2`、`optical-camera-1`、`optical-camera-2`。新增型号时实现接口并在 `VisualRegistry.h` 登记。型号后续可配套 Qt 面板和协议适配器，分别依赖各自的公共接口，在线建链仍由现有软件负责。
+- 正式仿真把三维数据放入地球上下文 `voxel_scene.equipment_visuals`。挂点基准与装备运行时共享位置和姿态计算，轮询端按照同一 tick 和体素内容修订绑定。视口复用几何，只更新挂点及波束变换。场景设计器从已保存专题读取同一配置进行本地预览。
+
+在已有装备配置的条目中添加 `visual`，并通过 `aperture.mount_object` 绑定场景对象。挂点、朝向使用平台自身坐标。
+
+```json
+{
+  "visual": {
+    "model_id": "maritime-radar-1",
+    "display_range_m": 25,
+    "display_horizontal_deg": 10,
+    "display_vertical_deg": 8,
+    "preview_period_seconds": 4,
+    "phase_deg": -15
+  }
+}
+```
+
+光学视锥默认采用装备水平视场角，垂直视场角由传感器画幅计算。雷达的 `preview_period_seconds` 和 `phase_deg` 控制三维扫掠，`display_range_m` 控制画面尺寸。雷达回波仍按现有设备采样链路计算，三维扫掠相位没有写入回波采样。型号预览参数属于可视化示例。
+
+在场景设计器打开 `config/topics/taipei-ship-visual-preview.vtopic.json` 可看台北近海的四组示例。该专题设置 `equipment.visual_only: true`，也可在正式仿真主控打开。显控显示「地球态势」时点击「连接所选」获取世界租约，再由仿真主控播放或单步。此模式发布平台、挂点和三维状态，测量进程保持关闭。使用地球测试程序可以在同一机位截图、核对仿真单步、暂停和几何缓存。
+
+```bash
+QT_QPA_PLATFORM=xcb VSGRAYSIM_EQUIPMENT_VISUAL_CHECK=1 \
+  build/source-refresh/gui/sim_earth_gui_tests --scene-ocean-capture \
+  build/equipment-model-visual/native
+```
+
+平台和装备可各自声明 `model_id`。旧专题从平台类别或传感器波段解析默认型号。装备孔径可继续用 `mount_object`，也可用 `mount_id` 选择所属平台 `mounts` 中的命名坐标系。挂点的 `position_m`、`forward` 和 `up` 使用平台局部坐标，孔径的姿态再偏移一次。正式数据使用同一变换计算三维波束和传感器的实际采样孔径。
+
+`voxel_scene.equipment_states` 发布设备型号、挂点状态、周期、曝光或积分时间。各项属于同一 tick 和状态修订。可选的 `equipment.state_connections` 支持平台运动状态 `platform_motion` 与装备挂载状态 `equipment_mount`。每条连接填写 `source` 和 `destination`，各含 `kind`（`platform` 或 `equipment`）和实例 `id`，再指定 `port`。收到的状态在 `voxel_scene.model_state_messages` 发布，含来源 tick、交付 tick 及有效期。当前端口用于状态交换，已有运动、设备控制与数据采集链路继续负责执行。
+
+## 轻型飞行平台和定位真值
+
+在场景设计器或仿真主控打开 `config/topics/taipei-civil-aviation.vtopic.json`。正式仿真可通过显控的「连接所选」获取世界租约。在「地球态势」选择对应平台可查看位置和平台遥测。
+
+| 型号 | 运行方式 |
+|---|---|
+| `skywalker-x8` | Skywalker X8 飞翼、副翼和推桨的实际型号资产。按专题预设位姿推进，快照发布水平速度和升降率 |
+| `3dr-iris` | 3DR Iris 机体和两种旋向的桨叶资产。专题机体保持预设悬停，四个旋翼按公共时钟转动 |
+| `navigation-truth` | 平台附属 CPU 遥测设备，每个已提交场景步发布 WGS84 经纬度、椭球高、场景坐标速度和 tick |
+
+定位设备在专题的 `equipment.navigation` 中声明。每项填写 `id`、`name`、`model_id` 和所属 `platform_id`，每个平台可声明一台。结果通过该平台的 `navigation` 字段发布，显控的「地球态势」显示经纬度和椭球高，仿真主控任务表显示采样周期。定位结果是场景真值。专题的固定翼和悬停是给定运动演示。原有雷达、光学、红外和 SAR 继续使用各自的采样链路。
+
+## Falcon 9 与 SWOT 体素回放
+
+打开 `config/topics/taipei-falcon9-swot.vtopic.json`。场景配置引用 Falcon 9 一级、二级、两半整流罩、SWOT 本体和两片太阳阵列。七个组件分别转换成体素对象，每块共享原体素场景的渲染、碰撞、场景读取和检查点接口。型号与资产来源见 [外观资产来源](../models/RealPlatforms/ASSET_SOURCES.md)。
+
+画面依次展示发射台预备与离台、一级脱离和下降、两半整流罩脱离、SWOT 与二级分离、二级移出和太阳阵列展开。NASA/JPL 记录了 SWOT 在轨展开太阳阵列。台北专题使用压缩的演示时间和局部场景位置，二级表现为卫星释放后逐渐远离。[NASA/JPL 任务记录](https://swot.jpl.nasa.gov/resources/186/international-swot-mission-launches-from-vandenberg-space-force-base-launch-recap/) · [太阳翼展开实录](https://swot.jpl.nasa.gov/resources/187/swot-deploys-solar-arrays/)
+
+`pose_track` 供预设运动的体素对象使用。每个关键帧含绝对场景秒、米制位置和归一化的 `rotation_xyzw`。固定步、碰撞子步与传感器的分数步按同一关键帧轨取样，首尾保持端点。检查点保存关键帧轨和当前步。场景时序可用正式主控播放与单步，地球测试程序可直接输出固定阶段机位。
+
+```bash
+QT_QPA_PLATFORM=xcb VSGRAYSIM_FALCON_SWOT_CHECK=1 \
+  build/source-refresh/gui/sim_earth_gui_tests --scene-ocean-capture \
+  build/real-platforms/mission
+```

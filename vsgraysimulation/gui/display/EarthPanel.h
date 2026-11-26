@@ -1,12 +1,13 @@
 #pragma once
 #include <QWidget>
+#include <QElapsedTimer>
 #include <vsgraysim/broker/VoxelEquipmentSource.h>
 #include <nlohmann/json.hpp>
 #include <vsg/core/ref_ptr.h>
 #include <vsg/nodes/Group.h>
 #include <vsg/nodes/MatrixTransform.h>
 #include <map>
-class QComboBox;class QCheckBox;class QLabel;class QPushButton;class QVBoxLayout;
+class QDoubleSpinBox;class QComboBox;class QCheckBox;class QLabel;class QPushButton;class QVBoxLayout;
 namespace vsgraysim::viewport3d {class Viewport3DView;}
 namespace vsgraysim::gui::display {
 /// Read-only Earth situation display using the same viewport and dataset
@@ -24,6 +25,7 @@ public:
     bool renderingAvailable()const{return native_rendering_;}
     viewport3d::Viewport3DView* viewport()const{return viewport_;}
     void setCockpitMode(bool);
+    void enableSharedCockpit(){shared_cockpit_=true;}
     void setCockpitTelemetry(const nlohmann::json&,bool fresh);
     void setCockpitView(const nlohmann::json&);
 protected:
@@ -35,13 +37,26 @@ private:
     void updateMarkers();
     void focusSelected();
     void updateStatus();
+    void updateAcousticMeter();
     void synchronizeCockpit();
+    void updatePresentationControl(const nlohmann::json&);
+    void sendPresentationPose();
     nlohmann::json selected()const;
     QVBoxLayout* layout_;
     QComboBox* platforms_;
+    QComboBox* acoustic_probe_;
     QCheckBox* follow_;
-    QLabel *status_,*placeholder_,*position_;
+    QCheckBox* audio_;
+    QLabel *status_,*placeholder_,*position_,*acoustic_meter_;
     QPushButton* focus_;
+    QWidget* poseBar_;
+    QDoubleSpinBox *poseYaw_,*posePitch_;
+    QPushButton* poseApply_;
+    QLabel* poseStatus_;
+    uint32_t posePlatform_=0;
+    std::string poseRequest_,poseSession_;
+    QString poseFeedback_;
+    QElapsedTimer poseRequestAge_;
     viewport3d::Viewport3DView* viewport_=nullptr;
     nlohmann::json context_=nlohmann::json::object(),samples_=nlohmann::json::array();
     AsyncVoxelSceneReadView voxel_view_;
@@ -53,7 +68,7 @@ private:
     vsg::ref_ptr<vsg::Group> markers_;
     vsg::ref_ptr<vsg::Node> marker_shape_;
     std::map<uint32_t,vsg::ref_ptr<vsg::MatrixTransform>> marker_nodes_;
-    bool cockpit_mode_=false,cockpit_fresh_=false;
+    bool cockpit_mode_=false,shared_cockpit_=false,cockpit_fresh_=false;
     nlohmann::json cockpit_state_=nlohmann::json::object(),cockpit_view_={{"view_mode","pilot"}};
 };
 }

@@ -116,6 +116,13 @@ VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr snapshot) {
             material.emissivity=m.at("emissivity").get<float>();
             material.rho_tv=m.at("rho_tv").get<float>();material.rho_swir=m.at("rho_swir").get<float>();
             material.eps_mwir=m.value("eps_mwir",material.emissivity);material.eps_lwir=m.value("eps_lwir",material.emissivity);
+            if (const auto response = m.find("thermal_response"); response != m.end()) {
+                auto field = [&](const char* key) { return response->at(key).get<float>(); };
+                const float thermalModel = o.earth && o.parentId.empty() ? 2.f : 1.f;
+                material.thermal_surface = {thermalModel,field("solar_gain_k"),field("inertia_h"),field("wet_cooling_k")};
+                material.thermal_source = {field("source_gain_k"),field("source_start_s"),
+                                           field("source_run_s"),field("source_tau_s")};
+            }
             if(o.earth){const auto& parameters=o.earth->materials();const auto& radar=parameters.at("radar_x_params");
                 material.dielectric_real=radar.at("dielectric_real").get<float>();material.dielectric_imag=radar.at("dielectric_imag").get<float>();
                 material.surface_rough=radar.at("surface_rough").get<float>();material.sigma0_db=parameters.at("sar_c_params").at("sigma0_db").get<float>();}
@@ -145,6 +152,11 @@ VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr snapshot) {
         auto draw=makeSurfaceDraw(surface,false);
         auto vertices=vsg::vec3Array::create();auto properties=vsg::vec2Array::create();auto ids=vsg::uintArray::create();
         auto uv=vsg::vec2Array::create();auto slots=vsg::uintArray::create();
+        const bool smoothHeat = !surface.surface_normals.empty() &&
+            std::any_of(result.materials.begin()+materialId,result.materials.end(),[](const auto& material) {
+                return material.thermal_surface[0] > 1.5f;
+            });
+        std::vector<vsg::vec4> heatNormals;
         if(o.sensorMaterials){
             if(surface.triangleCells().size()*3!=surface.indices().size())throw std::invalid_argument("cell sensor materials require canonical triangle ownership");
             const auto dims=o.volume->dimensions();const auto origin=o.volume->gridOrigin();const auto cell=o.volume->resolution_m;
@@ -154,7 +166,8 @@ VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr snapshot) {
                 const auto centre=origin+vsg::dvec3(owner%dims[0]+.5,owner/dims[0]%dims[1]+.5,owner/(size_t(dims[0])*dims[1])+.5)*cell;
                 const auto palette=o.sensorMaterials->index(centre);const auto& m=o.sensorMaterials->palette()[palette];
                 for(size_t j=0;j<3;++j){const auto original=surface.indices()[triangle*3+j];const uint64_t key=uint64_t(original)*256+palette;
-                    auto [where,added]=remap.emplace(key,uint32_t(positions.size()));if(added){positions.push_back(vsg::vec3(surface.vertices()[original]));thermal.push_back({m.at("temperature_k").get<float>(),m.at("emissivity").get<float>()});materials.push_back(materialId+palette);coords.push_back(textured?surface.imagery_uv.at(original):vsg::vec2{});layers.push_back(colorSlot);}
+                    auto [where,added]=remap.emplace(key,uint32_t(positions.size()));if(added){positions.push_back(vsg::vec3(surface.vertices()[original]));thermal.push_back({m.at("temperature_k").get<float>(),m.at("emissivity").get<float>()});materials.push_back(materialId+palette);coords.push_back(textured?surface.imagery_uv.at(original):vsg::vec2{});layers.push_back(colorSlot);
+                        if (smoothHeat) heatNormals.emplace_back(surface.surface_normals.at(original),0.f);}
                     (*indices)[at++]=where->second;}}
             vertices=vsg::vec3Array::create(positions.size());std::copy(positions.begin(),positions.end(),vertices->begin());properties=vsg::vec2Array::create(thermal.size());std::copy(thermal.begin(),thermal.end(),properties->begin());ids=vsg::uintArray::create(materials.size());std::copy(materials.begin(),materials.end(),ids->begin());uv=vsg::vec2Array::create(coords.size());std::copy(coords.begin(),coords.end(),uv->begin());slots=vsg::uintArray::create(layers.size());std::copy(layers.begin(),layers.end(),slots->begin());
             draw->assignIndices(indices);draw->indexCount=uint32_t(indices->size());
@@ -162,12 +175,17 @@ VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr snapshot) {
             const auto count=surface.vertices().size();vertices=draw->arrays.front()->data.cast<vsg::vec3Array>();
             properties=vsg::vec2Array::create(count,vsg::vec2(o.material.at("temperature_k").get<float>(),material.emissivity));ids=vsg::uintArray::create(count,materialId);
             uv=vsg::vec2Array::create(count,vsg::vec2{});if(textured)std::copy(surface.imagery_uv.begin(),surface.imagery_uv.end(),uv->begin());slots=vsg::uintArray::create(count,colorSlot);
+            if(smoothHeat) for(const auto& normal:surface.surface_normals) heatNormals.emplace_back(normal,0.f);
         }
         if(region)for(auto& coord:*uv) {
             coord.x=(region->x+std::clamp(coord.x,0.f,1.f)*surface.imagery_width)/(width+2);
             coord.y=(region->y+std::clamp(coord.y,0.f,1.f)*surface.imagery_height)/(height+2);
         }
-        draw->assignArrays({vertices,properties,ids,uv,slots});
+        if (!heatNormals.empty()) {
+            auto shadingNormals = vsg::vec4Array::create(heatNormals.size());
+            std::copy(heatNormals.begin(),heatNormals.end(),shadingNormals->begin());
+            draw->assignArrays({vertices,properties,ids,uv,slots,shadingNormals});
+        } else draw->assignArrays({vertices,properties,ids,uv,slots});
         result.instances.push_back({id,draw,o.pose(result.snapshot->tick,result.snapshot->fixedStep),true});
     }
     // The sensor texture pool consumes linear UNORM albedo. Display consumes

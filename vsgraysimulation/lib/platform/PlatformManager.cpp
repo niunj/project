@@ -295,6 +295,7 @@ vsgraysim::FlightControlResult PlatformManager::applyFlightControl(const vsgrays
     auto result=vsgraysim::flightResult(command,"rejected","invalid_input"); result.sim_time=sim_time;
     const auto invalid=vsgraysim::validateFlightControl(command);
     if(!invalid.empty()){result.code=invalid;return result;}
+    if(command.presentation_pose){result.code="presentation_unavailable";return result;}
     std::lock_guard<std::mutex> lock(mtx_);
     auto platform_it=platforms_.find(command.platform_id);
     if(platform_it==platforms_.end()){result.code="unknown_platform";return result;}
@@ -313,6 +314,22 @@ vsgraysim::FlightControlResult PlatformManager::applyFlightControl(const vsgrays
         if(!state.owner.empty() && now>=state.deadline){stabilizeFlight(command.platform_id,state);state.revision++;}
         result.revision=state.revision;
         if(!state.owner.empty() && state.owner!=command.client_id){result.code="control_owned";return result;}
+    }
+    if(command.aircraft_system) {
+        if(existing==flight_controls_.end()||existing->second.owner!=command.client_id||
+            (existing->second.mode!="manual"&&existing->second.mode!="altitude_hold")) {
+            result.code="aircraft_system_requires_lease";return result;
+        }
+        auto& state=existing->second;
+        const auto& demand=*command.aircraft_system;
+        if(demand.channel=="gear_down")state.gearDown=demand.enabled;
+        else if(demand.channel=="nav_lights")state.navLights=demand.enabled;
+        else if(demand.channel=="landing_light")state.landingLight=demand.enabled;
+        ++state.systemsRevision;
+        result.stage="applied";result.code="aircraft_system_installed";
+        result.revision=state.systemsRevision;
+        result.message="Aircraft system selected; output is reported in platform systems telemetry.";
+        return result;
     }
     if(command.mode=="route" && !command.release) {
         auto route=route_plans_.find(command.platform_id);
@@ -387,9 +404,15 @@ nlohmann::json PlatformManager::flightSnapshot(const PlatformInstance& platform)
             {"max_roll_angle",limits.max_roll_angle},{"max_pitch_rate",limits.max_pitch_rate},{"max_roll_rate",limits.max_roll_rate},{"max_yaw_rate",limits.max_yaw_rate},
             {"max_accel",limits.max_accel},{"max_decel",limits.max_decel},{"climb_rate_max",limits.climb_rate_max},{"sink_rate_max",limits.sink_rate_max}};
     }
+    snapshot["systems"]={{"available",reason.empty()},{"gear_down",false},{"gear_extension",0.},
+                         {"nav_lights",false},{"landing_light",false},{"landing_light_active",false},{"revision",uint64_t(0)}};
     const auto control=flight_controls_.find(id);
     if(control!=flight_controls_.end()) {
         const auto& value=control->second;command=value.command;
+        snapshot["systems"].update({{"gear_down",value.gearDown},{"gear_extension",value.gearExtension},
+            {"nav_lights",value.navLights},{"landing_light",value.landingLight},
+            {"landing_light_active",value.landingLight&&value.gearDown&&value.gearExtension>=1.},
+            {"revision",value.systemsRevision}});
         snapshot["mode"]=value.mode;snapshot["owner"]=value.owner;snapshot["owner_client_id"]=value.owner;
         snapshot["revision"]=value.revision;snapshot["last_request_id"]=value.command.request_id;snapshot["failsafe"]=value.failsafe;
         if(!value.owner.empty())snapshot["lease_remaining_ms"]=std::max<int64_t>(0,std::chrono::duration_cast<std::chrono::milliseconds>(value.deadline-std::chrono::steady_clock::now()).count());
@@ -663,6 +686,16 @@ void PlatformManager::updateAllPlatformsMotion(double dt, const EnvironmentConte
         }
 
         auto flight=flight_controls_.find(id);
+        // Sim-time actuator travel; a paused command can change handle demand
+        // but cannot move the gear. Existing collision shapes stay untouched.
+        if(flight!=flight_controls_.end()) {
+            auto& gear=flight->second;
+            constexpr double travelSeconds=3.;
+            gear.gearExtension=gear.gearDown?std::min(1.,gear.gearExtension+dt/travelSeconds)
+                                            :std::max(0.,gear.gearExtension-dt/travelSeconds);
+            if(gear.gearExtension>1.-1e-9)gear.gearExtension=1.;
+            if(gear.gearExtension<1e-9)gear.gearExtension=0.;
+        }
         if(flight!=flight_controls_.end() && flight->second.mode=="route" && cmd.flight_mode=="route") {
             flight->second.command.target_speed=cmd.desired_speed;
             flight->second.command.target_altitude=cmd.desired_altitude;

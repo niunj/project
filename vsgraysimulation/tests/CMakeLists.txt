@@ -161,7 +161,8 @@ if(Vulkan_FOUND AND SIM_GLSLANG)
         add_custom_command(OUTPUT "${spv}"
             COMMAND "${SIM_GLSLANG}" --target-env vulkan1.2 -V
                 "${SIM_SOURCE_ROOT}/shaders/env/${shader}" -o "${spv}"
-            DEPENDS "${SIM_SOURCE_ROOT}/shaders/env/${shader}" VERBATIM)
+            DEPENDS "${SIM_SOURCE_ROOT}/shaders/env/${shader}"
+                    "${SIM_SOURCE_ROOT}/shaders/env/surface_thermal.glsl" VERBATIM)
         list(APPEND SIM_TEST_SPVS "${spv}")
     endforeach()
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/raygen.rgen.spv"
@@ -220,6 +221,13 @@ target_link_options(sim_voxel_project_link_tests PRIVATE "-Wl,--disable-new-dtag
 add_test(NAME voxel_formal_project_link COMMAND sim_voxel_project_link_tests)
 set_tests_properties(voxel_formal_project_link PROPERTIES TIMEOUT 180 ENVIRONMENT "LP_NUM_THREADS=2" WORKING_DIRECTORY "${SIM_SOURCE_ROOT}")
 
+add_executable(sim_depth_sounder_tests depth_sounder_tests.cpp)
+target_link_libraries(sim_depth_sounder_tests PRIVATE vsgraysim_core)
+set_target_properties(sim_depth_sounder_tests PROPERTIES BUILD_RPATH "${_rpath_dirs}")
+target_link_options(sim_depth_sounder_tests PRIVATE "-Wl,--disable-new-dtags")
+add_test(NAME voxel_civil_depth_sounder COMMAND sim_depth_sounder_tests)
+set_tests_properties(voxel_civil_depth_sounder PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${SIM_SOURCE_ROOT}")
+
 add_executable(sim_scene_package_tests scene_package_tests.cpp)
 add_dependencies(sim_scene_package_tests voxel_scene)
 target_link_libraries(sim_scene_package_tests PRIVATE vsgraysim_core)
@@ -241,4 +249,9 @@ if(TARGET vsgraysim_core AND VSGRAYSIM_ENABLE_USD)
     add_executable(sim_openusd_roundtrip_tests openusd_roundtrip_tests.cpp)
     target_link_libraries(sim_openusd_roundtrip_tests PRIVATE vsgraysim_core ${VSGRAYSIM_PXR_LIBS})
     add_test(NAME openusd_scene_roundtrip COMMAND sim_openusd_roundtrip_tests)
+    add_executable(sim_usd_voxel_import_tests usd_voxel_import_tests.cpp)
+    target_link_libraries(sim_usd_voxel_import_tests PRIVATE vsgraysim_voxel_earth)
+    add_dependencies(sim_usd_voxel_import_tests voxel_scene)
+    add_test(NAME openusd_voxel_publication COMMAND sim_usd_voxel_import_tests)
+    set_tests_properties(openusd_voxel_publication PROPERTIES TIMEOUT 90)
 endif()

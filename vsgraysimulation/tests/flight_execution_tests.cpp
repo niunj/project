@@ -70,6 +70,26 @@ void realExecution() {
     std::cout<<"PASS: real Bullet execution, rate-limited inputs, route override, hold, ownership, release, paused lease expiry and reset\n";
 }
 
+void aircraftSystemsTransport() {
+    PlatformManager manager;manager.initialize({});manager.onStart();
+    MotionState state;state.position={0,1200,0};state.velocity={0,0,-100};
+    const auto id=manager.createPlatform("systems",PlatformCategory::AIRCRAFT,{},state);
+    auto c=command(id);
+    c.aircraft_system=AircraftSystemDemand{"gear_down",true};
+    const nlohmann::json encoded=c;
+    require(encoded.get<FlightControlCommand>().aircraft_system->enabled,"system command did not round-trip through broker JSON");
+    require(manager.applyFlightControl(c,0).code=="aircraft_system_requires_lease","gear commanded without a backend lease");
+    require(manager.applyFlightControl(command(id),0).stage=="applied","could not lease aircraft");
+    auto bad=c;bad.client_id="other";
+    require(manager.applyFlightControl(bad,0).code=="control_owned","foreign station controlled aircraft systems");
+    bad=c;bad.aircraft_system->channel="invalid";
+    require(manager.applyFlightControl(bad,0).code=="invalid_aircraft_system","invalid aircraft system accepted");
+    require(manager.applyFlightControl(c,0).stage=="applied","gear command rejected");
+    auto release=command(id);release.release=true;manager.applyFlightControl(release,0);
+    require(manager.getPlatformSnapshot(id)["flight_control"]["systems"]["gear_down"]==true,"lease release reset gear handle");
+    require(manager.applyFlightControl(c,0).code=="aircraft_system_requires_lease","released station retained gear control");
+}
+
 void gravityAndRoute() {
     PhysicsEngine physics;physics.setGravity({0,-9.81,0});
     PlatformManager manager;manager.initialize({});manager.setPhysicsEngine(&physics);manager.onStart();
@@ -111,4 +131,4 @@ void capabilitiesAndParameters() {
     std::cout<<"PASS: capability rejection, transactional envelope validation and controller timestep consistency\n";
 }
 }
-int main(){try{realExecution();gravityAndRoute();capabilitiesAndParameters();return 0;}catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}
+int main(){try{realExecution();aircraftSystemsTransport();gravityAndRoute();capabilitiesAndParameters();return 0;}catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}

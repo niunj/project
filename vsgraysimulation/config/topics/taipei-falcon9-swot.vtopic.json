@@ -1,0 +1,50 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "Falcon 9 / SWOT 体素任务流程",
+  "scene": "../earth/taipei-falcon9-swot.vscene.json",
+  "earth_map": "../earth/default.map.json",
+  "camera": {
+    "eye_m": [
+      102,
+      53,
+      104
+    ],
+    "target_m": [
+      0,
+      39,
+      0
+    ]
+  },
+  "clouds": {
+    "cover": 0
+  },
+  "paused": true,
+  "equipment": {
+    "format": "voxel-equipment-v1",
+    "visual_only": true,
+    "equipment": [],
+    "platforms": [
+      {
+        "id": 901,
+        "object": "falcon-booster",
+        "name": "Falcon 9 一级",
+        "kind": "rocket",
+        "model_id": "falcon9-block5-stage1"
+      },
+      {
+        "id": 902,
+        "object": "falcon-upper",
+        "name": "Falcon 9 二级",
+        "kind": "rocket",
+        "model_id": "falcon9-block5-stage2"
+      },
+      {
+        "id": 903,
+        "object": "swot-spacecraft",
+        "name": "SWOT 水体地形观测卫星",
+        "kind": "spacecraft",
+        "model_id": "swot"
+      }
+    ]
+  }
+}

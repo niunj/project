@@ -84,8 +84,108 @@ vsg::dmat4 matrix(const json& j) {
     if(vsg::dot(vsg::cross(axis[0],axis[1]),axis[2])<.999999)throw std::invalid_argument("reflected voxel pose");
     return m;
 }
+struct TrackSample {
+    vsg::dmat4 pose;
+    vsg::dvec3 velocity{}, angularVelocity{};
+};
+TrackSample samplePoseTrack(const VoxelSceneObject& object,double seconds) {
+    const auto& frames=*object.poseTrack;
+    const auto hold=[](const VoxelPoseKeyframe& key){
+        return TrackSample{vsg::translate(key.position)*vsg::rotate(key.rotation)};
+    };
+    if(seconds<frames.front().seconds)return hold(frames.front());
+    const auto next=std::upper_bound(frames.begin(),frames.end(),seconds,
+        [](double t,const VoxelPoseKeyframe& key){return t<key.seconds;});
+    if(next==frames.end())return hold(frames.back());
+    const auto& before=*std::prev(next);
+    const double duration=next->seconds-before.seconds;
+    const double u=(seconds-before.seconds)/duration;
+    const auto translation=before.position*(1.-u)+next->position*u;
+    const auto rotation=simcore::interpolateRotation(before.rotation,next->rotation,u);
+    auto difference=next->rotation*vsg::conjugate(before.rotation);
+    if(difference.w<0.)difference=difference*(-1.);
+    const vsg::dvec3 axis(difference.x,difference.y,difference.z);
+    const double length=vsg::length(axis);
+    const auto angular=length>1e-12 ? axis*(2.*std::atan2(length,difference.w)/(length*duration)):vsg::dvec3{};
+    return {vsg::translate(translation)*vsg::rotate(rotation),(next->position-before.position)/duration,angular};
+}
+vsg::dmat4 environmentalPose(const VoxelSceneSnapshot& scene,const VoxelSceneObject& object,double seconds){
+    auto pose=samplePoseTrack(object,seconds).pose;
+    const auto bounds=object.localBounds();
+    const auto extent=bounds.max-bounds.min;
+    double roll=0.,pitch=0.;
+    using D=vsg::dvec3;
+    if(object.motionResponse==VoxelMotionResponse::Waves&&scene.ocean){
+        const auto& ocean=*scene.ocean;
+        const auto center=(bounds.min+bounds.max)*.5;
+        const auto world=pose*center;
+        if(!ocean.contains(world.x,world.z))return pose;
+        const double halfX=std::max(.5,extent.x*.33),halfZ=std::max(.5,extent.z*.33);
+        const auto height=[&](const D& offset){
+            const auto p=pose*(center+offset);
+            const double datum=ocean.meanSurface(p.x,p.z).x;
+            double sum=0.;
+            for(double delay:{0.,.26,.58})sum+=ocean.surface(p.x,p.z,seconds-delay,false).height-datum;
+            return sum/3.;
+        };
+        const double left=height({-halfX,0,0}),right=height({halfX,0,0});
+        const double aft=height({0,0,-halfZ}),fore=height({0,0,halfZ});
+        pose[3][1]+=.20*(left+right+aft+fore);
+        roll=.11*std::tanh((right-left)/(2.*halfX*.11));
+        pitch=-.085*std::tanh((fore-aft)/(2.*halfZ*.085));
+    }else if(object.motionResponse==VoxelMotionResponse::Gusts&&scene.weather.enabled){
+        const auto weather=scene.weather.sample(std::max(0.,seconds));
+        const auto drift=scene.weather.windTravel(std::max(0.,seconds));
+        const auto gust=[&](const D& offset){
+            auto p=pose*offset;
+            p.x-=drift[0];p.z+=drift[1];
+            return .55*std::sin(.026*p.x+.017*p.z+.023*p.y+1.6*seconds)
+                +.29*std::sin(-.081*p.x+.054*p.z+2.9*seconds+.6)
+                +.16*std::cos(.14*p.x+.10*p.z+4.3*seconds);
+        };
+        const double wind=std::min(1.,weather.windSpeed/18.);
+        const double dx=std::max(2.,extent.x*.4),dz=std::max(2.,extent.z*.4);
+        const double energy=wind*(.78+.22*weather.precipitation());
+        pose[3][1]+=.85*energy*gust({});
+        roll=.076*energy*(gust({dx,0,0})-gust({-dx,0,0}));
+        pitch=-.042*energy*(gust({0,0,dz})-gust({0,0,-dz}));
+    }
+    return pose*vsg::rotate(roll,D{0,0,1})*vsg::rotate(pitch,D{1,0,0});
+}
+void synchronizePoseTracks(VoxelSceneSnapshot& scene) {
+    for(auto& [id,object]:scene.objects)if(object.poseTrack){
+        const double time=scene.timeSeconds();
+        auto sample=samplePoseTrack(object,time);
+        if(object.motionResponse!=VoxelMotionResponse::None){
+            const double lead=std::min(.01,scene.fixedStep*.5);
+            sample.pose=environmentalPose(scene,object,time);
+            vsg::dvec3 before,after,scale;vsg::dquat a,b;
+            vsg::decompose(environmentalPose(scene,object,time-lead),before,a,scale);
+            vsg::decompose(environmentalPose(scene,object,time+lead),after,b,scale);
+            sample.velocity=(after-before)/(2.*lead);
+            sample.angularVelocity=simcore::angularVelocityBetween(a,b,2.*lead);
+        }
+        object.basePose=sample.pose;
+        object.motionOriginTick=scene.tick;
+        object.velocity=sample.velocity;
+        object.angularVelocity=sample.angularVelocity;
+    }
+}
 void budgets(VoxelSceneSnapshot& scene) {
     if(scene.objects.size()>maxObjects)throw std::invalid_argument("voxel scene exceeds 256 objects");
+    for(const auto& [id,object]:scene.objects)
+        if(object.poseTrack&&(object.body.motion!="prescribed"||object.earth||object.rotor||object.body.fracture))
+            throw std::invalid_argument("pose_track requires a prescribed non-fracturing mesh or volume: "+id);
+    for(const auto& [id,part]:scene.objects)if(part.rotor) {
+        const auto carrier=scene.objects.find(part.rotor->carrier);
+        if(carrier==scene.objects.end()||carrier->second.rotor||carrier->second.earth||
+           carrier->second.body.motion=="dynamic"||part.earth||part.body.motion!="prescribed")
+            throw std::invalid_argument("rotor_drive requires a prescribed rotor and a static or prescribed carrier: "+id);
+        if(part.body.fracture || carrier->second.body.fracture)
+            throw std::invalid_argument("rotor_drive does not support fracturing a mounted assembly: "+id);
+    }
+    synchronizePoseTracks(scene);
+    synchronizeVoxelRotorPoses(scene);
     size_t cells=0,vertices=0,earthBytes=0;std::set<const VoxelEarthPatch*> patches;
     for(auto& [id,o]:scene.objects) {
         refreshVoxelEarthObject(o);
@@ -174,7 +274,55 @@ VoxelSceneObject objectImpl(const json& j,const fs::path& directory,Cache& cache
 }
 VoxelSceneObject object(const json& j,const fs::path& directory,Cache& cache,uint64_t tick,bool checkpoint,const simcore::geo::GeoAnchor& anchor,const EarthPatches& patches={},const json& appearances=json::object(),const json& policy=json::object()) {
     auto out=objectImpl(j,directory,cache,tick,checkpoint,anchor,patches,appearances,policy);
+    if(j.contains("rotor_drive")) {
+        const auto& drive=j.at("rotor_drive");
+        if(!drive.is_object())throw std::invalid_argument("invalid rotor_drive");
+        const auto axis=triple(drive.at("axis"),"rotor axis");
+        if(vsg::length(axis)<1e-8)throw std::invalid_argument("rotor axis is zero");
+        out.rotor=VoxelRotorDrive{identity(drive.at("carrier")),triple(drive.at("pivot_m"),"rotor pivot"),
+            vsg::normalize(axis),number(drive.at("rpm"),-12000.,12000.,"rotor RPM"),
+            number(drive.value("phase_deg",0.),-360.,360.,"rotor phase"),
+            number(drive.value("start_seconds",0.),0.,86400.,"rotor start time"),
+            number(drive.value("spin_up_seconds",0.),0.,86400.,"rotor spin-up duration"),
+            drive.value("water_jet",false)};
+    }
+    if(j.contains("pose_track")){
+        const auto& keys=j.at("pose_track");
+        if(!keys.is_array()||keys.size()<2||keys.size()>256)
+            throw std::invalid_argument("pose_track requires 2..256 keys");
+        auto track=std::make_shared<std::vector<VoxelPoseKeyframe>>();
+        track->reserve(keys.size());
+        for(const auto& key:keys){
+            const double time=number(key.at("seconds"),0.,86400.,"pose key time");
+            if(!track->empty()&&time-track->back().seconds<.001)
+                throw std::invalid_argument("pose_track times must increase by at least 1 ms");
+            const auto& q=key.at("rotation_xyzw");
+            if(!q.is_array()||q.size()!=4)throw std::invalid_argument("pose key requires a quaternion");
+            const vsg::dquat rotation(number(q[0],-1.,1.,"pose key quaternion"),
+                number(q[1],-1.,1.,"pose key quaternion"),number(q[2],-1.,1.,"pose key quaternion"),
+                number(q[3],-1.,1.,"pose key quaternion"));
+            if(std::abs(vsg::length(rotation)-1.)>1e-6)
+                throw std::invalid_argument("pose key quaternion must be normalized");
+            track->push_back({time,triple(key.at("position_m"),"pose key position"),rotation});
+        }
+        out.poseTrack=std::move(track);
+    }
+    const auto response=j.value("motion_response",std::string{});
+    if(!response.empty()){
+        if(!out.poseTrack||(response!="waves"&&response!="gusts"))
+            throw std::invalid_argument("motion_response requires a pose track and waves or gusts");
+        out.motionResponse=response=="waves"?VoxelMotionResponse::Waves:VoxelMotionResponse::Gusts;
+    }
     if(j.contains("sensor_materials"))out.sensorMaterials=VoxelSensorMaterials::load(j.at("sensor_materials"),*out.volume,out.material,checkpoint);
+    else if (!checkpoint && out.earth) {
+        const auto mode = j.at("source").value("thermal_landcover",std::string());
+        if (!mode.empty()) {
+            if (mode != "rgb-inferred-v1") throw std::invalid_argument("unsupported Earth thermal classification");
+            auto chart = out.earth->inferredThermalMaterials(*out.volume,out.material.at("temperature_k").get<double>());
+            out.sensorMaterials = VoxelSensorMaterials::load(chart,*out.volume,out.material);
+            out.provenance["thermal_classification"] = "rgb-inferred-v1";
+        }
+    }
     return out;
 }
 json encodedObject(const VoxelSceneObject& o,const std::string& earthRef) {
@@ -184,6 +332,22 @@ json encodedObject(const VoxelSceneObject& o,const std::string& earthRef) {
         {"physics",encodeVoxelBody(o)},{"anchor_cells",o.anchors},{"broken_bonds",o.brokenBonds},{"parent_id",o.parentId},
         {"material",o.material},{"provenance",o.provenance},{"volume",o.volume->encodeVolume()}};
     if(o.sensorMaterials)result["sensor_materials"]=o.sensorMaterials->encode();
+    if(o.poseTrack){
+        auto& keys=result["pose_track"]=json::array();
+        for(const auto& key:*o.poseTrack)
+            keys.push_back({{"seconds",key.seconds},{"position_m",{key.position.x,key.position.y,key.position.z}},
+                {"rotation_xyzw",{key.rotation.x,key.rotation.y,key.rotation.z,key.rotation.w}}});
+    }
+    if(o.rotor) {
+        const auto& d=*o.rotor;
+        result["rotor_drive"]={{"carrier",d.carrier},{"pivot_m",{d.pivot.x,d.pivot.y,d.pivot.z}},
+            {"axis",{d.axis.x,d.axis.y,d.axis.z}},{"rpm",d.rpm},{"phase_deg",d.phaseDeg}};
+        if(d.startSeconds>0.)result["rotor_drive"]["start_seconds"]=d.startSeconds;
+        if(d.spinUpSeconds>0.)result["rotor_drive"]["spin_up_seconds"]=d.spinUpSeconds;
+        if(d.waterJet)result["rotor_drive"]["water_jet"]=true;
+    }
+    if(o.motionResponse!=VoxelMotionResponse::None)
+        result["motion_response"]=o.motionResponse==VoxelMotionResponse::Waves?"waves":"gusts";
     if(o.earth){result["earth_patch_ref"]=earthRef;result["terrain_mode"]=o.terrainMode;}
     return result;
 }
@@ -226,6 +390,50 @@ vsg::dmat4 VoxelSceneObject::pose(uint64_t tick,double step) const {
     if(tick<motionOriginTick||!std::isfinite(step)||step<=0)throw std::invalid_argument("invalid voxel motion time");
     auto result=basePose;const auto displacement=velocity*(double(tick-motionOriginTick)*step);
     result[3][0]+=displacement.x;result[3][1]+=displacement.y;result[3][2]+=displacement.z;return result;
+}
+vsg::dmat4 voxelTrackPose(const VoxelSceneSnapshot& scene,const VoxelSceneObject& object,double seconds) {
+    if(object.motionResponse==VoxelMotionResponse::None)return samplePoseTrack(object,seconds).pose;
+    return environmentalPose(scene,object,seconds);
+}
+double VoxelRotorDrive::rpmAt(double seconds) const {
+    if(startSeconds==0.&&spinUpSeconds==0.)return rpm;
+    if(seconds<startSeconds)return 0.;
+    if(spinUpSeconds==0.)return rpm;
+    const double u=std::min((seconds-startSeconds)/spinUpSeconds,1.);
+    return rpm*u*u*(3.-2.*u);
+}
+double VoxelRotorDrive::angleAt(double seconds) const {
+    double elapsed=seconds;
+    if(startSeconds>0.||spinUpSeconds>0.)elapsed=std::max(0.,seconds-startSeconds);
+    if(spinUpSeconds>0.){
+        const double u=std::min(elapsed/spinUpSeconds,1.);
+        // Integral of u²(3−2u), followed by constant speed.
+        elapsed=spinUpSeconds*u*u*u*(1.-.5*u)+std::max(0.,elapsed-spinUpSeconds);
+    }
+    const double turns=rpm==0.?0.:std::fmod(elapsed,60./std::abs(rpm))*rpm/60.;
+    return vsg::radians(phaseDeg)+turns*(2.*vsg::PI);
+}
+vsg::dmat4 drivenVoxelRotorPose(const VoxelSceneSnapshot& scene,const VoxelSceneObject& part,double leadSeconds) {
+    const auto& drive=*part.rotor;
+    const auto& carrier=scene.objects.at(drive.carrier);
+    const double time=scene.timeSeconds()+leadSeconds;
+    auto frame=carrier.poseTrack?voxelTrackPose(scene,carrier,time):carrier.pose(scene.tick,scene.fixedStep);
+    const auto advance=carrier.poseTrack?vsg::dvec3{}:carrier.velocity*leadSeconds;
+    for(int i=0;i<3;++i)frame[3][i]+=advance[i];
+    return frame*vsg::translate(drive.pivot)*vsg::rotate(drive.angleAt(time),drive.axis);
+}
+void synchronizeVoxelRotorPoses(VoxelSceneSnapshot& scene) {
+    for(auto& [id,part]:scene.objects) {
+        if(!part.rotor)continue;
+        const auto& drive=*part.rotor;
+        const auto& carrier=scene.objects.at(drive.carrier);
+        part.basePose=drivenVoxelRotorPose(scene,part);
+        part.motionOriginTick=scene.tick;
+        const auto offset=(part.basePose*vsg::dvec3{})-(carrier.pose(scene.tick,scene.fixedStep)*vsg::dvec3{});
+        part.velocity=carrier.velocity+vsg::cross(carrier.angularVelocity,offset);
+        const auto axis=part.basePose*vsg::dvec4(drive.axis,0.);
+        part.angularVelocity=carrier.angularVelocity+vsg::dvec3(axis.x,axis.y,axis.z)*(drive.rpmAt(scene.timeSeconds())*vsg::PI/30.);
+    }
 }
 vsg::dbox VoxelSceneObject::localBounds() const {
     const auto& s=surface();return {{s.min_x,s.min_height,s.min_z},{s.max_x,s.max_height,s.max_z}};
@@ -384,10 +592,13 @@ VoxelSceneSnapshotPtr sampleVoxelSceneHistory(const std::vector<VoxelSceneSnapsh
     auto interpolated=std::make_shared<VoxelSceneSnapshot>(left);interpolated->sampleTime=seconds;interpolated->contacts.clear();
     for(auto& [id,o]:interpolated->objects) {
         const auto found=right.objects.find(id);if(found==right.objects.end())throw std::logic_error("missing voxel trajectory endpoint");
+        if(o.poseTrack)continue;
         vsg::dvec3 a,b,scale;vsg::dquat qa,qb;
         vsg::decompose(o.pose(left.tick,left.fixedStep),a,qa,scale);vsg::decompose(found->second.pose(right.tick,right.fixedStep),b,qb,scale);
         o.basePose=vsg::translate(a*(1-u)+b*u)*vsg::rotate(simcore::interpolateRotation(qa,qb,u));o.motionOriginTick=left.tick;
     }
+    synchronizePoseTracks(*interpolated);
+    synchronizeVoxelRotorPoses(*interpolated);
     return interpolated;
 }
 void VoxelScene::edit(const json& commands,uint64_t revision) {
@@ -410,10 +621,33 @@ void VoxelScene::edit(const json& commands,uint64_t revision) {
         const auto id=identity(command.at("object"));auto found=next->objects.find(id);
         if(found==next->objects.end())throw std::invalid_argument("unknown voxel edit object: "+id);
         if(kind=="remove"){next->objects.erase(found);topology=true;}
-        else if(kind=="place") {found->second.basePose=command.contains("pose")?matrix(command.at("pose")):pose(command);found->second.motionOriginTick=current->tick;found->second.velocity=triple(command.value("velocity_mps",json::array({0,0,0})),"velocity_mps");
-            found->second.angularVelocity=triple(command.value("angular_velocity_rad_s",json::array({found->second.angularVelocity.x,found->second.angularVelocity.y,found->second.angularVelocity.z})),"angular velocity");}
-        else if(kind=="material"){found->second.material=material(command.at("material"));topology=true;}
-        else if(kind=="sensor_materials"){const auto& value=command.at("sensor_materials");found->second.sensorMaterials=value.is_null()?nullptr:VoxelSensorMaterials::load(value,*found->second.volume,found->second.material);topology=true;}
+        else if(kind=="place" || kind=="material" || kind=="sensor_materials" || kind=="target_properties") {
+            auto& object = found->second;
+            const bool targetProperties = kind=="target_properties";
+            if (targetProperties && (!object.parentId.empty() || (object.role!="target" && object.role!="structure")))
+                throw std::invalid_argument("target properties require a root target or structure");
+            if (kind=="place" || (targetProperties && command.contains("pose"))) {
+                if(object.poseTrack)throw std::invalid_argument("edit the pose_track to move a playback object");
+                object.basePose = command.contains("pose") ? matrix(command.at("pose")) : pose(command);
+                object.motionOriginTick = current->tick;
+            }
+            if (kind=="place") {
+                object.velocity = triple(command.value("velocity_mps",json::array({0,0,0})),"velocity_mps");
+                const auto& angular = object.angularVelocity;
+                object.angularVelocity = triple(command.value("angular_velocity_rad_s",
+                    json::array({angular.x,angular.y,angular.z})),"angular velocity");
+            }
+            if (kind=="material" || (targetProperties && command.contains("material"))) {
+                object.material = material(command.at("material"));
+                topology = true;
+            }
+            if (kind=="sensor_materials" || (targetProperties && command.contains("sensor_materials"))) {
+                const auto& value = command.at("sensor_materials");
+                object.sensorMaterials = value.is_null() ? nullptr :
+                    VoxelSensorMaterials::load(value, *object.volume, object.material);
+                topology = true;
+            }
+        }
         else if(kind=="sensor_paint") {
             auto& o=found->second;auto chart=o.sensorMaterials?o.sensorMaterials:VoxelSensorMaterials::load({{"palette",json::array({json::object()})}},*o.volume,o.material);
             o.sensorMaterials=chart->paint(command.at("region"),command.at("material"));o.provenance["sensor_properties_source"]="user-authored";topology=true;
@@ -460,7 +694,9 @@ VoxelScene::Advance VoxelScene::advanceTo(double seconds,uint32_t budget) {
     if(impl_->paused){result.pendingSteps=target-initial->tick;return result;}
     while(result.steps<budget&&snapshot()->tick<target) {
         auto next=std::make_shared<VoxelSceneSnapshot>(*snapshot());++next->tick;++next->revision;
+        synchronizePoseTracks(*next);
         impl_->dynamics.step(*snapshot(),*next);result.buoyancyMs+=impl_->dynamics.buoyancyMs;result.waterDragMs+=impl_->dynamics.waterDragMs;result.waterMs+=impl_->dynamics.waterMs;
+        synchronizeVoxelRotorPoses(*next);
         size_t consumed=0;bool changed=false;
         for(const auto& e:impl_->pending) {
             if(e.tick>next->tick)break;
@@ -584,22 +820,24 @@ std::optional<VoxelSceneHit> VoxelScene::rigidRaycast(const vsg::dvec3& origin,c
     impl_->own();raycastVoxelScene(*snapshot(),origin,direction,distance); // validate the ray contract
     return impl_->dynamics.raycast(*snapshot(),origin,vsg::normalize(direction),distance);
 }
-std::optional<VoxelSceneHit> raycastVoxelScene(const VoxelSceneSnapshot& current,const vsg::dvec3& origin,const vsg::dvec3& direction,double distance,bool terrainOnly) {
+std::optional<VoxelSceneHit> raycastVoxelScene(const VoxelSceneSnapshot& current,const vsg::dvec3& origin,const vsg::dvec3& direction,double distance,bool terrainOnly,std::string_view objectId) {
     const double length=vsg::length(direction);
     if(!std::isfinite(vsg::length(origin))||!std::isfinite(length)||length<1e-12||!std::isfinite(distance)||distance<0)
         throw std::invalid_argument("invalid scene ray");
     std::optional<VoxelSceneHit> result;auto ray=direction/length;
-    for(const auto& [id,o]:current.objects) {
-        if(terrainOnly&&o.role!="terrain")continue;
+    const auto visit=[&](const auto& id,const auto& o) {
+        if(terrainOnly&&o.role!="terrain")return;
         const auto pose=o.pose(current.tick,current.fixedStep),inverse=vsg::inverse(pose);
         const auto d=inverse*vsg::dvec4(ray,0.);vsg::dvec3 point,normal;
         const bool hit=o.earth?o.surface().intersectLocal(inverse*origin,{d.x,d.y,d.z},distance,point,normal):
             o.collision->intersectLocal(inverse*origin,{d.x,d.y,d.z},distance,point,normal);
-        if(!hit)continue;
+        if(!hit)return;
         const auto world=pose*point;const double along=vsg::dot(world-origin,ray);
-        if(result&&along>=result->distance)continue;
+        if(result&&along>=result->distance)return;
         const auto n=pose*vsg::dvec4(normal,0.);result=VoxelSceneHit{id,along,world,{n.x,n.y,n.z}};
-    }
+    };
+    if(objectId.empty())for(const auto& [id,o]:current.objects)visit(id,o);
+    else if(const auto it=current.objects.find(std::string(objectId));it!=current.objects.end())visit(it->first,it->second);
     return result;
 }
 VoxelSceneDisplay makeVoxelSceneDisplay(const VoxelSceneSnapshot& scene,const VoxelSceneDisplay* reuse,bool externalOceanLighting) {
@@ -607,13 +845,19 @@ VoxelSceneDisplay makeVoxelSceneDisplay(const VoxelSceneSnapshot& scene,const Vo
     for(const auto& [id,o]:scene.objects) {
         auto placement=vsg::MatrixTransform::create(o.pose(scene.tick,scene.fixedStep));
         if(!o.surface().indices().empty()) {
-            const bool externalLighting=externalOceanLighting&&scene.ocean&&!o.earth;
+            const bool externalLighting=externalOceanLighting&&scene.ocean&&!o.earth&&!o.surface().hasMaterialBlend;
             const auto found=reuse?reuse->drawings.find(id):result.drawings.end();
             if(reuse&&found!=reuse->drawings.end()&&found->second.source.get()==&o.surface()&&found->second.material==o.material&&found->second.externalLighting==externalLighting){
                 placement->addChild(found->second.node);result.drawings.emplace(id,found->second);++result.reusedDrawings;
             }else{
-                auto display=externalLighting?vsg::StateGroup::create():makeTerrainDisplay(o.surface());if(externalLighting)display->addChild(makeSurfaceDraw(o.surface(),true));auto draw=display->children.front().cast<vsg::VertexIndexDraw>();
-                const auto& color=o.material.at("color_rgba");draw->arrays[3]->data=vsg::vec4Array::create(1,vsg::vec4(color[0].get<float>(),color[1].get<float>(),color[2].get<float>(),color[3].get<float>()));
+                const auto color=o.material.at("color_rgba").get<std::array<float,4>>();
+                const auto tint=vsg::vec4(color[0],color[1],color[2],color[3]);
+                auto display=externalLighting?vsg::StateGroup::create():makeTerrainDisplay(o.surface(),tint);
+                if(externalLighting){
+                    auto draw=makeSurfaceDraw(o.surface(),true);
+                    draw->arrays[3]->data=vsg::vec4Array::create(1,tint);
+                    display->addChild(draw);
+                }
                 placement->addChild(display);result.drawings.emplace(id,VoxelSceneDisplay::Drawing{o.geometry?o.geometry:o.volume,o.material,display,externalLighting,bool(o.earth)});++result.builtDrawings;
             }
         }

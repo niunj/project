@@ -9,6 +9,7 @@
 #include <QElapsedTimer>
 #include <nlohmann/json.hpp>
 class QTreeWidget; class QTableWidget; class QComboBox; class QPlainTextEdit; class QDockWidget; class QTimer; class QLineEdit;
+namespace vsgraysim::viewport3d {class Viewport3DView;}
 namespace vsgraysim::gui::display {
 class FlightPanel;
 class EarthPanel;
@@ -25,6 +26,7 @@ public:
     void setLocalPlatformTelemetry(const nlohmann::json& value){local_platforms_=value;}
     void setLocalEarthMap(const std::string& path){local_earth_map_=path;}
     void setSharedSceneView(bool value){shared_scene_view_=value;}
+    void setSharedViewport(viewport3d::Viewport3DView* view){shared_viewport_=view;}
     void setLocalSceneState(uint64_t revision,double time,bool running){if(!connect_remote_){display_surface_revision_=revision;local_sim_time_=time;local_running_=running;local_scene_state_=true;}}
     WorkspaceProfile workspaceProfile() const;
     nlohmann::json connectionStatus() const;
@@ -81,6 +83,7 @@ private:
     nlohmann::json local_platforms_=nlohmann::json::array();
     std::string local_earth_map_;
     bool shared_scene_view_=false;
+    viewport3d::Viewport3DView* shared_viewport_=nullptr;
     bool separate_views_=false,equipment_view_=false;
     bool platform_console_=false,world_lease_=false;
     uint32_t preferred_platform_=0;

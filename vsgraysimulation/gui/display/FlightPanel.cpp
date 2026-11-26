@@ -1,5 +1,6 @@
 #include "FlightPanel.h"
 #include "base/WidgetFactory.h"
+#include "base/PlatformPresentation.h"
 #include "vsgraysim/broker/BrokerNet.h"
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -111,7 +112,9 @@ FlightPanel::FlightPanel(QWidget* parent,bool compact):QWidget(parent) {
     updateControlUi();
 }
 FlightPanel::~FlightPanel(){control_timer_->stop();releaseControl(tr("操作面板已关闭"));}
-QString FlightPanel::commandStatusText()const{return ack_->text();}
+QString FlightPanel::commandStatusText()const {
+    return system_status_.isEmpty()?ack_->text():system_status_+tr("  |  ")+ack_->text();
+}
 void FlightPanel::useCockpitToolbar() {
     auto* root=qobject_cast<QVBoxLayout*>(layout());
     // Retain one controller/lease. Reparent its live controls into a toolbar;
@@ -124,6 +127,44 @@ void FlightPanel::useCockpitToolbar() {
     root->insertLayout(0,row);setMinimumSize(300,0);setMaximumHeight(58);
 }
 bool FlightPanel::manualControlActive()const{return active_&&controllable()&&mode_->currentData().toString()=="manual"&&isVisible();}
+bool FlightPanel::toggleAircraftSystem(const std::string& channel) {
+    if(!active_||!isVisible()||!controllable()||!submitted_||system_request_)return false;
+    const auto state=selectedState();
+    const auto& flight=state.at("flight_control");
+    if(text(flight,"owner",text(flight,"owner_client_id"))!=client_id_||text(flight,"mode")!=submitted_->mode)return false;
+    const auto system=flight.find("systems");
+    if(system==flight.end()||!system->is_object()||!flag(*system,"available")||!system->contains(channel)||!system->at(channel).is_boolean())
+        return false;
+    const bool enabled=!system->at(channel).get<bool>();
+    auto command=*submitted_; // Preserve flight inputs. The backend handles the system separately.
+    command.aircraft_system=AircraftSystemDemand{channel,enabled};
+    system_request_=SystemRequest{BrokerNet::instance().submitFlightControl(command),channel,enabled,controlled_id_};
+    system_age_.restart();system_status_=tr("开关命令已提交 · 等待仿真回报");
+    return true;
+}
+bool FlightPanel::toggleCockpitHold() {
+    if(!active_||!isVisible()||!controllable())return false;
+    const auto state=selectedState();
+    const auto& flight=state.at("flight_control");
+    // Wait for the server to publish the last mode. Never toggle against a
+    // pending command or a lease still owned by another control station.
+    if(text(flight,"owner",text(flight,"owner_client_id"))!=client_id_||!submitted_||text(flight,"mode")!=submitted_->mode)
+        return false;
+    if(submitted_->mode!="manual"&&submitted_->mode!="altitude_hold")return false;
+    const bool enable=submitted_->mode=="manual";
+    const auto actual=flight.value("actual",nlohmann::json::object());
+    // Enter hold from measured state rather than an old draft. Neutralize
+    // axes when returning to manual and preserve the reported thrust.
+    const double speed=finiteNumber(state,"speed"),altitude=state.at("position").at(1).get<double>();
+    if(enable&&(speed<speed_->minimum()||speed>speed_->maximum()||altitude<altitude_->minimum()||altitude>altitude_->maximum()))return false;
+    speed_->setValue(speed);altitude_->setValue(altitude);
+    heading_->setValue(std::fmod(std::fmod(finiteNumber(state,"yaw"),360.)+360.,360.));
+    throttle_->setValue(std::clamp(finiteNumber(actual,"throttle",submitted_->throttle),0.,1.)*100.);
+    elevator_->setValue(0);aileron_->setValue(0);rudder_->setValue(0);
+    mode_->setCurrentIndex(mode_->findData(enable?"altitude_hold":"manual"));
+    sendInputs();updateControlUi();
+    return true;
+}
 bool FlightPanel::applyManualInputs(double throttle,double elevator,double aileron,double rudder) {
     if(!manualControlActive()||!std::isfinite(throttle)||!std::isfinite(elevator)||!std::isfinite(aileron)||!std::isfinite(rudder)||throttle<0||throttle>1||std::abs(elevator)>1||std::abs(aileron)>1||std::abs(rudder)>1)return false;
     throttle_->setValue(throttle*100);elevator_->setValue(elevator*100);aileron_->setValue(aileron*100);rudder_->setValue(rudder*100);sendInputs();return true;
@@ -135,10 +176,11 @@ nlohmann::json FlightPanel::selectedState()const {
 bool FlightPanel::fresh()const{return online_&&!selectedState().empty()&&(!running_||(sample_age_.isValid()&&sample_age_.elapsed()<3000));}
 bool FlightPanel::controllable()const {
     const auto state=selectedState();const auto it=state.find("flight_control");
-    return available_&&!session_id_.empty()&&platforms_->currentData().toUInt()!=0&&fresh()&&it!=state.end()&&it->is_object()&&flag(*it,"available");
+    return available_&&!session_id_.empty()&&platforms_->currentData().toUInt()!=0&&fresh()&&
+        platformDomain(state)==PlatformDomain::Air&&it!=state.end()&&it->is_object()&&flag(*it,"available");
 }
 void FlightPanel::updateControlContext(const std::string& session,bool available) {
-    if(session!=session_id_){releaseControl(tr("仿真会话已变更"));request_id_.clear();result_key_.clear();last_payload_.clear();sample_age_.invalidate();session_id_=session;ack_->setText(tr("仿真会话已变更 · 请重新接管控制"));}
+    if(session!=session_id_){system_request_.reset();system_status_.clear();releaseControl(tr("仿真会话已变更"));request_id_.clear();result_key_.clear();last_payload_.clear();sample_age_.invalidate();session_id_=session;ack_->setText(tr("仿真会话已变更 · 请重新接管控制"));}
     available_=available;if(!available_&&active_)releaseControl(tr("仿真控制服务不可用"));updateControlUi();
 }
 void FlightPanel::updateTelemetry(const nlohmann::json& samples,bool online,bool running,uint32_t preferred) {
@@ -160,6 +202,9 @@ void FlightPanel::updateTelemetry(const nlohmann::json& samples,bool online,bool
     // follow the authoritative sample clock, including while control renews.
     const auto state=selectedState();const auto payload=state.empty()?std::string():nlohmann::json{{"platform_id",state["platform_id"]},{"sim_time",state["sim_time"]}}.dump();if(payload!=last_payload_||!sample_age_.isValid()){last_payload_=payload;sample_age_.restart();}
     if(active_&&controlled_id_!=platforms_->currentData().toUInt())releaseControl(tr("受控平台已离线或切换"));
+    if(system_request_&&(!online_||system_request_->platform!=platforms_->currentData().toUInt())) {
+        system_request_.reset();system_status_.clear();
+    }
     if(active_&&!controllable())releaseControl(tr("遥测过期或控制能力不可用"));
     if(active_) {
         const auto fc=state["flight_control"];const auto owner=text(fc,"owner",text(fc,"owner_client_id"));
@@ -224,6 +269,29 @@ void FlightPanel::releaseControl(const QString& reason) {
 }
 void FlightPanel::controlTick() {
     if(active_&&(!controllable()||!isVisible()))releaseControl(tr("控制已解除：面板不可见或链路过期"));
+    if(system_request_) {
+        const auto request=*system_request_;FlightControlResult result;
+        if(BrokerNet::instance().flightControlResult(request.id,&result)&&result.client_id==client_id_&&
+           result.session_id==session_id_&&result.platform_id==request.platform&&result.stage!="queued") {
+            if(result.stage!="applied") {
+                system_status_=tr("开关未执行：%1").arg(QString::fromStdString(result.code));system_request_.reset();
+            } else {
+                const auto selected=selectedState();
+                const auto fc=selected.find("flight_control");
+                const auto systems=fc!=selected.end()&&fc->is_object()?fc->value("systems",nlohmann::json::object()):nlohmann::json::object();
+                const auto value=systems.find(request.channel);
+                if(systems.value("revision",uint64_t(0))>=result.revision&&value!=systems.end()&&value->is_boolean()&&
+                   value->get<bool>()==request.enabled) {
+                    system_status_=tr("仿真已确认：%1 %2").arg(request.channel=="gear_down"?tr("起落架手柄"):request.channel=="nav_lights"?tr("航行灯"):tr("着陆灯"),
+                        request.channel=="gear_down"?(request.enabled?tr("放下"):tr("收上")):(request.enabled?tr("开"):tr("关")));
+                    system_request_.reset();
+                }
+            }
+        }
+        if(system_request_&&system_age_.elapsed()>2600) {
+            system_status_=tr("未收到开关状态回报 · 请看仿真端仪表");system_request_.reset();
+        }
+    }
     if(!request_id_.empty()) {
         FlightControlResult result;
         if(BrokerNet::instance().flightControlResult(request_id_,&result)) {

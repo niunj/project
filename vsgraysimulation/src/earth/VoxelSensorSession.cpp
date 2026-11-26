@@ -42,7 +42,21 @@ struct VoxelSensorSession::Impl {
                 const auto& o=state->objects.at(instance.id);transforms.push_back(o.pose(state->tick,state->fixedStep));masks.push_back(instance.visible);
             }
         };
-        gpu.advanceTo(time,truth,environment,sink,enabled,activeFrom);
+        auto thermalEnvironment = [&](uint32_t id, double t, const BandSpec& band) {
+            auto result = environment ? environment(id,t,band) : clearSkyEnv(band,false);
+            const auto state = scene.sample(t);
+            const auto& utc = state->utcOrigin;
+            result.thermal_local_hour = std::fmod(utc.at("hours_utc").get<double>() +
+                t * utc.value("time_scale",1.) / 3600. + state->anchor.lon_deg / 15. + 24., 24.);
+            result.thermal_scene_seconds = t;
+            if (state->weather.enabled) {
+                const auto weather = state->weather.sample(t);
+                result.thermal_air_delta_k = weather.temperature - 293.15;
+                result.thermal_wetness = weather.wetness;
+            }
+            return result;
+        };
+        gpu.advanceTo(time,truth,thermalEnvironment,sink,enabled,activeFrom);
     }
 };
 VoxelSensorSession::VoxelSensorSession(VoxelScene& scene,const std::vector<GpuSensorSpec>& sensors,vsg::Device* device,

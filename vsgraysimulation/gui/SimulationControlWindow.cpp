@@ -1,4 +1,5 @@
 #include "viewport3d/VoxelSceneFeature.h"
+#include "viewport3d/PlatformMotionFeature.h"
 /// @file SimulationControlWindow.cpp
 /// @brief Simulation control implementation (8 个分类 Dock).
 #include "SimulationControlWindow.h"
@@ -14,6 +15,7 @@
 #include "base/PropertySchema.h"
 #include "base/PropertyTreeWidget.h"
 #include "viewport3d/Viewport3DView.h"
+#include "viewport3d/VsgQtWidget.h"
 #include "viewport3d/EnvFeatures.h"   // W2: SkyFeature/CloudFeature/OceanFeature setAtmosphereParams
 #include "viewport3d/EarthView.h"
 #include <vsgraysim/earth/EarthDataService.h>
@@ -24,6 +26,7 @@
 #pragma pop_macro("slots")
 #include <vsg/app/Window.h>
 #include "viewport3d/ViewportConfig.h"
+#include "viewport3d/SceneAudioFeature.h"
 #include "viewport3d/SimulationDisplayFacade.h"
 #include "viewport3d/SceneEntities.h"
 #include "viewport3d/DetectionEffectFeature.h"
@@ -106,18 +109,41 @@ SimulationControlWindow::SimulationControlWindow(QWidget* parent)
     preview_viewport_->setAutoFrame(true, target_fps_);
     preview_viewport_->context().setSimulationTime(0.0);
     connect(preview_viewport_,&viewport3d::Viewport3DView::beforeFrameTick,this,[this] {
+        if(preview_viewport_->widget()->property("sceneAudioRequested").toBool())
+            preview_viewport_->widget()->setProperty("sceneAudioPlaying",playing_.load());
         earth::EarthSurfaceSnapshotPtr next;
         earth::VoxelSceneSnapshotPtr voxel;
         double time;
-        if(engine_worker_)if(auto ready=remote_voxel_view_.take()){std::lock_guard lock(earth_view_mutex_);pending_voxel_view_=std::move(ready);}
+        nlohmann::json presentation=nlohmann::json::array(),equipmentVisuals=nlohmann::json::object();
+        if(engine_worker_) {
+            if(auto ready=remote_voxel_view_.take(&presentation,&equipmentVisuals)){
+                std::lock_guard lock(earth_view_mutex_);pending_voxel_view_=std::move(ready);
+            }
+            const auto error=QString::fromStdString(remote_voxel_view_.error());
+            if(preview_viewport_->property("publishedVoxelReadError").toString()!=error) {
+                preview_viewport_->setProperty("publishedVoxelReadError",error);
+                if(!error.isEmpty())spdlog::warn("Published voxel snapshot read: {}",error.toStdString());
+            }
+        }
         {
             std::lock_guard lock(earth_view_mutex_);
             next=std::move(pending_earth_view_);voxel=std::move(pending_voxel_view_);
             time=pending_earth_time_;
         }
+        if(!engine_worker_&&voxel_source_&&voxel_source_->hasPresentationControls()) {
+            for(const auto& sample:voxel_source_->platforms())
+                if(sample.contains("presentation"))presentation.push_back(sample);
+            if(!voxel)if(auto* feature=preview_viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene"))
+                if(feature->presentation()!=presentation)voxel=voxel_source_->snapshot();
+        }
         if(voxel) {
-            try{if(auto* feature=preview_viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene"))feature->bindSnapshot(voxel);preview_viewport_->context().setSimulationTime(voxel->timeSeconds());}
-            catch(const std::exception& error){playing_=false;statusBar()->showMessage(tr("体素视图同步失败：%1").arg(QString::fromUtf8(error.what())));}
+            if(!engine_worker_&&voxel_source_){
+                equipmentVisuals=voxel_source_->equipmentVisuals(*voxel);
+                if(auto* audio=preview_viewport_->featureAs<viewport3d::SceneAudioFeature>(viewport3d::SceneAudioFeature::kId))
+                    audio->publishLocalBrokerState(voxel_source_->presentationState(*voxel));
+            }
+            try{if(auto* feature=preview_viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene"))feature->bindSnapshot(voxel,std::move(presentation),std::move(equipmentVisuals));preview_viewport_->context().setSimulationTime(voxel->timeSeconds());}
+            catch(const std::exception& error){spdlog::warn("Published voxel viewport: {}",error.what());playing_=false;statusBar()->showMessage(tr("体素视图同步失败：%1").arg(QString::fromUtf8(error.what())));}
         }
         if(!next) return;
         if(auto* view=preview_viewport_->featureAs<viewport3d::EarthView>(viewport3d::EarthView::kId)) {
@@ -232,6 +258,9 @@ void SimulationControlWindow::startVoxelWorker(const QString& path) {
     engine_worker_->start(path);statusBar()->showMessage(tr("后台加载台北地形、体素与传感器；界面可继续操作"));
 }
 void SimulationControlWindow::acceptWorkerStatus(const nlohmann::json& s) {
+    if(s.contains("scene_session_id")&&s.at("scene_session_id").is_string())
+        preview_viewport_->widget()->setProperty("sceneAudioEpoch",
+            QString::fromStdString(s.at("scene_session_id").get<std::string>()));
     sim_inited_=s.value("initialized",false)&&s.value("state",std::string())!="fault";
     playing_=s.value("running",false);sim_time_=s.value("sim_time",0.);frames_=s.value("frames",size_t(0));
     service_online_=sim_inited_&&s.value("state",std::string())!="stopped";
@@ -251,7 +280,9 @@ void SimulationControlWindow::acceptWorkerStatus(const nlohmann::json& s) {
             config.add("rocky_map",{{"map_json",earth.at("earth").at("map")},{"lat",a.at("lat")},{"lon",a.at("lon")},{"alt",a.at("alt")},{"scene_context",true},{"cloud_objects",true},{"background_loading",true}});
             auto sky=earth.value("atmosphere",nlohmann::json::object());sky.update(earth.value("utc_origin",nlohmann::json::object()));sky["cover"]=0;sky["cumulus_count"]=0;sky["time_scale"]=1;
             config.add("rocky_sky",sky);config.add("rocky_cloud",sky);
-            nlohmann::json p={{"external_only",true}};if(earth.contains("voxel_camera"))p["camera_local"]=earth.at("voxel_camera");config.add("voxel_scene",p);
+            nlohmann::json p={{"external_only",true},{"terrain_display_paging",earth.value("terrain_display_paging",false)}};if(earth.contains("voxel_camera"))p["camera_local"]=earth.at("voxel_camera");config.add("voxel_scene",p);config.add(viewport3d::ScenePlatformMotion::kId);
+            config.add("engagement_visual");
+            config.add("trail");
             preview_viewport_->applyConfig(config);
         }
         remote_voxel_view_.submit(earth.at("voxel_scene"));preview_viewport_->markActivity();
@@ -770,6 +801,12 @@ void SimulationControlWindow::buildProductDocks()
 void SimulationControlWindow::buildProductMenuItems(QMenuBar* mb)
 {
     auto* mSim = mb->addMenu(tr("&仿真"));
+    auto* audio=mSim->addAction(tr("场景音效"));
+    audio->setCheckable(true);
+    connect(audio,&QAction::toggled,this,[this](bool on){
+        preview_viewport_->widget()->setProperty("sceneAudioRequested",on);
+        preview_viewport_->markActivity();
+    });
     mSim->addAction(tr("&打开场景..."), this,
                     &SimulationControlWindow::onBrowseScenario,
                     QKeySequence::Open);
@@ -887,7 +924,7 @@ void SimulationControlWindow::updateSim3DVisuals()
 
     // 构建 name → 世界位置/速度方向的索引 (仅存活平台参与交战/轨迹)。
     std::map<std::string, vsg::vec3> plat_pos;
-    std::map<std::string, vsg::vec3> plat_vel;   // 归一化速度方向 (尾焰定向)
+    std::map<std::string, vsg::dvec3> plat_vel;
     std::map<std::string, vsg::dquat> plat_rotation;
     for (const auto& p : platforms) {
         if (!p.value("alive", true)) continue;
@@ -904,10 +941,7 @@ void SimulationControlWindow::updateSim3DVisuals()
         if (p.contains("velocity") && p["velocity"].is_array() &&
             p["velocity"].size() >= 3) {
             const auto& vv = p["velocity"];
-            const vsg::vec3 v(float(vv[0].get<double>()),
-                              float(vv[1].get<double>()),
-                              float(vv[2].get<double>()));
-            if (vsg::length(v) > 1e-3f) plat_vel[nm] = vsg::normalize(v);
+            plat_vel[nm] = {vv[0].get<double>(),vv[1].get<double>(),vv[2].get<double>()};
         }
     }
     // 交战/平台 → 阵营 (匹配场景对象; 查不到攻击方默认红 2)。
@@ -1115,6 +1149,44 @@ void SimulationControlWindow::updateSim3DVisuals()
     std::vector<viewport3d::EngagementVisualFeature::Engagement> engs;
     std::vector<viewport3d::EngagementVisualFeature::Plume> plumes;
     std::vector<viewport3d::EngagementVisualFeature::DamageSmoke> dmg_smokes;
+    // Trigger the airframe burst only on an observed alive -> destroyed edge.
+    // Opening a paused scene must not replay explosions from an existing wreck.
+    for(const auto& aircraft:platforms) {
+        if(aircraft.value("category",std::string{})!="Aircraft")continue;
+        const auto id=aircraft.value("platform_id",uint32_t(0));
+        if(id==0)continue;
+        const bool alive=aircraft.value("alive",true);
+        auto [previous,first]=aircraft_fx_alive_.try_emplace(id,alive);
+        if(!first&&previous->second&&!alive) {
+            const auto pos=aircraft.find("position");
+            if(pos!=aircraft.end()&&pos->is_array()&&pos->size()==3)
+                sim_facade_->addImpact({pos->at(0).get<float>(),pos->at(1).get<float>(),pos->at(2).get<float>()},0);
+        }
+        previous->second=alive;
+    }
+    // Particle presentation consumes existing platform truth only. At
+    // ordinary thrust the clean jet has no luminous plume.
+    for(const auto& aircraft:platforms) {
+        if(aircraft.value("category",std::string{})!="Aircraft"||!aircraft.value("alive",true))continue;
+        const auto name=aircraft.value("name",std::string{});
+        const auto pos=plat_pos.find(name);
+        if(pos==plat_pos.end())continue;
+        const auto object=std::find_if(objects.begin(),objects.end(),[&](const auto& o){
+            return o.value("object_id",std::string{})==name||o.value("name",std::string{})==name||o.value("id",std::string{})==name;
+        });
+        if(object==objects.end())continue;
+        const auto emitter=object->find("visual_jet_exhaust");
+        if(emitter==object->end()||!emitter->is_object())continue;
+        const auto offset=emitter->value("nozzle_local_m",nlohmann::json::array());
+        if(!offset.is_array()||offset.size()!=3||!offset[0].is_number()||!offset[1].is_number()||!offset[2].is_number())continue;
+        const auto inputs=aircraft.value("flight_control",nlohmann::json::object()).value("actual",nlohmann::json::object());
+        const auto throttle=inputs.value("throttle",0.);
+        if(throttle<=.73)continue;
+        const auto attitude=plat_rotation[name];
+        plumes.push_back({"jet:"+name,pos->second+vsg::vec3(attitude*vsg::dvec3(offset[0].get<double>(),offset[1].get<double>(),offset[2].get<double>())),
+            vsg::vec3(attitude*vsg::dvec3(0,0,-1)),factionOf(name),true,
+            float(std::clamp((throttle-.73)/.27,0.,1.)),.54f});
+    }
     // 损伤冒烟: 健康度 < 0.6 的存活平台持续冒烟 (损伤越重烟越大)。
     for (const auto& p : platforms) {
         if (!p.value("alive", true)) continue;
@@ -1147,25 +1219,27 @@ void SimulationControlWindow::updateSim3DVisuals()
                 sim_facade_->addLaunch(ip->second, factionOf(iname));
         }
         // 在飞: 制导连线 + 弹道累积 + 尾焰羽流。
-        if (inflight && ip != plat_pos.end() && tp != plat_pos.end()) {
-            viewport3d::EngagementVisualFeature::Engagement en;
-            en.interceptor_id   = iname;
-            en.target_id        = tname;
-            en.interceptor_pos  = ip->second;
-            en.target_pos       = tp->second;
-            en.faction          = factionOf(iname);
-            engs.push_back(en);
+        if (inflight && ip != plat_pos.end()) {
+            if(tp != plat_pos.end()) {
+                viewport3d::EngagementVisualFeature::Engagement en;
+                en.interceptor_id   = iname;
+                en.target_id        = tname;
+                en.interceptor_pos  = ip->second;
+                en.target_pos       = tp->second;
+                en.faction          = factionOf(iname);
+                engs.push_back(en);
+            }
             viewport3d::EngagementVisualFeature::Plume pl;
             pl.id      = iname;
             pl.pos     = ip->second;
             auto vd    = plat_vel.find(iname);
-            pl.dir     = (vd != plat_vel.end()) ? vd->second
-                                                 : vsg::vec3(0.0f, 0.0f, 1.0f);
-            pl.faction = en.faction;
+            if (vd!=plat_vel.end() && vsg::length(vd->second)>1e-3)
+                pl.dir=vsg::vec3(vsg::normalize(vd->second));
+            pl.faction = factionOf(iname);
             plumes.push_back(pl);
         }
         // 命中: 一次性爆炸 (幂等), 爆炸点取拦击弹命中位置。
-        if (impacted && !impact_handled_.count(iname)) {
+        if (impacted && (ip != plat_pos.end() || tp != plat_pos.end()) && !impact_handled_.count(iname)) {
             impact_handled_.insert(iname);
             const vsg::vec3 pos = (ip != plat_pos.end()) ? ip->second
                                  : (tp != plat_pos.end()) ? tp->second
@@ -1185,9 +1259,18 @@ void SimulationControlWindow::updateSim3DVisuals()
     sim_facade_->setPlumes(plumes);
     sim_facade_->setDamageSmokes(dmg_smokes);
 
-    // 轨迹拖尾: 每个存活平台按 500ms 周期追加一个采样点。
-    for (const auto& [nm, pos] : plat_pos)
-        sim_facade_->addTrailPoint(nm, pos, factionOf(nm));
+    // Use simulation time for visual history so a paused world adds no samples.
+    const double trailTime=sim_time_.load();
+    for (const auto& p : platforms) {
+        if (!p.value("alive",true)) continue;
+        const auto& point=p.at("position");
+        if (!point.is_array() || point.size()<3) continue;
+        const auto name=p.value("name",std::string{});
+        const auto id=p.value("platform_id",uint32_t(0));
+        const auto velocity=plat_vel.find(name);
+        sim_facade_->addTrailPoint(id?std::to_string(id):name,{point[0].get<double>(),point[1].get<double>(),point[2].get<double>()},
+            factionOf(name),trailTime,velocity==plat_vel.end()?std::nullopt:std::optional<vsg::dvec3>(velocity->second));
+    }
 
     // ---- 位姿桥接: 平台快照位姿 → 3D 实体节点 (playback 外部驱动口) ----
     // 平台以 name 为键, 3D 实体以 object_id 注册, 此处按场景对象多字段匹配。
@@ -1413,7 +1496,8 @@ void SimulationControlWindow::loadScenarioFile(const QString& path)
             const auto project=VoxelSceneProject::open(path.toStdString());project.equipmentConfig();
             auto config=viewport3d::ViewportConfig::fromTopicFile(project.path,"earth_display");
             config.remove("voxel_scene");nlohmann::json external={{"external_only",true}};
-            if(project.document.contains("camera"))external["camera_local"]=project.document.at("camera");config.add("voxel_scene",external);
+            if(project.packageManifest.contains("terrain_pages"))external["terrain_display_paging"]=true;
+            if(project.document.contains("camera"))external["camera_local"]=project.document.at("camera");config.add("voxel_scene",external);config.add(viewport3d::ScenePlatformMotion::kId);
             playing_=false;{std::lock_guard lock(sim_mtx_);sim_inited_=false;}
             scenario_path_=QString::fromStdString(project.path);scenario_data_=project.document;setWindowFilePath(scenario_path_);
             preview_viewport_->applyConfig(config);preview_viewport_->markActivity();
@@ -1437,6 +1521,7 @@ void SimulationControlWindow::loadScenarioFile(const QString& path)
         sim_facade_->loadScenarioFile(path, resolveWorkspaceRoot());
     }
     impact_handled_.clear();
+    aircraft_fx_alive_.clear();
     launch_handled_.clear();
     miss_handled_.clear();
     onInitSimulation();
@@ -1497,7 +1582,7 @@ void SimulationControlWindow::buildTimingBus()
         if(!bus_->initialize())throw std::runtime_error("voxel timing source initialization failed");
         bus_->start();bus_->setPaused(true);
         BrokerNet::instance().setSimMeta(QFileInfo(scenario_path_).fileName().toStdString(),voxel_source_->snapshot()->timeSeconds(),0,false);
-        BrokerNet::instance().setFlightControlAvailable(false);return;
+        BrokerNet::instance().setFlightControlAvailable(voxel_source_->hasPresentationControls());return;
     }
     simulation_step_.store(sim_.config().frame_dt);
     bus_->configureFixedStep(sim_.config().frame_dt,1);
@@ -2022,7 +2107,7 @@ void SimulationControlWindow::setServiceOnline(bool online)
     if(engine_worker_){service_online_=online;return;}
     SimDataBroker::instance().serverOnline(online);
     BrokerNet::instance().setFlightControlAvailable(
-        online && sim_inited_ && platform_mgr_ && !replay_active_);
+        online && sim_inited_ && (platform_mgr_||(voxel_source_&&voxel_source_->hasPresentationControls())) && !replay_active_);
     if (service_online_ == online) return;   // 状态未变 (broker 幂等)
     service_online_ = online;
     if (online)
@@ -2065,6 +2150,7 @@ void SimulationControlWindow::pollControlCommandsWorker()
         }
     }
     auto& net = BrokerNet::instance();
+    if(voxel_source_){voxel_source_->servicePresentationCommands();return;}
     FlightControlCommand flight;
     for (int count = 0; count < 64 && net.pollFlightControl(&flight); ++count) {
         FlightControlResult result;

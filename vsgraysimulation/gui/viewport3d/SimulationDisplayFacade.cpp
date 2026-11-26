@@ -215,11 +215,12 @@ void SimulationDisplayFacade::clearEngagements()
 }
 
 void SimulationDisplayFacade::addTrailPoint(const std::string& id,
-                                            const vsg::vec3& pos, int faction)
+                                            const vsg::dvec3& pos, int faction,
+                                            double time, std::optional<vsg::dvec3> velocity)
 {
     if (auto* f = view_ ? view_->featureAs<TrailFeature>(TrailFeature::kId)
                         : nullptr)
-        f->addPoint(id, pos, faction);
+        f->addPoint(id, pos, faction, time, velocity);
 }
 
 void SimulationDisplayFacade::clearTrails()

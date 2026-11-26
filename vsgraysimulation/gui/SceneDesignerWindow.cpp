@@ -7,6 +7,8 @@
 /// @file SceneDesignerWindow.cpp
 /// @brief Scene designer implementation (7 个分类 Dock).
 #include "SceneDesignerWindow.h"
+#include "viewport3d/VsgQtWidget.h"
+#include <vsgraysim/earth/VoxelUsdEdits.h>
 #include <vsgraysim/earth/VoxelScenePackage.h>
 #include "voxel/SceneAuthoringPanel.h"
 #include "base/DockBuilder.h"
@@ -19,6 +21,7 @@
 #include "vsgraysim/layer1_scene/TerrainSystem.h"
 
 #include <algorithm>
+#include <future>
 
 #include <QApplication>
 #include <QCheckBox>
@@ -31,6 +34,7 @@
 #include <QDirIterator>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
+#include <QEventLoop>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -49,6 +53,8 @@
 #include <QProcess>
 #include <QRadioButton>
 #include <QSaveFile>
+#include <QScopedValueRollback>
+#include <QTimer>
 #include <QActionGroup>
 #include <QSignalBlocker>
 #include <QScrollArea>
@@ -63,6 +69,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <future>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -326,7 +333,7 @@ SceneDesignerWindow::~SceneDesignerWindow() = default;
 
 void SceneDesignerWindow::closeEvent(QCloseEvent* event)
 {
-    if (!confirmUnsavedChanges()) { event->ignore(); return; }
+    if (publishing_scene_ || !confirmUnsavedChanges()) { event->ignore(); return; }
     ui::BaseWindow::closeEvent(event);
 }
 
@@ -1414,10 +1421,42 @@ void SceneDesignerWindow::buildProductMenuItems(QMenuBar* mb)
     updateUndoActions();
 
     auto* topicMenu=mb->addMenu(tr("场景专题"));topicMenu->addAction(tr("打开地球联合场景专题…"),this,[this]{const auto path=QFileDialog::getOpenFileName(this,tr("打开场景专题"),"config/topics",tr("体素场景包 / 专题 (*.vsimscene *.vtopic.json)"));if(path.isEmpty())return;if(!QProcess::startDetached(QCoreApplication::applicationFilePath(),{"--scene-topic",QFileInfo(path).absoluteFilePath()}))QMessageBox::warning(this,tr("场景专题"),tr("无法打开专题窗口"));});
+    auto* audio=topicMenu->addAction(tr("场景音效"));
+    audio->setCheckable(true);
+    connect(audio,&QAction::toggled,this,[this](bool on){
+        if(viewport_){viewport_->widget()->setProperty("sceneAudioRequested",on);viewport_->markActivity();}
+    });
     topicMenu->addAction(tr("从台北体素与装备模板开始…"),this,[this]{
         const auto source=QFileInfo("config/topics/taipei-equipment.vtopic.json").absoluteFilePath();
         if(!QProcess::startDetached(QCoreApplication::applicationFilePath(),{"--scene-topic",source}))QMessageBox::warning(this,tr("场景专题"),tr("无法打开台北体素模板"));
     });
+    const auto publishVoxelScene = [this](bool terrainPages) {
+        if (topic_path_.isEmpty()) {
+            statusBar()->showMessage(tr("请先打开地球体素场景专题"), 4000);
+            return;
+        }
+        auto path = QFileDialog::getSaveFileName(this, tr("发布体素场景包"), current_scenario_path_,
+                                                 tr("体素场景包 (*.vsimscene)"));
+        if (path.isEmpty()) return;
+        if (!earth::VoxelScenePackage::extension(path.toStdString())) path += ".vsimscene";
+        saveScenarioToPath(path, terrainPages);
+    };
+    topicMenu->addAction(tr("发布体素场景包…"), this, [publishVoxelScene] { publishVoxelScene(false); });
+    topicMenu->addAction(tr("发布分块体素场景包…"), this, [publishVoxelScene] { publishVoxelScene(true); });
+    if (earth::voxelUsdEditsAvailable()) {
+        topicMenu->addAction(tr("保存 USD 目标编辑层…"), this, [this] {
+            auto path = QFileDialog::getSaveFileName(this, tr("保存 USD 目标编辑层"),
+                QStringLiteral("target-edits.usda"), tr("OpenUSD 编辑层 (*.usda *.usd *.usdc)"));
+            if (path.isEmpty()) return;
+            if (QFileInfo(path).suffix().isEmpty()) path += QStringLiteral(".usda");
+            saveUsdTargetEdits(path);
+        });
+        topicMenu->addAction(tr("应用 USD 目标编辑层…"), this, [this] {
+            const auto path = QFileDialog::getOpenFileName(this, tr("应用 USD 目标编辑层"), {},
+                tr("OpenUSD 编辑层 (*.usda *.usd *.usdc)"));
+            if (!path.isEmpty()) applyUsdTargetEdits(path);
+        });
+    }
     topicMenu->addAction(tr("绑定体素装备配置…"),this,[this]{
         if(topic_path_.isEmpty()){statusBar()->showMessage(tr("请先打开地球体素场景专题"),4000);return;}
         const auto path=QFileDialog::getOpenFileName(this,tr("绑定已有装备配置"),"config/equipment",tr("装备配置 (*.vequipment.json *.json)"));if(path.isEmpty())return;
@@ -3165,7 +3204,7 @@ void SceneDesignerWindow::onLaunchSimulation()
         if(topic_baseline_pending_){statusBar()->showMessage(tr("请等待体素场景准备完成"),3000);return;}
         if(!topic_document_.contains("equipment")){QMessageBox::warning(this,tr("缺少装备配置"),tr("请在专题的 equipment 字段绑定现有装备配置后交付仿真。"));return;}
         QString destination=current_scenario_path_;
-        if(destination.isEmpty())destination=QFileDialog::getSaveFileName(this,tr("保存体素专题并启动仿真"),"workspace/scenes/taipei.vsimscene",tr("体素场景包 (*.vsimscene);;兼容专题 (*.vtopic.json *.json)"));
+        if (!earth::VoxelScenePackage::extension(destination.toStdString())) destination=QFileDialog::getSaveFileName(this,tr("保存体素专题并启动仿真"),"workspace/scenes/taipei.vsimscene",tr("体素场景包 (*.vsimscene);;兼容专题 (*.vtopic.json *.json)"));
         if(destination.isEmpty()||!saveScenarioToPath(destination))return;
         ui::ProductWorkflow::launch(this,QStringLiteral("vsgraysim_sim_control"),{QFileInfo(current_scenario_path_).absoluteFilePath()},tr("仿真主控"));return;
     }
@@ -3468,8 +3507,41 @@ nlohmann::json SceneDesignerWindow::sceneDocument() const
     return j;
 }
 
-bool SceneDesignerWindow::saveScenarioToPath(const QString& path) try
+bool SceneDesignerWindow::saveUsdTargetEdits(const QString& path) try
 {
+    auto* feature = viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");
+    if (topic_path_.isEmpty() || topic_baseline_pending_ || publishing_scene_ || !feature || !feature->runtime())
+        throw std::runtime_error("请先打开并等待地球体素场景专题就绪");
+    earth::saveVoxelUsdEdits(path.toStdString(), *feature->runtime()->snapshot());
+    statusBar()->showMessage(tr("已保存 USD 目标编辑层"), 4000);
+    return true;
+}
+catch (const std::exception& error) {
+    statusBar()->showMessage(tr("保存 USD 目标编辑层失败　%1").arg(QString::fromUtf8(error.what())), 8000);
+    qWarning() << error.what();
+    return false;
+}
+
+bool SceneDesignerWindow::applyUsdTargetEdits(const QString& path) try
+{
+    auto* feature = viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");
+    if (topic_path_.isEmpty() || topic_baseline_pending_ || publishing_scene_ || !feature || !feature->runtime())
+        throw std::runtime_error("请先打开并等待地球体素场景专题就绪");
+    earth::applyVoxelUsdEdits(path.toStdString(), *feature->runtime());
+    viewport_->markActivity();
+    refreshSceneTree();
+    statusBar()->showMessage(tr("已应用 USD 目标编辑层，可以发布体素场景包"), 5000);
+    return true;
+}
+catch (const std::exception& error) {
+    statusBar()->showMessage(tr("应用 USD 目标编辑层失败　%1").arg(QString::fromUtf8(error.what())), 8000);
+    qWarning() << error.what();
+    return false;
+}
+
+bool SceneDesignerWindow::saveScenarioToPath(const QString& path, bool terrainPages) try
+{
+    if (publishing_scene_) return false;
     // Persist live brush edits as an immutable, content-addressed Earth package
     // before handing the scene to another process. Old saved scenes retain
     // their previous terrain files even if this scene save is cancelled/fails.
@@ -3483,6 +3555,7 @@ bool SceneDesignerWindow::saveScenarioToPath(const QString& path) try
     }
     if(!topic_path_.isEmpty() && topic_baseline_pending_)throw std::runtime_error("voxel scene is still preparing; save was not committed");
     auto j = sceneDocument();
+    if (terrainPages) j["terrain_paging"] = "quad-v1";
     if(!topic_path_.isEmpty()&&!j.contains("checkpoint"))throw std::runtime_error("voxel scene state is not available");
     const auto liveDocument=j.dump();
     // Packages stored alongside the scene remain movable as one directory.
@@ -3494,7 +3567,23 @@ bool SceneDesignerWindow::saveScenarioToPath(const QString& path) try
     if(j.contains("terrain_ref"))portableReference(j["terrain_ref"]);
     if(j.contains("earth")&&j["earth"].contains("map"))portableReference(j["earth"]["map"]);
     const bool packaged=earth::VoxelScenePackage::extension(path.toStdString());
-    if(packaged){if(topic_path_.isEmpty()||!j.contains("checkpoint"))throw std::runtime_error("scene packages require an authored voxel topic");earth::VoxelScenePackage::save(path.toStdString(),j,j.at("checkpoint"));}
+    if (packaged) {
+        if (topic_path_.isEmpty() || !j.contains("checkpoint"))
+            throw std::runtime_error("scene packages require an authored voxel topic");
+        QScopedValueRollback<bool> busy(publishing_scene_, true);
+        statusBar()->showMessage(tr("正在后台发布体素场景包…"));
+        auto task = std::async(std::launch::async, [file = path.toStdString(), &j] {
+            earth::VoxelScenePackage::save(file, j, j.at("checkpoint"));
+        });
+        QEventLoop loop;
+        QTimer poll;
+        connect(&poll, &QTimer::timeout, &loop, [&] {
+            if (task.wait_for(std::chrono::seconds(0)) == std::future_status::ready) loop.quit();
+        });
+        poll.start(20);
+        loop.exec(QEventLoop::ExcludeUserInputEvents);
+        task.get();
+    }
     QSaveFile output(path);
     const QByteArray document = packaged?QByteArray():QByteArray::fromStdString(j.dump(2));
     if(!topic_path_.isEmpty()&&document.size()>256LL*1024*1024)throw std::runtime_error("voxel topic exceeds the 256 MiB document budget");

@@ -44,7 +44,8 @@ VoxelModel voxelizeMesh(vsg::Node* mesh, const VoxelModelConfig& config = {});
 
 /// Load any supported mesh format and voxelise it.
 /// Supported: .obj (native), .glb/.gltf/.fbx/.dae/.ply/.stl/.3ds (Assimp),
-/// .vsg/.vsgt/.vsgb (native VSG). LOD import selects the finest surface.
+/// .usd/.usda/.usdc (polygon meshes and PreviewSurface), .vsg/.vsgt/.vsgb.
+/// USD stage units and up axis are applied before the optional model configuration transform.
 VoxelModel voxelizeFile(const std::string& path, const VoxelModelConfig& config = {});
 
 } // namespace vsgraysim::earth

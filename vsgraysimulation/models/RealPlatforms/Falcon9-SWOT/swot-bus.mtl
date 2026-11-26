@@ -1,0 +1,11 @@
+newmtl AO
+Kd 1.000000 1.000000 1.000000
+map_Kd swot-texture-0.png
+newmtl foil_gold
+Kd 1.000000 0.658375 0.082283
+newmtl shiny_panel
+Kd 1.000000 1.000000 1.000000
+map_Kd swot-texture-2.png
+newmtl tex_01
+Kd 1.000000 1.000000 1.000000
+map_Kd swot-texture-3.png

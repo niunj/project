@@ -20,6 +20,8 @@ public:
     nlohmann::json selectedTelemetry()const{return selectedState();}
     bool telemetryFresh()const{return fresh();}
     bool manualControlActive()const;
+    bool toggleCockpitHold();
+    bool toggleAircraftSystem(const std::string& channel);
     bool applyManualInputs(double throttle,double elevator,double aileron,double rudder);
     void useCockpitToolbar();
     QString commandStatusText()const;
@@ -50,5 +52,9 @@ private:
     QString release_reason_;
     QElapsedTimer sample_age_,request_age_,last_sent_;
     std::optional<FlightControlCommand> submitted_;
+    struct SystemRequest {std::string id, channel;bool enabled;uint32_t platform;};
+    std::optional<SystemRequest> system_request_;
+    QElapsedTimer system_age_;
+    QString system_status_;
 };
 }

@@ -1,0 +1,107 @@
+# 3ds Max Wavefront OBJ Exporter v0.99 - (c)2007 guruware
+# 创建的文件:02.09.2026 15:58:44
+
+newmtl Vehicle_Painted_Body
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0800 0.0800 0.0800
+	Tr 0.0000
+	d 1.0000
+	Tf 0.0000 0.0000 0.0000
+	Pr 0.5200
+	Pm 0.0000
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.5000
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd Painted.jpg
+
+newmtl Vehicle_Dark_Details
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0800 0.0800 0.0800
+	Tr 0.0000
+	d 1.0000
+	Tf 0.0000 0.0000 0.0000
+	Pr 0.5200
+	Pm 0.0000
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.5000
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd Glass.jpg
+
+newmtl Vehicle_Interior
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0800 0.0800 0.0800
+	Tr 0.0000
+	d 1.0000
+	Tf 0.0000 0.0000 0.0000
+	Pr 0.5200
+	Pm 0.0000
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.5000
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd Interior.jpg
+
+newmtl Vehicle_Glass
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.3000 0.3000 0.3000
+	Tr 0.4200
+	d 0.5800
+	Tf 0.0000 0.0000 0.0000
+	Pr -0.2800
+	Pm 0.0000
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.5000
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd Glass.jpg
+
+newmtl Vehicle_Metal_Details
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0800 0.0800 0.0800
+	Tr 0.0000
+	d 1.0000
+	Tf 0.0000 0.0000 0.0000
+	Pr 0.5200
+	Pm 0.0000
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.5000
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd Glass.jpg
+
+newmtl Vehicle_Lights_And_Underside
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0800 0.0800 0.0800
+	Tr 0.0000
+	d 1.0000
+	Tf 0.0000 0.0000 0.0000
+	Pr 0.5200
+	Pm 0.0000
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.5000
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd Lights.jpg
+
+newmtl Vehicle_Wheels
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0800 0.0800 0.0800
+	Tr 0.0000
+	d 1.0000
+	Tf 0.0000 0.0000 0.0000
+	Pr 0.5200
+	Pm 0.0000
+	Pc 0.0000
+	Pcr 0.0000
+	Ni 1.5000
+	Ke 0.0000 0.0000 0.0000
+	illum 2
+	map_Kd Wheels.jpg

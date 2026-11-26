@@ -58,11 +58,13 @@ set(GUI_SOURCES
     display/FlightPanel.cpp
     display/EarthPanel.cpp
     display/AircraftCockpitPanel.cpp
+    display/CockpitControlSignals.cpp
     display/CockpitProfile.cpp
-    display/TexturedCockpit.cpp
+    display/PlatformInstruments.cpp
     display/ConsoleSelector.cpp
     display/JoystickInput.cpp
     display/SensorPanels.cpp
+    display/SonarDisplayPanel.cpp
     display/PanelProcessing.cpp
     display/RadarTerrainMap.cpp
     display/EquipmentViewProcesses.cpp
@@ -94,13 +96,24 @@ set(VIEWPORT3D_SOURCES
     viewport3d/DetectionEffectFeature.cpp
     viewport3d/ScenarioPreviewFeature.cpp
     viewport3d/VoxelSceneFeature.cpp
+    viewport3d/TerrainDisplayPages.cpp
     viewport3d/AircraftCockpitFeature.cpp
+    viewport3d/CockpitInterior.cpp
+    viewport3d/CockpitSpatial.cpp
+    viewport3d/CockpitPhotoPanel.cpp
     viewport3d/AircraftExterior.cpp
     viewport3d/PlaybackFeature.cpp
     viewport3d/SceneDesignFacade.cpp
     viewport3d/SimulationDisplayFacade.cpp
     viewport3d/RelationshipVisualFeature.cpp
     viewport3d/EngagementVisualFeature.cpp
+    viewport3d/AviationParticles.cpp
+    viewport3d/PlatformMotionFeature.cpp
+    viewport3d/PlatformAnimationEffects.cpp
+    viewport3d/SceneEffectsAdapter.cpp
+    viewport3d/SceneAudioFeature.cpp
+    audio/SceneAudioMixer.cpp
+    audio/SceneAudioOutput.cpp
     viewport3d/TrailFeature.cpp
     viewport3d/ImGuiToolbarFeature.cpp
 )
@@ -113,6 +126,15 @@ list(APPEND VIEWPORT3D_SOURCES
     viewport3d/EnvFeatures.cpp
     viewport3d/EnvLabWindow.cpp)   # 环境模块验证台主窗口 (依赖 rocky_env)
 
+add_library(vsgraysim_platform_animation STATIC
+    platform_animation/PlatformAnimation.cpp
+    platform_animation/M1A2Animation.cpp
+    platform_animation/F16CAnimation.cpp
+    platform_animation/CG57Animation.cpp
+    platform_animation/CockpitModel.cpp)
+target_include_directories(vsgraysim_platform_animation PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/include")
+
 add_library(vsgraysim_viewport3d OBJECT ${VIEWPORT3D_SOURCES})
 set_target_properties(vsgraysim_viewport3d PROPERTIES AUTOMOC ON)
 target_include_directories(vsgraysim_viewport3d PUBLIC
@@ -121,10 +143,15 @@ target_include_directories(vsgraysim_viewport3d PUBLIC
     "${QT6_PREFIX}/include/QtGui/6.12.0/QtGui"
 )
 target_link_libraries(vsgraysim_viewport3d PUBLIC
+    vsgraysim_platform_animation
     vsgraysim_core
     vsgraysim_common
     Qt6::Widgets
 )
+if(TARGET Qt6::Multimedia)
+    target_link_libraries(vsgraysim_viewport3d PUBLIC Qt6::Multimedia)
+    target_compile_definitions(vsgraysim_viewport3d PUBLIC VSG_HAS_SCENE_AUDIO=1)
+endif()
 target_include_directories(vsgraysim_viewport3d PRIVATE
     "${ROCKY_EARTH3P_DIR}/include")
 target_link_libraries(vsgraysim_viewport3d PUBLIC
@@ -160,6 +187,15 @@ target_include_directories(vsgraysim_gui_lib PRIVATE
 )
 
 if(BUILD_TESTING)
+    add_executable(sim_scene_audio_tests "${CMAKE_SOURCE_DIR}/tests/scene_audio_tests.cpp")
+    target_link_libraries(sim_scene_audio_tests PRIVATE vsgraysim_gui_lib)
+    set_target_properties(sim_scene_audio_tests PROPERTIES BUILD_RPATH "${VSGRAYSIM_GUI_RPATH_DIRS}")
+    target_link_options(sim_scene_audio_tests PRIVATE "-Wl,--disable-new-dtags")
+    add_test(NAME scene_audio_contracts COMMAND sim_scene_audio_tests)
+    set_tests_properties(scene_audio_contracts PROPERTIES TIMEOUT 45 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    add_executable(sim_platform_animation_tests ../tests/platform_animation_tests.cpp)
+    target_link_libraries(sim_platform_animation_tests PRIVATE vsgraysim_platform_animation)
+    add_test(NAME platform_animation_models COMMAND sim_platform_animation_tests)
     target_sources(vsgraysim_gui_lib PRIVATE testing/FormalChainValidation.cpp)
     target_compile_definitions(vsgraysim_gui_lib PUBLIC VSGRAYSIM_FORMAL_VALIDATION=1)
     foreach(test_spec "sim_display_sessions;display_session_tests.cpp;display_sensor_sessions" "sim_workspace_tests;workspace_tests.cpp;display_workspace_profiles" "sim_flight_ui_tests;flight_ui_tests.cpp;display_flight_controls" "sim_aircraft_cockpit_tests;aircraft_cockpit_tests.cpp;display_aircraft_cockpit" "sim_flight_scene_tests;flight_scene_tests.cpp;designer_flight_configuration" "sim_earth_gui_tests;earth_gui_tests.cpp;earth_gui_handoff" "sim_earth_display_tests;earth_display_tests.cpp;display_earth_context")
@@ -175,5 +211,8 @@ if(BUILD_TESTING)
     endforeach()
     add_dependencies(sim_earth_gui_tests voxel_scene)
     target_sources(sim_earth_gui_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests/earth_unified_capture.cpp" "${CMAKE_SOURCE_DIR}/tests/earth_detail_capture.cpp" "${CMAKE_SOURCE_DIR}/tests/earth_ocean_capture.cpp")
+    target_sources(sim_earth_gui_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests/earth_aviation_capture.cpp" "${CMAKE_SOURCE_DIR}/tests/earth_aircraft_debris_capture.cpp")
+    target_sources(sim_earth_gui_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests/earth_ah64_rotor_capture.cpp")
+    target_sources(sim_earth_gui_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests/earth_platform_motion_capture.cpp")
     target_sources(sim_aircraft_cockpit_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests/cockpit_exterior_capture.cpp")
 endif()

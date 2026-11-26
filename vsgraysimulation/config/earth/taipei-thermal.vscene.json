@@ -1,0 +1,136 @@
+{
+  "format": "voxel-scene-v1",
+  "fixed_step_seconds": 0.02,
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 0
+  },
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 26,
+    "hours_utc": 4
+  },
+  "objects": [
+    {
+      "id": "taipei-terrain",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "taipei-region.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -2000,
+            "max_x": 2000,
+            "min_z": -2000,
+            "max_z": 2000
+          },
+          "grid_size": 257,
+          "imagery_size": 1024,
+          "radar_x_params": {
+            "dielectric_real": 6.0,
+            "dielectric_imag": 0.1,
+            "surface_rough": 0.45
+          },
+          "strict": true
+        },
+        "cell_size_m": 32,
+        "bottom_m": -300,
+        "hd_subdivisions": 2,
+        "voxel_surface": "smooth",
+        "mode": "hd",
+        "thermal_landcover": "rgb-inferred-v1"
+      }
+    },
+    {
+      "id": "equipment-shelter",
+      "role": "target",
+      "position_m": [
+        -16,
+        477,
+        -16
+      ],
+      "source": {
+        "type": "mesh",
+        "path": "../../models/CommandPost/CommandPost.obj",
+        "max_dimension": 104,
+        "surface_detail": "source_clipped",
+        "fill_interior": true,
+        "up_axis": "y"
+      },
+      "physics": {
+        "motion": "static",
+        "fracture": true,
+        "support": "none"
+      },
+      "material": {
+        "density_kg_m3": 550,
+        "temperature_k": 294,
+        "eps_mwir": 0.88,
+        "eps_lwir": 0.94,
+        "thermal_response": {
+          "solar_gain_k": 7,
+          "inertia_h": 2
+        }
+      },
+      "sensor_materials": {
+        "palette": [
+          {
+            "name": "外覆层（估算）"
+          },
+          {
+            "name": "散热分区（演示工况）",
+            "eps_mwir": 0.83,
+            "eps_lwir": 0.92,
+            "thermal_response": {
+              "solar_gain_k": 7,
+              "inertia_h": 2,
+              "source_gain_k": 23,
+              "source_start_s": 0.6,
+              "source_run_s": 1.8,
+              "source_tau_s": 0.65
+            }
+          },
+          {
+            "name": "浅色外饰（估算）",
+            "eps_mwir": 0.78,
+            "eps_lwir": 0.87,
+            "thermal_response": {
+              "solar_gain_k": 5,
+              "inertia_h": 1.5
+            }
+          }
+        ],
+        "regions": [
+          {
+            "min_m": [
+              0.65,
+              0.28,
+              -3.7
+            ],
+            "max_m": [
+              2.8,
+              1.9,
+              3.7
+            ],
+            "material": 1
+          },
+          {
+            "min_m": [
+              -2.8,
+              -0.2,
+              -3.7
+            ],
+            "max_m": [
+              -0.65,
+              0.5,
+              3.7
+            ],
+            "material": 2
+          }
+        ]
+      }
+    }
+  ]
+}

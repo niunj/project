@@ -105,6 +105,23 @@ int display(const std::string& service){
     auto duplicate=rawRequest(raw,json(command));require(duplicate.at("result").at("stage")=="applied"&&duplicate.at("result").at("revision")==result.revision,"duplicate flight command did not return original execution");
     auto conflicting=command;conflicting.throttle=.1;auto conflict=rawRequest(raw,json(conflicting));require(conflict.at("result").at("code")=="request_conflict","conflicting request ID was accepted");
     auto malformed=json(command);malformed["throttle"]=true;require(rawRequest(raw,malformed).contains("error"),"wire coerced boolean into throttle");
+    auto systemsCommand=command;systemsCommand.request_id="position_lights";
+    systemsCommand.aircraft_system=AircraftSystemDemand{"nav_lights",true};
+    const auto systemsRequest=net.submitFlightControl(systemsCommand);
+    bool systemsConfirmed=false;
+    while(deadline.valid()) {
+        const auto meta=net.lastSimMeta();
+        const auto states=json::parse(meta.platforms_json);
+        if(net.flightControlResult(systemsRequest,&result)&&result.stage=="applied"&&!states.empty()) {
+            const auto& systems=states.front().at("flight_control").at("systems");
+            if(systems.at("nav_lights")==true&&systems.at("revision")==result.revision) {
+                systemsConfirmed=true;
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    require(systemsConfirmed,"remote aircraft systems command did not return authoritative telemetry");
     signal(3,'A');require(receive(3)=='R',"simulation reset phase");
     while(deadline.valid()&&net.lastSimMeta().session_id==initial.session_id)std::this_thread::sleep_for(std::chrono::milliseconds(10));
     require(net.lastSimMeta().session_id!=initial.session_id,"same-scene reset did not synchronize new session");
@@ -134,15 +151,19 @@ void processes(const char* executable){
     std::string program=std::filesystem::absolute(executable).string();char* argv[]={program.data(),const_cast<char*>("--display"),const_cast<char*>(service.c_str()),nullptr};
     pid_t child=-1;require(::posix_spawn(&child,program.c_str(),&actions,nullptr,argv,environ)==0,"exec display process");posix_spawn_file_actions_destroy(&actions);::close(descriptors[1]);
     struct Child{pid_t pid;~Child(){if(pid>0){::kill(pid,SIGTERM);int status;while(::waitpid(pid,&status,0)<0&&errno==EINTR){}}}}guard{child};
-    Deadline deadline;double time=0;unsigned executionCount=0;bool reset=false,finished=false;
+    Deadline deadline;double time=0;unsigned executionCount=0,systemsCount=0;bool reset=false,finished=false;
     while(deadline.valid()&&!finished){
         FlightControlCommand command;
-        while(net.pollFlightControl(&command)){auto result=manager.applyFlightControl(command,time);net.completeFlightControl(result);++executionCount;}
+        while(net.pollFlightControl(&command)){
+            auto result=manager.applyFlightControl(command,time);net.completeFlightControl(result);
+            if(command.aircraft_system){++systemsCount;publish(time);}
+            else ++executionCount;
+        }
         if(executionCount&&!reset&&time<.5){TimeTick tick;tick.dt=.01;tick.sim_time=time+.01;manager.onPreTick(tick);physics.step(.01);manager.onPostTick(tick);time+=.01;publish(time);}
         pollfd p{descriptors[0],POLLIN,0};if(::poll(&p,1,1)>0){char event=receive(descriptors[0]);if(event=='A'){require(executionCount==1,"duplicate command executed by physics worker");manager.resetFlightControls();net.resetFlightControlSession();publish(time);reset=true;signal(descriptors[0],'R');}else if(event=='D')finished=true;else throw std::runtime_error("unknown display test signal");}
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    require(finished&&executionCount==1,"flight process test deadline or execution count");
+    require(finished&&executionCount==1&&systemsCount==1,"flight process test deadline or execution count");
     int status=0;require(::waitpid(child,&status,0)==child&&WIFEXITED(status)&&WEXITSTATUS(status)==0,"display child failed");guard.pid=-1;::close(descriptors[0]);manager.shutdown();
 }
 }

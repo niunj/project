@@ -1,0 +1,81 @@
+{
+  "format": "earth-scene-topic-v1",
+  "name": "台北近海船载装备三维预览",
+  "scene": "../earth/taipei-coast-ocean-reference-boat.vscene.json",
+  "earth_map": "../earth/default.map.json",
+  "clouds": { "cover": 0 },
+  "camera": { "eye_m": [37, 29, 40], "target_m": [0, 2, 0] },
+  "paused": true,
+  "equipment": {
+    "format": "voxel-equipment-v1",
+    "visual_only": true,
+    "platforms": [
+      {
+        "id": 200, "object": "vessel", "name": "海岸测试船", "kind": "ship",
+        "model_id": "surface-vessel",
+        "mounts": {
+          "mast_upper": { "position_m": [0, 3.55, 0] },
+          "mast_lower": { "position_m": [0, 2.85, 2] },
+          "camera_port": { "position_m": [-0.6, 2.41, -1.5] },
+          "camera_starboard": { "position_m": [0.6, 2.1, -0.7] }
+        }
+      }
+    ],
+    "equipment": [
+      {
+        "id": 7211,
+        "name": "雷达三维预览 1",
+        "platform_id": 200,
+        "band": "RADAR",
+        "period_seconds": 0.08,
+        "radar": {},
+        "fov_deg": 10,
+        "aperture": {
+          "mount_id": "mast_upper", "position_m": [0, 0, 0], "look_at_m": [0, 0, -1]
+        },
+        "visual": {
+          "model_id": "maritime-radar-1", "display_range_m": 25,
+          "preview_period_seconds": 4, "phase_deg": -15, "display_vertical_deg": 8
+        }
+      },
+      {
+        "id": 7212,
+        "name": "雷达三维预览 2",
+        "platform_id": 200,
+        "band": "RADAR",
+        "period_seconds": 0.08,
+        "radar": {},
+        "fov_deg": 20,
+        "aperture": {
+          "mount_id": "mast_lower", "position_m": [0, 0, 0], "look_at_m": [0, 0, -1]
+        },
+        "visual": {
+          "model_id": "maritime-radar-2", "display_range_m": 18,
+          "preview_period_seconds": 6, "phase_deg": -100, "display_vertical_deg": 12
+        }
+      },
+      {
+        "id": 7213,
+        "name": "广角光学三维预览",
+        "platform_id": 200,
+        "band": "TV",
+        "fov_deg": 48,
+        "aperture": {
+          "mount_id": "camera_port", "position_m": [0, 0, 0], "look_at_m": [0.6, -0.18, -1]
+        },
+        "visual": { "model_id": "optical-camera-1", "display_range_m": 16 }
+      },
+      {
+        "id": 7214,
+        "name": "窄角光学三维预览",
+        "platform_id": 200,
+        "band": "TV",
+        "fov_deg": 18,
+        "aperture": {
+          "mount_id": "camera_starboard", "position_m": [0, 0, 0], "look_at_m": [-1, -0.14, -0.7]
+        },
+        "visual": { "model_id": "optical-camera-2", "display_range_m": 21 }
+      }
+    ]
+  }
+}

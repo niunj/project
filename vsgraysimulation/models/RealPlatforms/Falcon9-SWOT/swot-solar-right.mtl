@@ -1,0 +1,6 @@
+newmtl shiny_panel
+Kd 1.000000 1.000000 1.000000
+map_Kd swot-texture-2.png
+newmtl tex_01
+Kd 1.000000 1.000000 1.000000
+map_Kd swot-texture-3.png

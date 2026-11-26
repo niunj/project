@@ -32,7 +32,11 @@ json products(){
     for(const auto& e:EquipmentRegistry::instance().listOnline()){
         const auto id=e.equipment_id;const auto st=broker.channelStats(id);json p={{"id",id},{"received",st.published_frames},{"frame_id",st.last_frame_id}};
         VisFrame v;IrFrame i;RadarFrame r;SarFrame s;
-        if(broker.latestVis(id,&v))p.update({{"payload_sha256",digest(v.intensity)},{"sim_time",v.sim_time},{"surface_revision",v.surface_revision}});
+        if(const auto f=broker.sonarSnapshot(id))p.update({{"sim_time",f->sim_time},{"tick",f->tick},
+            {"surface_revision",f->surface_revision},{"bottom",uint8_t(f->bottom)},{"water_depth_m",f->water_depth_m},
+            {"clearance_m",f->clearance_m},{"two_way_ms",f->two_way_ms},
+            {"water_column_enabled",f->water_column_enabled},{"echo_range_m",f->echo_range_m}});
+        else if(broker.latestVis(id,&v))p.update({{"payload_sha256",digest(v.intensity)},{"sim_time",v.sim_time},{"surface_revision",v.surface_revision}});
         else if(broker.latestIr(id,&i))p.update({{"payload_sha256",digest(i.radiance)},{"sim_time",i.sim_time},{"surface_revision",i.surface_revision}});
         else if(broker.latestRadar(id,&r)){
             p.update({{"payload_sha256",digest(r.rd_map)},{"sim_time",r.sim_time},{"surface_revision",r.surface_revision}});
@@ -62,7 +66,7 @@ int runSimulationEngineWorker(int argc,char** argv) {
         if(!source->initialize({{"archive_directory",(directory/"geometry").string()},{"measurement_worker",std::filesystem::canonical("/proc/self/exe").string()}}))throw std::runtime_error(source->diagnostics().dump());
         TimingBus bus;bus.configureFixedStep(source->fixedStep(),1);bus.registerSubsystem(source,0);
         if(!bus.initialize())throw std::runtime_error("worker timing bus initialization failed");
-        bus.start();bus.setPaused(true);net.setFlightControlAvailable(false);
+        bus.start();bus.setPaused(true);
         const auto initialTick=source->snapshot()->tick;
         const auto recovery=directory/"recovery.json";
         auto checkpoint=[&]{auto begin=Clock::now();source->saveRecovery(recovery.string());status["checkpoint_ms"]=millis(begin);status["recovery_checkpoint"]=recovery.string();status["recovery_tick"]=source->snapshot()->tick;};
@@ -87,16 +91,54 @@ int runSimulationEngineWorker(int argc,char** argv) {
             status["measurement_batches"]=distribution(measurementBatches);status["measurement_roundtrips"]=distribution(measurementRoundtrips);
             if(!running)status["channels"]=products();
             status["run_requested"]=requested;
-            const auto gpu=status.at("source").value("gpu_pool",json{{"pid",0},{"state","idle"},{"capacity",1}});
+            const auto& sourceStatus=status.at("source");
+            const bool visualOnly=sourceStatus.value("visual_only",false);
+            const auto gpu=sourceStatus.value("gpu_pool",json{{"pid",0},{"state","idle"},{"capacity",1}});
             json workers=json::array();
             workers.push_back({{"kind","world_time_and_physics"},{"pid",::getpid()},{"backend","CPU / existing collision precision"},{"state",running?"running":requested?"waiting_lease":"paused"}});
-            workers.push_back({{"kind","gpu_measurements"},{"pid",gpu.value("pid",0)},{"backend",gpu.value("backend",std::string("not allocated"))},{"state",gpu.value("state",std::string("idle"))}});
-            status["process_pool"]={{"gpu_capacity",1},{"gpu_allocation","on data demand; shared scene across equipment jobs"},{"workers",std::move(workers)}};
+            const bool gpuTask=!visualOnly&&!equipment.equipment.empty();
+            if(gpuTask)
+                workers.push_back({{"kind","gpu_measurements"},{"pid",gpu.value("pid",0)},{"backend",gpu.value("backend",std::string("not allocated"))},{"state",gpu.value("state",std::string("idle"))}});
+            status["process_pool"]={{"gpu_capacity",gpuTask?1:0},{"gpu_allocation","on data demand; shared scene across equipment jobs"},{"workers",std::move(workers)}};
             status["tasks"]=json::array();const auto worldState=running?"running":requested?"waiting_lease":"paused";
             status["tasks"].push_back({{"id","world.time"},{"type","time_advance"},{"state",worldState},{"pid",::getpid()},{"backend","CPU"},{"period_seconds",state->fixedStep},{"published",state->tick}});
             for(const auto& platform:equipment.platforms)status["tasks"].push_back({{"id","platform."+std::to_string(platform.id)},{"name",platform.name},{"type","platform_motion"},{"state",worldState},{"pid",::getpid()},{"backend","CPU / authoritative physics"},{"period_seconds",state->fixedStep},{"published",state->tick}});
-            for(const auto& spec:equipment.equipment){auto info=EquipmentRegistry::instance().findById(spec.sensor.id);const bool active=info&&info->powered&&SimDataBroker::instance().isSubscribed(spec.sensor.id);const auto counts=SimDataBroker::instance().channelStats(spec.sensor.id);const auto type=spec.equipment.type;status["tasks"].push_back({{"id","equipment."+std::to_string(spec.sensor.id)},{"name",spec.equipment.name},{"type",type==SensorType::IR?"infrared":type==SensorType::RADAR?"radar":type==SensorType::SAR?"sar":"optical"},{"state",!info||!info->powered?"off":!active?"waiting_lease":!requested?"paused":gpu.value("pid",0)>0?"enabled":"queued"},{"pid",gpu.value("pid",0)},{"backend","Vulkan GPU"},{"period_seconds",spec.sensor.period_seconds},{"published",counts.published_frames}});}
+            for(const auto& unit:equipment.navigation)
+                status["tasks"].push_back({{"id","navigation."+std::to_string(unit.id)},{"name",unit.name},
+                    {"type","navigation_truth"},{"state",worldState},{"pid",::getpid()},{"backend","CPU / scenario snapshot"},
+                    {"period_seconds",state->fixedStep},{"published",state->tick}});
+            for(const auto& unit:equipment.sounders){
+                const auto id=unit.equipment.equipment_id;
+                const auto info=EquipmentRegistry::instance().findById(id);
+                const auto& broker=SimDataBroker::instance();
+                status["tasks"].push_back({{"id","equipment."+std::to_string(id)},{"name",unit.equipment.name},
+                    {"type","sonar_depth"},{"pid",::getpid()},{"backend","CPU / scene seabed"},
+                    {"state",visualOnly?"preview":!info||!info->powered?"off":!broker.isSubscribed(id)?"waiting_lease":worldState},
+                    {"period_seconds",unit.periodSeconds},{"published",broker.channelStats(id).published_frames}});
+            }
+            for(const auto& spec:equipment.equipment){
+                const auto id="equipment."+std::to_string(spec.sensor.id);
+                if(visualOnly){
+                    status["tasks"].push_back({{"id",id},{"name",spec.equipment.name},{"type","equipment_visual"},
+                        {"state",worldState},{"pid",::getpid()},{"backend","CPU / scenario clock"},
+                        {"period_seconds",state->fixedStep},{"published",state->tick}});
+                    continue;
+                }
+                const auto info=EquipmentRegistry::instance().findById(spec.sensor.id);
+                const bool active=info&&info->powered&&SimDataBroker::instance().isSubscribed(spec.sensor.id);
+                const auto counts=SimDataBroker::instance().channelStats(spec.sensor.id);
+                const auto type=spec.equipment.type;
+                status["tasks"].push_back({{"id",id},{"name",spec.equipment.name},
+                    {"type",type==SensorType::IR?"infrared":type==SensorType::RADAR?"radar":type==SensorType::SAR?"sar":"optical"},
+                    {"state",!info||!info->powered?"off":!active?"waiting_lease":!requested?"paused":gpu.value("pid",0)>0?"enabled":"queued"},
+                    {"pid",gpu.value("pid",0)},{"backend","Vulkan GPU"},
+                    {"period_seconds",spec.sensor.period_seconds},{"published",counts.published_frames}});
+            }
             status["task_types"]={{{"type","time_advance"},{"supported",true}},{{"type","platform_motion"},{"supported",true}},{{"type","infrared"},{"supported",true}},{{"type","radar"},{"supported",true}},{{"type","optical"},{"supported",true}},{{"type","sar"},{"supported",true},{"product","P0 echo acquisition"}},{{"type","isar"},{"supported",false},{"reason","voxel runtime does not yet provide ISAR motion compensation and imaging"}}};
+            status["task_types"].push_back({{"type","navigation_truth"},{"supported",true},
+                {"product","WGS84 coordinate and scene-frame velocity in platform telemetry"}});
+            status["task_types"].push_back({{"type","sonar_depth"},{"supported",true},
+                {"product","vertical sounding of designated scene seabed"}});
             status["ack"]=ack;publish();
         };
         auto tick=[&]{const auto begin=Clock::now();if(!bus.isRunning())bus.start();bus.setPaused(false);if(!bus.tick()||!source->isHealthy())throw std::runtime_error(source->diagnostics().dump());bus.setPaused(!running);tickMs=millis(begin);timings.push_back(tickMs);if(timings.size()>600)timings.pop_front();const auto pool=source->diagnostics().value("gpu_pool",json::object());if(pool.value("last_products",0)>0){measurementBatches.push_back(pool.value("sensor_ms",0.));measurementRoundtrips.push_back(pool.value("roundtrip_ms",0.));if(measurementBatches.size()>600){measurementBatches.pop_front();measurementRoundtrips.pop_front();}}};
@@ -105,6 +147,7 @@ int runSimulationEngineWorker(int argc,char** argv) {
         auto next=Clock::now(),published=Clock::now();update();
         while(!quit) {
             const auto cycleBegin=Clock::now();bool advanced=false;
+            source->servicePresentationCommands();
             ControlCommand control;for(unsigned n=0;n<64&&SimDataBroker::instance().pollControl(&control);++n){}
             char bytes[4096];ssize_t count;
             while((count=::read(STDIN_FILENO,bytes,sizeof(bytes)))>0){input.append(bytes,size_t(count));if(input.size()>65536)throw std::runtime_error("worker command buffer exceeded");}

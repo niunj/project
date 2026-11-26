@@ -70,7 +70,8 @@ public:
     void clearEngagements();
 
     // ---- 实体运动轨迹拖尾 ----
-    void addTrailPoint(const std::string& id, const vsg::vec3& pos, int faction);
+    void addTrailPoint(const std::string& id, const vsg::dvec3& pos, int faction,
+                       double time, std::optional<vsg::dvec3> velocity);
     void clearTrails();
 
 signals:

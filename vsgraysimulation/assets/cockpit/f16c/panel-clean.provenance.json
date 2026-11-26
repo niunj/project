@@ -1,0 +1,7 @@
+{
+  "asset": "panel-clean.png",
+  "derived_from": "panel-base.png",
+  "method": "Image generation edit of existing project artwork; no third-party screenshot pixels",
+  "design": "Clean photorealistic F-16C-inspired instrument panel retaining the existing dual-display layout",
+  "telemetry": "Instrument readouts are drawn by the simulator and are not included in the artwork"
+}

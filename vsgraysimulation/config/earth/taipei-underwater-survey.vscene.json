@@ -1,0 +1,243 @@
+{
+  "format": "voxel-scene-v1",
+  "fixed_step_seconds": 0.02,
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 10,
+    "hours_utc": 4
+  },
+  "geo_anchor": {
+    "lat": 25.22,
+    "lon": 121.8,
+    "alt": 19.8389225006104
+  },
+  "ocean": {
+    "wave_height_m": 0.28,
+    "wave_length_m": 24,
+    "swell_height_m": 0.12,
+    "swell_length_m": 80,
+    "wind_speed_mps": 6,
+    "wind_azimuth_deg": 70,
+    "bottom_m": -100,
+    "half_extent_m": 16000,
+    "cell_size_m": 0.5,
+    "provenance": {
+      "sea_level": "local mean sea surface anchored to the new Taipei DSM sample; no measured tide",
+      "bed": "Synthetic local demonstration terrain, not Taipei bathymetry."
+    },
+    "reference_surface": {
+      "map": "taipei-sea-level.map.json",
+      "grid_size": 513,
+      "earth": {
+        "coverage": {
+          "min_x": -100000,
+          "max_x": 100000,
+          "min_z": -100000,
+          "max_z": 100000
+        },
+        "grid_size": 513,
+        "imagery_size": 32
+      }
+    }
+  },
+  "objects": [
+    {
+      "id": "taipei-coast",
+      "role": "terrain",
+      "source": {
+        "type": "earth",
+        "map": "taipei-region.map.json",
+        "earth": {
+          "coverage": {
+            "min_x": -10000,
+            "max_x": 10000,
+            "min_z": -10000,
+            "max_z": 10000
+          },
+          "grid_size": 501,
+          "imagery_size": 2048,
+          "strict": true
+        },
+        "cell_size_m": 80,
+        "bottom_m": -200,
+        "hd_subdivisions": 2,
+        "voxel_surface": "smooth",
+        "mode": "hd",
+        "sea_surface_mask": {
+          "map": "taipei-sea-level.map.json",
+          "epsilon_m": 0.25
+        }
+      }
+    },
+    {
+      "id": "assumed-bed",
+      "role": "terrain",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/OceanDemo/assumed-seabed.vsgb",
+        "max_dimension": 160,
+        "up_axis": "y",
+        "fill_interior": true
+      },
+      "physics": {
+        "motion": "static"
+      },
+      "material": {
+        "density_kg_m3": 2200,
+        "color_rgba": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "survey-vessel",
+      "role": "target",
+      "position_m": [
+        0,
+        0,
+        2
+      ],
+      "rotation_deg": [
+        0,
+        0,
+        0
+      ],
+      "source": {
+        "type": "mesh",
+        "path": "../../models/OceanDemo/test-vessel.vsgb",
+        "max_dimension": 128,
+        "up_axis": "y",
+        "fill_interior": true
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "material": {
+        "density_kg_m3": 400,
+        "temperature_k": 294,
+        "color_rgba": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "velocity_mps": [
+        0,
+        0,
+        -0.65
+      ]
+    },
+    {
+      "id": "alvin",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/Alvin/alvin.obj",
+        "voxel_size_m": 0.09,
+        "surface_detail": "source_clipped",
+        "up_axis": "y",
+        "fill_interior": true,
+        "model_reference": "WHOI Alvin public overall dimensions; illustrative mesh"
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "position_m": [
+        7.5,
+        0.8,
+        0
+      ],
+      "pose_track": [
+        {
+          "seconds": 0,
+          "position_m": [
+            7.5,
+            0.8,
+            0
+          ],
+          "rotation_xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "seconds": 4,
+          "position_m": [
+            7.5,
+            0.8,
+            0
+          ],
+          "rotation_xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "seconds": 20,
+          "position_m": [
+            7.5,
+            -6.4,
+            -1.2
+          ],
+          "rotation_xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "seconds": 25,
+          "position_m": [
+            7.5,
+            -6.4,
+            -1.2
+          ],
+          "rotation_xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "seconds": 45,
+          "position_m": [
+            9,
+            -6.4,
+            -10
+          ],
+          "rotation_xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "seconds": 61,
+          "position_m": [
+            9,
+            0.8,
+            -10
+          ],
+          "rotation_xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ]
+    }
+  ]
+}

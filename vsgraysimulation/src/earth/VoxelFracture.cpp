@@ -69,7 +69,10 @@ void validateVoxelBody(VoxelSceneObject& object,const json& source,bool checkpoi
     }
     if((!object.anchors.empty()||b.anchorAll)&&b.motion!="static")throw std::invalid_argument("anchored voxels require static motion");
     if(b.motion=="static"&&(vsg::length(object.velocity)>0||vsg::length(object.angularVelocity)>0))throw std::invalid_argument("static voxel body cannot have velocity");
-    if(b.motion=="prescribed"&&vsg::length(object.angularVelocity)>0)throw std::invalid_argument("angular motion requires dynamic mode");
+    if(b.motion=="prescribed"&&vsg::length(object.angularVelocity)>0&&
+       !object.rotor&&!object.poseTrack&&
+       !(checkpoint&&(source.contains("rotor_drive")||source.contains("pose_track"))))
+        throw std::invalid_argument("angular motion requires a rotor drive, pose track or dynamic mode");
 }
 json encodeVoxelBody(const VoxelSceneObject& o) {
     const auto& b=o.body;

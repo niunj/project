@@ -2,6 +2,9 @@
 #include <vsgraysim/earth/VoxelScene.h>
 #include <memory>
 namespace vsgraysim::earth {
+vsg::dmat4 drivenVoxelRotorPose(const VoxelSceneSnapshot&,const VoxelSceneObject&,double leadSeconds=0.);
+void synchronizeVoxelRotorPoses(VoxelSceneSnapshot&);
+vsg::dmat4 voxelTrackPose(const VoxelSceneSnapshot&,const VoxelSceneObject&,double seconds);
 // A staged Bullet world is reconstructed from a published value each tick.
 // Warm-start/manifold caches never become uncheckpointed simulation state.
 class VoxelDynamics {

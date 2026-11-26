@@ -1,0 +1,267 @@
+{
+  "format": "voxel-scene-v1",
+  "fixed_step_seconds": 0.02,
+  "geo_anchor": {
+    "lat": 25.078,
+    "lon": 121.772,
+    "alt": 0
+  },
+  "utc_origin": {
+    "year": 2026,
+    "month": 9,
+    "day": 10,
+    "hours_utc": 4
+  },
+  "objects": [
+    {
+      "id": "survey-wing",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/SkywalkerX8/x8_body.dae",
+        "voxel_size_m": 0.021,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "position_m": [
+        0,
+        1800,
+        2
+      ],
+      "velocity_mps": [
+        0,
+        0,
+        -3
+      ]
+    },
+    {
+      "id": "inspection-quad",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/3DR-Iris/iris.stl",
+        "voxel_size_m": 0.009,
+        "up_axis": "z",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "position_m": [
+        4.5,
+        1800,
+        0
+      ],
+      "velocity_mps": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "x8-left-elevon",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/SkywalkerX8/x8_elevon_left.dae",
+        "voxel_size_m": 0.019,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "position_m": [
+        -0.75116,
+        1799.99633,
+        2.35502
+      ],
+      "velocity_mps": [
+        0,
+        0,
+        -3
+      ]
+    },
+    {
+      "id": "x8-right-elevon",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/SkywalkerX8/x8_elevon_right.dae",
+        "voxel_size_m": 0.019,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "position_m": [
+        0.75116,
+        1799.99633,
+        2.35502
+      ],
+      "velocity_mps": [
+        0,
+        0,
+        -3
+      ]
+    },
+    {
+      "id": "x8-prop",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/SkywalkerX8/x8_propeller.dae",
+        "voxel_size_m": 0.012,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "rotor_drive": {
+        "carrier": "survey-wing",
+        "pivot_m": [
+          0,
+          0,
+          0.34687
+        ],
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "rpm": 75,
+        "phase_deg": 22
+      }
+    },
+    {
+      "id": "quad-prop-1",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/3DR-Iris/iris_prop_ccw.dae",
+        "voxel_size_m": 0.008,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "rotor_drive": {
+        "carrier": "inspection-quad",
+        "pivot_m": [
+          0.13,
+          0.023,
+          0.22
+        ],
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "rpm": 90,
+        "phase_deg": 16
+      }
+    },
+    {
+      "id": "quad-prop-2",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/3DR-Iris/iris_prop_ccw.dae",
+        "voxel_size_m": 0.008,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "rotor_drive": {
+        "carrier": "inspection-quad",
+        "pivot_m": [
+          -0.13,
+          0.023,
+          -0.2
+        ],
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "rpm": 90,
+        "phase_deg": 32
+      }
+    },
+    {
+      "id": "quad-prop-3",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/3DR-Iris/iris_prop_cw.dae",
+        "voxel_size_m": 0.008,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "rotor_drive": {
+        "carrier": "inspection-quad",
+        "pivot_m": [
+          0.13,
+          0.023,
+          -0.22
+        ],
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "rpm": -90,
+        "phase_deg": 48
+      }
+    },
+    {
+      "id": "quad-prop-4",
+      "role": "target",
+      "source": {
+        "type": "mesh",
+        "path": "../../models/RealPlatforms/3DR-Iris/iris_prop_cw.dae",
+        "voxel_size_m": 0.008,
+        "up_axis": "y",
+        "surface_detail": "source_clipped",
+        "fill_interior": false
+      },
+      "physics": {
+        "motion": "prescribed"
+      },
+      "rotor_drive": {
+        "carrier": "inspection-quad",
+        "pivot_m": [
+          -0.13,
+          0.023,
+          0.2
+        ],
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "rpm": -90,
+        "phase_deg": 64
+      }
+    }
+  ]
+}

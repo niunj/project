@@ -210,6 +210,71 @@ int main() try {
     const auto manifest = VoxelScenePackage::save(file, topic, expected);
     require(VoxelScenePackage::checkpoint(file) == expected, "package changed exact canonical checkpoint");
     require(VoxelScene::open(file)->checkpoint() == expected, "runtime package restore differs");
+    {
+        auto pagedTopic = topic;
+        pagedTopic["terrain_paging"] = "quad-v1";
+        const auto pagedFile = root / "paged.vsimscene";
+        const auto paged = VoxelScenePackage::save(pagedFile, pagedTopic, expected);
+        const auto& catalog = paged.at("terrain_pages").begin().value();
+        const auto& assets = catalog.at("pages");
+        require(assets.size() == 4 && VoxelScenePackage::checkpoint(pagedFile) == expected,
+                "terrain pages changed the exact checkpoint");
+        auto restored = VoxelSceneProject::open(pagedFile).createScene();
+        require(restored->checkpoint() == expected, "formal project loader changed the paged authoritative scene");
+        const auto& grid = catalog.at("grid");
+        const auto n = grid.at("dimensions").get<std::array<int, 3>>();
+        const auto origin = grid.at("origin_m").get<std::array<double, 3>>();
+        const double cell = grid.at("cell_size_m");
+        const double x = origin[0] + (n[0] / 2) * cell, z = origin[2] + (n[2] / 2) * cell;
+        const std::array<double, 4> first{origin[0], origin[2], x - .5 * cell, z - .5 * cell};
+        const std::array<double, 4> last{x + .5 * cell, z + .5 * cell, x + cell, z + cell};
+        const auto page = VoxelScenePackage::terrainPagesAsync(pagedFile, first).get();
+        const auto seam = VoxelScenePackage::terrainPagesAsync(pagedFile, {x, z, x, z}).get();
+        require(page.size() == 1 && page[0].at("page") == 0 && seam.size() == 4 &&
+                VoxelScenePackage::terrainPagesAsync(pagedFile, last).get().at(0).at("page") == 3,
+                "page selector missed seam or decoded outside the query");
+        require(VoxelScenePackage::terrainPagesAsync(pagedFile, first).get() == page,
+                "reloading an evicted page changed its samples");
+
+        // Remove a far asset: selective reads must neither open it nor mask its failure on demand.
+        const auto far = root / paged.at("assets").at(assets[3].get<std::string>()).at("uri").get<std::string>();
+        const auto offline = fs::path(far.string() + ".offline");
+        fs::rename(far, offline);
+        require(VoxelScenePackage::terrainPagesAsync(pagedFile, first).get() == page,
+                "near page unexpectedly required far data");
+        rejects([&] { VoxelScenePackage::terrainPagesAsync(pagedFile, last).get(); });
+        rejects([&] { VoxelScenePackage::checkpoint(pagedFile); });
+        fs::rename(offline, far);
+
+        auto reference = VoxelScene::load(expected);
+        auto compareRays = [&] {
+            for (double dx : {-.75, -.25, .25, .75}) for (double dz : {-.75, -.25, .25, .75}) {
+                const vsg::dvec3 origin{x + dx * cell, 12, z + dz * cell}, down{0,-1,0};
+                const auto a = reference->raycast(origin, down, 20), b = restored->raycast(origin, down, 20);
+                const auto c = reference->rigidRaycast(origin, down, 20), d = restored->rigidRaycast(origin, down, 20);
+                require(bool(a) == bool(b) && bool(c) == bool(d) &&
+                        (!a || a->distance == b->distance) && (!c || c->distance == d->distance),
+                        "page seam changed surface/collision ranges");
+            }
+        };
+        compareRays();
+        const auto centre = restored->raycast({x, 12, z}, {0,-1,0}, 20);
+        require(bool(centre), "missing terrain beneath fixture seam");
+        for (auto* current : {reference.get(), restored.get()}) {
+            current->schedule({{"kind", "damage"}, {"object", "earth"}, {"tick", 1},
+                {"point_m", {x, centre->position.y - .5, z}}, {"radius_m", 1.3}});
+            current->setPaused(false);
+            current->advanceTo(current->snapshot()->fixedStep, 1);
+            current->setPaused(true);
+        }
+        compareRays();
+        const auto damaged = restored->checkpoint();
+        require(damaged == reference->checkpoint() && damaged.at("journal").back().at("removed_voxels") > 0,
+                "cross-page damage changed physical results or removed no cells");
+        const auto changed = VoxelScenePackage::save(pagedFile, pagedTopic, damaged);
+        require(changed.contains("terrain_pages") && VoxelScene::open(pagedFile)->checkpoint() == damaged,
+                "cross-page damage did not survive evict/reload and package reopen");
+    }
     std::map<fs::path, fs::file_time_type> timestamps;
     for (const auto &asset : manifest["assets"].items()) {
         auto path = root / asset.value()["uri"].get<std::string>();

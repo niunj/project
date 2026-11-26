@@ -1,12 +1,15 @@
 {
   "schema": "vsgraysim.cockpit",
   "version": 1,
+  "layout": "vector-flow",
+  "photo_panel": {
+    "background": "../../assets/cockpit/ah64d/panel-base.png",
+    "grips": "../../assets/cockpit/ah64d/control-grips.png"
+  },
   "id": "ah64d",
   "name": "AH-64D · 直升机显控台",
   "category": "helicopter",
   "description": "中央周期变距杆 / 左侧总距外观 · 双发与旋翼仪表",
-  "background": "../../assets/cockpit/ah64d/panel-base.png",
-  "grips": "../../assets/cockpit/ah64d/control-grips.png",
   "engine_count": 2,
   "controls": {
     "stick": [

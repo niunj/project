@@ -1,5 +1,6 @@
 #include "VoxelSceneFeature.h"
 #include "ViewportContext.h"
+#include "TerrainDisplayPages.h"
 #include "FeatureRegistry.h"
 #include "EnvFeatures.h"
 #include "EarthViewFeature.h"
@@ -28,7 +29,12 @@ vsg::ref_ptr<vsg::Node> compilationRoot(vsg::ref_ptr<vsg::Node> draw,const earth
 }
 struct TerrainLightingBindings : vsg::Inherit<vsg::Object,TerrainLightingBindings> {
     std::vector<std::shared_ptr<earth::TerrainCloudShadow>> passes;
-    struct Entry{const void* source=nullptr;const void* clouds=nullptr;std::shared_ptr<earth::TerrainCloudShadow> pass;};
+    struct Entry {
+        const void* source = nullptr;
+        const void* clouds = nullptr;
+        std::shared_ptr<earth::TerrainCloudShadow> pass;
+        std::shared_ptr<TerrainDisplayPages> pages;
+    };
     std::map<std::string,Entry> cached;
 };
 struct OceanLightingBindings : vsg::Inherit<vsg::Object,OceanLightingBindings> {std::shared_ptr<earth::VoxelOceanDisplay> pass;};
@@ -73,7 +79,7 @@ void VoxelSceneFeature::load(const nlohmann::json& config,const nlohmann::json* 
         earth::VoxelScene::open(config.at("scene_json").get<std::string>());
     candidate->setPaused(config.value("paused",true));
     auto display=earth::makeVoxelSceneDisplay(*candidate->snapshot(),nullptr,true);
-    decorateContext(display,candidate->snapshot());
+    decorateContext(display,candidate->snapshot(),config.value("terrain_display_paging",false));
     prepareClusters(display,config);
     auto chart=vsg::MatrixTransform::create(simcore::geo::makeEnuToWorldMatrix(candidate->snapshot()->anchor));chart->addChild(display.node);
     if(context_->viewer()&&context_->viewer()->compileManager) {
@@ -85,6 +91,7 @@ void VoxelSceneFeature::load(const nlohmann::json& config,const nlohmann::json* 
     if(auto* sky=context_->featureAs<SkyFeature>(SkyFeature::kId))sky->configure(candidate->snapshot()->utcOrigin);
     runtime_=std::move(candidate);display_=std::move(display);chart_=chart;pending_.reset();
     mountClusterCommands();
+    mountCockpitOwnship();
     if(auto* ocean=context_->featureAs<OceanFeature>(OceanFeature::kId)) {
         if(runtime_->snapshot()->ocean){if(!legacyOceanSuppressed_)legacyOceanWasEnabled_=ocean->enabled();ocean->setEnabled(false);legacyOceanSuppressed_=true;}
         else if(legacyOceanSuppressed_){ocean->setEnabled(legacyOceanWasEnabled_);legacyOceanSuppressed_=false;}
@@ -121,14 +128,15 @@ void VoxelSceneFeature::configure(const nlohmann::json& values) {
     const double error=candidate.value("cluster_error_pixels",.65);
     if(!std::isfinite(error)||error<0||error>2)throw std::invalid_argument("cluster_error_pixels must be in [0,2]");
     if(candidate.contains("clustered_rendering"))candidate.at("clustered_rendering").get<bool>();
+    const bool pagingChanged = candidate.value("terrain_display_paging",false) != config_.value("terrain_display_paging",false);
     if(context_&&(values.contains("scene_json")||values.contains("checkpoint")))load(candidate);
     else {
-        if(context_&&snapshot()&&values.contains("clustered_rendering")){
+        if(context_&&snapshot()&&(values.contains("clustered_rendering")||pagingChanged)){
             prepare(snapshot(),true,&candidate);synchronize();
         }
         if(runtime_&&values.contains("paused"))runtime_->setPaused(candidate.at("paused").get<bool>());
     }
-    if(preparing_)for(const auto* key:{"paused","clustered_rendering","cluster_error_pixels"})
+    if(preparing_)for(const auto* key:{"paused","clustered_rendering","cluster_error_pixels","terrain_display_paging"})
         if(values.contains(key))preparingConfig_[key]=candidate.at(key);
     config_=std::move(candidate);timeScale_=scale;
 }
@@ -140,9 +148,11 @@ void VoxelSceneFeature::onAttach(ViewportContext& context) {
     context_=&context;holder_=vsg::Switch::create();oceanCommands_=vsg::Switch::create();clusterCommands_=vsg::Switch::create();
     try{if(!config_.value("external_only",false))load(config_);}catch(...){context_=nullptr;holder_=nullptr;oceanCommands_=nullptr;clusterCommands_=nullptr;throw;}
     context.worldRoot()->addChild(holder_);
+    terrainPageRecord_ = QObject::connect(context.widget(), &gui::VsgQtWidget::beforeSceneRecord,
+        context.widget(), [this] { updateTerrainDisplayPages(); });
     if(auto* pre=context.preRenderRoot()){pre->addChild(oceanCommands_);pre->addChild(clusterCommands_);}
 }
-void VoxelSceneFeature::bindSnapshot(earth::VoxelSceneSnapshotPtr next) {
+void VoxelSceneFeature::bindSnapshot(earth::VoxelSceneSnapshotPtr next,nlohmann::json presentation,nlohmann::json equipmentVisuals) {
     if(!context_||!config_.value("external_only",false)||!next)throw std::logic_error("voxel viewport is not a ready read-only consumer");
     const bool first=!external_;
     if(first) {
@@ -156,6 +166,8 @@ void VoxelSceneFeature::bindSnapshot(earth::VoxelSceneSnapshotPtr next) {
         for(const auto& [id,o]:next->objects){auto old=external_->objects.find(id);if(old==external_->objects.end()||old->second.volume!=o.volume||old->second.geometry!=o.geometry){changed=true;break;}}
     }
     if(changed){chart_->matrix=simcore::geo::makeEnuToWorldMatrix(next->anchor);prepare(next,true);}
+    presentation_=std::move(presentation);
+    setEquipmentVisuals(std::move(equipmentVisuals));
     external_=std::move(next);synchronize();
     if(first&&config_.contains("camera_local")&&context_->camera())if(auto look=context_->camera()->viewMatrix.cast<vsg::LookAt>()) {
         const auto& camera=config_.at("camera_local");const auto& e=camera.at("eye_m");const auto& t=camera.at("target_m");
@@ -165,7 +177,13 @@ void VoxelSceneFeature::bindSnapshot(earth::VoxelSceneSnapshotPtr next) {
     }
     if(changed)context_->requestCompile();
 }
+
+void VoxelSceneFeature::setEquipmentVisuals(nlohmann::json data) {
+    equipmentVisuals_=std::move(data);
+    ++equipmentVisualGeneration_;
+}
 void VoxelSceneFeature::onDetach(ViewportContext& context) {
+    QObject::disconnect(terrainPageRecord_);
     if(legacyOceanSuppressed_)if(auto* ocean=context.featureAs<OceanFeature>(OceanFeature::kId))ocean->setEnabled(legacyOceanWasEnabled_);
     legacyOceanSuppressed_=false;
     if(auto* map=context.featureAs<EarthViewFeature>(EarthView::kId)){map->setSceneOcean({});map->setSceneTerrainQuery(nullptr);}
@@ -180,13 +198,19 @@ void VoxelSceneFeature::onDetach(ViewportContext& context) {
     oceanCommands_=nullptr;clusterCommands_=nullptr;
     preparing_.reset();preparingConfig_=nlohmann::json::object();
     contextOcean_.reset();contextKey_.clear();contextNode_=nullptr;
+    hiddenSwitches_.clear();hiddenPresentation_.clear();ownshipId_.clear();presentation_=nlohmann::json::array();equipmentVisuals_=nlohmann::json::object();++equipmentVisualGeneration_;
     runtime_.reset();external_.reset();pending_.reset();display_={};holder_=nullptr;chart_=nullptr;context_=nullptr;
 }
 void VoxelSceneFeature::prepare(earth::VoxelSceneSnapshotPtr snapshot,bool force,const nlohmann::json* renderConfig) try {
     if(!force&&snapshot->contentRevision==display_.contentRevision)return;
-    auto candidate=earth::makeVoxelSceneDisplay(*snapshot,std::getenv("VSGRAYSIM_SCENE_REBUILD_ALL")?nullptr:&display_,true);
-    decorateContext(candidate,snapshot);
-    prepareClusters(candidate,renderConfig?*renderConfig:config_);
+    const auto& options = renderConfig ? *renderConfig : config_;
+    const bool pageTerrain = options.value("terrain_display_paging",false);
+    const bool freshDraw = pageTerrain && (!config_.value("terrain_display_paging",false) ||
+        !display_.node || !display_.node->getObject<TerrainLightingBindings>("voxel-earth-lighting"));
+    auto candidate = earth::makeVoxelSceneDisplay(*snapshot,
+        (freshDraw || std::getenv("VSGRAYSIM_SCENE_REBUILD_ALL")) ? nullptr : &display_, true);
+    decorateContext(candidate,snapshot,pageTerrain);
+    prepareClusters(candidate,options);
     if(context_->viewer()&&context_->viewer()->compileManager) {
         context_->viewer()->deviceWaitIdle();
         auto compiled=context_->viewer()->compileManager->compile(compilationRoot(candidate.node,candidate));
@@ -204,6 +228,7 @@ void VoxelSceneFeature::synchronize() {
     if(pending_&&pending_->contentRevision==snapshot->contentRevision) {
         display_=std::move(*pending_);pending_.reset();chart_->children.clear();chart_->addChild(display_.node);
         mountClusterCommands();
+        mountCockpitOwnship();
     }
     display_.sync(*snapshot);
     if(auto* ocean=context_->featureAs<OceanFeature>(OceanFeature::kId)) {
@@ -211,6 +236,42 @@ void VoxelSceneFeature::synchronize() {
         else if(legacyOceanSuppressed_){ocean->setEnabled(legacyOceanWasEnabled_);legacyOceanSuppressed_=false;}
     }
     synchronizeTerrainQuery();
+}
+void VoxelSceneFeature::setCockpitOwnship(const std::string& objectId) {
+    if(ownshipId_==objectId)return;
+    ownshipId_=objectId;
+    mountCockpitOwnship();
+}
+void VoxelSceneFeature::setPresentationHiddenObjects(std::set<std::string> ids) {
+    if(ids==hiddenPresentation_)return;
+    hiddenPresentation_=std::move(ids);
+    mountCockpitOwnship();
+}
+void VoxelSceneFeature::mountCockpitOwnship() {
+    if(!display_.node)return;
+    auto ids=hiddenPresentation_;
+    if(!ownshipId_.empty())ids.insert(ownshipId_);
+    for(const auto& [id,hide]:hiddenSwitches_) {
+        for(auto& child:display_.node->children)if(child==hide) {
+            child=hide->children.front().node;
+            break;
+        }
+    }
+    hiddenSwitches_.clear();
+    const auto state=snapshot();
+    if(!state)return;
+    for(const auto& id:ids) {
+        const auto object=state->objects.find(id);
+        const auto placement=display_.placements.find(id);
+        if(object==state->objects.end()||object->second.role=="terrain"||placement==display_.placements.end())continue;
+        for(auto& child:display_.node->children)if(child==placement->second) {
+            auto hide=vsg::Switch::create();
+            hide->addChild(false,child);
+            child=hide;
+            hiddenSwitches_.emplace(id,std::move(hide));
+            break;
+        }
+    }
 }
 void VoxelSceneFeature::prepareClusters(earth::VoxelSceneDisplay& display,const nlohmann::json& config) {
     const auto mode=std::getenv("VSGRAYSIM_CLUSTERED_RENDERING");
@@ -231,12 +292,21 @@ void VoxelSceneFeature::mountClusterCommands() {
     clusterCommands_->children.clear();
     if(display_.clusters)clusterCommands_->addChild(enabled_,display_.clusters->commands());
 }
-void VoxelSceneFeature::decorateContext(earth::VoxelSceneDisplay& display,earth::VoxelSceneSnapshotPtr snapshot) {
+void VoxelSceneFeature::decorateContext(earth::VoxelSceneDisplay& display,earth::VoxelSceneSnapshotPtr snapshot,bool pageTerrain) {
     if(oceanCommands_)oceanCommands_->children.clear();
     if(snapshot->ocean) {
         auto binding=OceanLightingBindings::create();binding->pass=std::make_shared<earth::VoxelOceanDisplay>(*snapshot,!std::getenv("VSGRAYSIM_SCENE_REBUILD_ALL")&&display_.node&&display_.node->getObject<OceanLightingBindings>("voxel-ocean-lighting")?display_.node->getObject<OceanLightingBindings>("voxel-ocean-lighting")->pass.get():nullptr,context_->window()->getOrCreateDevice().get(),context_->featureAs<EarthViewFeature>(EarthView::kId)?context_->featureAs<EarthViewFeature>(EarthView::kId)->cloudResources():nullptr);
         if(oceanCommands_)oceanCommands_->addChild(enabled_,binding->pass->commands);
-        for(const auto& [id,o]:snapshot->objects){if(o.earth&&o.body.motion=="static"&&o.parentId.empty()&&!std::getenv("VSGRAYSIM_OCEAN_REFERENCE_HYDRO"))continue;auto placement=display.placements.at(id);if(placement->children.empty())continue;auto group=placement->children.front().cast<vsg::StateGroup>();if(!group||group->children.empty())continue;auto draw=group->children.front().cast<vsg::VertexIndexDraw>();if(draw)placement->children.front()=binding->pass->object(o,draw);}
+        for(const auto& [id,o]:snapshot->objects){
+            if(o.surface().hasMaterialBlend)continue;
+            if(o.earth&&o.body.motion=="static"&&o.parentId.empty()&&!std::getenv("VSGRAYSIM_OCEAN_REFERENCE_HYDRO"))continue;
+            auto placement=display.placements.at(id);
+            if(placement->children.empty())continue;
+            auto group=placement->children.front().cast<vsg::StateGroup>();
+            if(!group||group->children.empty())continue;
+            auto draw=group->children.front().cast<vsg::VertexIndexDraw>();
+            if(draw)placement->children.front()=binding->pass->object(o,draw);
+        }
         display.node->addChild(binding->pass->background);display.node->addChild(binding->pass->depthSurface);display.node->addChild(binding->pass->surface);display.node->addChild(binding->pass->spray);display.node->setObject("voxel-ocean-lighting",binding);
     }
     auto* map=context_->featureAs<EarthViewFeature>(EarthView::kId);
@@ -248,10 +318,26 @@ void VoxelSceneFeature::decorateContext(earth::VoxelSceneDisplay& display,earth:
         auto placement=display.placements.at(id);if(placement->children.empty())continue;
         auto group=placement->children.front().cast<vsg::StateGroup>();if(!group||group->children.empty())continue;
         auto draw=group->children.front().cast<vsg::VertexIndexDraw>();if(!draw)continue;
-        std::shared_ptr<earth::TerrainCloudShadow> lighting;
-        if(previousLights){const auto found=previousLights->cached.find(id);if(found!=previousLights->cached.end()&&found->second.source==draw.get()&&found->second.clouds==map->cloudResources().get())lighting=found->second.pass;}
-        if(!lighting)lighting=std::make_shared<earth::TerrainCloudShadow>(o.surface(),draw,map->cloudResources());
-        lights->cached[id]={draw.get(),map->cloudResources().get(),lighting};placement->children.front()=lighting->node;lights->passes.push_back(std::move(lighting));
+        TerrainLightingBindings::Entry entry;
+        if (previousLights) {
+            const auto found = previousLights->cached.find(id);
+            if (found != previousLights->cached.end() && found->second.source == draw.get() &&
+                found->second.clouds == map->cloudResources().get() && bool(found->second.pages) == pageTerrain)
+                entry = found->second;
+        }
+        if (!entry.pass) {
+            entry.source = draw.get();
+            entry.clouds = map->cloudResources().get();
+            entry.pass = std::make_shared<earth::TerrainCloudShadow>(o.surface(), draw, map->cloudResources());
+            if (pageTerrain) {
+                const auto [x, z] = o.earth->pageSplitXZ();
+                entry.pages = std::make_shared<TerrainDisplayPages>(draw, x, z, o.earth->cellSize() * 4);
+                entry.pass->node->children.front() = entry.pages->node();
+            }
+        }
+        placement->children.front() = entry.pass->node;
+        lights->passes.push_back(entry.pass);
+        lights->cached.emplace(id, std::move(entry));
     }
     if(!map->showsSceneContext())return;
     std::set<const earth::VoxelEarthPatch*> seen;std::vector<vsg::dbox> windows;
@@ -284,6 +370,48 @@ void VoxelSceneFeature::decorateContext(earth::VoxelSceneDisplay& display,earth:
     display.contextDrawable=display.node->children.size();
     display.node->addChild(contextNode_);
 }
+nlohmann::json VoxelSceneFeature::terrainDisplayPageStats() const {
+    auto result = nlohmann::json::object();
+    const auto* lights = display_.node ? display_.node->getObject<TerrainLightingBindings>("voxel-earth-lighting") : nullptr;
+    if (lights) for (const auto& [id, entry] : lights->cached) {
+        if (!entry.pages) continue;
+        const auto& stats = entry.pages->stats();
+        result[id] = {{"visible",stats.visible}, {"resident",stats.resident}, {"loads",stats.loads},
+            {"evictions",stats.evictions}, {"resident_geometry_bytes",stats.residentBytes},
+            {"unpartitioned_geometry_bytes",stats.originalBytes}};
+    }
+    return result;
+}
+
+void VoxelSceneFeature::updateTerrainDisplayPages() {
+    if (!enabled_ || !display_.node || !chart_) return;
+    auto* viewer = context_->viewer();
+    auto* camera = context_->camera();
+    if (!viewer || !viewer->compileManager || !camera) return;
+    auto* lights = display_.node->getObject<TerrainLightingBindings>("voxel-earth-lighting");
+    if (!lights) return;
+    for (auto& [id, entry] : lights->cached) {
+        if (!entry.pages) continue;
+        const auto fallback = [&](const std::string& error) {
+            spdlog::warn("Terrain page rendering for {} switched to the complete draw: {}", id, error);
+            viewer->deviceWaitIdle();
+            const auto draw = entry.pages->source();
+            auto compiled = viewer->compileManager->compile(draw);
+            if (!compiled) throw std::runtime_error("terrain draw upload failed: " + compiled.message);
+            vsg::updateViewer(*viewer, compiled);
+            entry.pass->node->children.front() = draw;
+            entry.pages.reset();
+        };
+        try {
+            entry.pages->update(*viewer, *camera, chart_->matrix * display_.placements.at(id)->matrix);
+        } catch (const vsg::Exception& error) {
+            fallback(error.message);
+        } catch (const std::exception& error) {
+            fallback(error.what());
+        }
+    }
+}
+
 void VoxelSceneFeature::synchronizeTerrainQuery() {
     if(!context_||!snapshot())return;
     auto* map=context_->featureAs<EarthViewFeature>(EarthView::kId);if(!map)return;
@@ -311,6 +439,14 @@ void VoxelSceneFeature::onFrame(ViewportContext&,const FrameTick& tick) {
             runtime_->advanceTo(targetSeconds_);
         }
         synchronize();
+        if (config_.value("terrain_display_paging",false) &&
+            !display_.node->getObject<TerrainLightingBindings>("voxel-earth-lighting")) {
+            auto* map = context_->featureAs<EarthViewFeature>(EarthViewFeature::kId);
+            if (map && map->surfaceSnapshot()) {
+                prepare(snapshot(),true);
+                synchronize();
+            }
+        }
         if(display_.clusters&&context_->camera())
             clusterCommands_->setAllChildren(display_.clusters->update(display_,chart_->matrix,*context_->camera(),
                 config_.value("cluster_error_pixels",.65f),context_->widget()->property("renderFrameSerial").toULongLong()));

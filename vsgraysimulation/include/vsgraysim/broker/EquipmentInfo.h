@@ -46,6 +46,7 @@ struct EquipmentInfo {
     bool        remote = false;         // true=远端镜像条目 (显控进程内)
     uint64_t    last_seen_ms = 0;       // 远端心跳最近时刻 (epoch ms)
     std::string host;                   // 来源仿真进程名 (远端条目)
+    std::string model_id;               // Stable model ID, optional on legacy publishers
 };
 
 // =============================================================================

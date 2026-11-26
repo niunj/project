@@ -20,6 +20,8 @@
 #include "voxel_cloud_sensor.glsl"
 #endif
 
+#include "surface_thermal.glsl"
+
 layout(local_size_x = 8, local_size_y = 8) in;
 
 layout(set = 0, binding = 0, rgba32f) uniform readonly image2D inG0;   // (T, eps, range_m, hit)
@@ -40,7 +42,8 @@ layout(set = 0, binding = 3) uniform BandUbo {
     vec4 oceanWave[16];  // #4 海面波场: x=波长L y=振幅A z=cosθ w=sinθ (CPU WaveField 单一真值)
     vec4 oceanOpt;       // #4: x=Gerstner Q (<=0 禁用), y=有效谐波数, z=像素角 rad/px, w pad
     vec4 thermal;        // #6 热演化: x=dayRelax y=nightRelax z=nightDrop K w=云影降温 K
-    vec4 band5;          // r10 云型: x=cloudType 0卷云/1层云/2层积云/3积云/4积雨云, yzw pad
+    vec4 band5;          // x cloud type, y environmental cloud coverage
+    vec4 thermalState;   // local solar hour, air anomaly K, wetness, scene seconds
 } bb;
 
 layout(set = 0, binding = 4) uniform sampler2D lutTex;    // 波段出射度 LUT (512×1)
@@ -49,7 +52,7 @@ layout(set = 0, binding = 4) uniform sampler2D lutTex;    // 波段出射度 LUT
 layout(set = 0, binding = 9) uniform sampler2D skyTex;
 
 layout(set = 0, binding = 5) buffer SpecBuf {
-    vec4 mats[];   // 2 vec4/材质: a=(ρ_tv, ρ_swir, ε_mwir, ε_lwir) b=(镜面强度, GGX粗糙度, 0, 0)
+    vec4 mats[];   // 4 vec4/材质 (末两项为热响应和局部热源): a=(ρ_tv, ρ_swir, ε_mwir, ε_lwir) b=(镜面强度, GGX粗糙度, 0, 0)
 };
 
 layout(set = 0, binding = 6) uniform CamUbo {
@@ -577,7 +580,7 @@ void main() {
     // ---- 批次1/2: 路径方向 (相机→目标, 供方向化路径辐射) + 目标面太阳反射 ----
     const vec4 g1 = imageLoad(inG1, px);
     if (bb.band.w >= 1.5) {
-        const vec4 spectral = mats[uint(g1.w + 0.5) * 2];
+        const vec4 spectral = mats[uint(g1.w + 0.5) * 4];
         const float overrideEps = bb.band.w < 2.5 ? spectral.z : spectral.w;
         if (overrideEps >= 0.0) eps = clamp(overrideEps, 0.0, 1.0);
     }
@@ -593,7 +596,7 @@ void main() {
         vec3 N = dot(Nraw, V) < 0.0 ? -Nraw : Nraw;   // 两面着色 (CCW 绕序保障)
         const vec3 Ldir = normalize(ub.env2.xyz);
         const uint matId = uint(g1.w + 0.5);
-        const vec4 specB = mats[matId * 2 + 1];
+        const vec4 specB = mats[matId * 4 + 1];
         // #4 海面逐像素细节: 解析波法线 + 白沫值 (非水 foam=0 恒等)。
         // 水体 TV 反照率用谱材质 ρ_tv (海水 0.02 真值) 而非槽表 Kd —— 程序化
         // 海面无贴图槽 → Kd=0.5 灰, 朗伯漫反射主导即"面粉海"根因
@@ -613,7 +616,7 @@ void main() {
             // 水面: 菲涅尔天空反射主导 (Schlick n=1.33, ρ0=0.02) + Cox-Munk
             // 展宽 GGX 耀斑 (粗糙度=风驱 RMS 斜率, 随风速) + 白沫漫反射 ——
             // 真实海面 TV 辐亮度主体是天空镜像, 离水辐射可忽略
-            const vec4 specA = mats[matId * 2 + 0];
+            const vec4 specA = mats[matId * 4 + 0];
             const vec3 diffRho = mix(vec3(max(specA.x, 0.0)),           // 水体离水反照率
                                      vec3(0.25, 0.26, 0.28), foam);     // 白沫面组同值
             const float cosV = max(dot(N, V), 0.0);
@@ -633,7 +636,7 @@ void main() {
         } else {
             // Spectral rho_tv scales linear source color/imagery. Previously
             // only SWIR/IR consumed the material table and TV silently ignored it.
-            const float rhoTv = mats[matId * 2].x;
+            const float rhoTv = mats[matId * 4].x;
             if (rhoTv >= 0.0) albedo *= clamp(rhoTv, 0.0, 1.0);
             // 非水: 太阳直射漫反射 (白光) + GGX 镜面耀斑 (暖白; 光滑面)
             vec3 Lsolar = albedo * ub.env.z * NdotL / PI;
@@ -657,17 +660,21 @@ void main() {
     float NdotLc = 0.0;    // Teff 太阳项 N·L: 水体=波场平均(竖直) / 陆地=几何法线
     float shadowF = 1.0;   // #6: 直射云影因子 (L_solar 与云影降温同源复用)
     // B2/C1: 法线上提 (太阳朝向温差与天空反射共用; 两面着色 CCW 绕序保障)
-    const vec3 N0 = imageLoad(inG2, px).xyz;
+    const vec4 pointNormal = imageLoad(inG2, px);
+    const vec3 N0 = pointNormal.xyz;
     const vec3 Nraw = length(N0) > 0.5 ? normalize(N0) : vec3(0.0, 1.0, 0.0);
     const vec3 V = -pathDir;                        // 目标点 → 相机
     vec3 N = dot(Nraw, V) < 0.0 ? -Nraw : Nraw;
     const uint matId = uint(g1.w + 0.5);
-    const vec4 specB = mats[matId * 2 + 1];
+    const vec4 specB = mats[matId * 4 + 1];
     // #4 海面逐像素细节: 解析波法线 (LWIR 亮带/天空镜像纹理 + 朝向温差随波面
     // 起伏) + 白沫 (发射率向 1.0 靠拢, 与批次3 白沫面组同值; 非水 foam=0 恒等)
     float slopeVar;
     const float foam = seaShade(N, g1.xyz, specB.z, slopeVar);
-    const float epsE = mix(eps, 1.0, foam);
+    const vec4 response = mats[matId * 4 + 2];
+    const bool diffuseLand = response.x > 1.5;
+    const float wetEmissivity = wetSurfaceEmissivity(eps, response, bb.thermalState.z);
+    const float epsE = mix(wetEmissivity, 1.0, foam);
     // Cox-Munk 风驱斜率统计 (水面): σ²_cm = 0.003 + 5.12e-3·U10 —— 太阳耀斑
     // 带宽度与天空反射展开随风速展宽 (旧 specB.y=0.18 材质标签恒定, 不随风速,
     // 修 IR 海况"不准确"); 亚像素方差 slopeVar 已入 seaShade 法线随机采样,
@@ -678,7 +685,7 @@ void main() {
     const float specR = isSea ? sqrt(0.003 + 5.12e-3 * max(bb.band3.w, 0.0)) : specB.y;
     if (ub.env.z > 0.0) {
         const vec3 Ldir = normalize(ub.env2.xyz);
-        const vec4 specA = mats[matId * 2 + 0];
+        const vec4 specA = mats[matId * 4 + 0];
         // ρ_band 列选择: TV→ρ_tv / SWIR→ρ_swir / MWIR|LWIR→0 (热主导, Esun≈0 双保险)
         const float rho = bb.band.w < 0.5 ? specA.x : (bb.band.w < 1.5 ? specA.y : 0.0);
         NdotL = max(dot(N, Ldir), 0.0);
@@ -704,17 +711,28 @@ void main() {
     //   被强烈阻尼 (旧式全额生效 → 假热条纹随波相锁定, 修 IR 海况"不准确");
     //   海面 IR 纹理对比度改由反射物理 (ρ(θ)·Lsky + 耀斑) 承担 —— 真实热像
     //   的海面对比来源。
-    const float Teff = T
+    float Teff = T
                      + waterT * bb.band2.x * (NdotLc - bb.band2.y) * bb.thermal.x
                      - bb.thermal.z * bb.thermal.y * waterT
                      - bb.thermal.w * (1.0 - shadowF) * bb.thermal.x;
+    if (response.x > 0.5) {
+        const float daylight = clamp(bb.band2.x / 14.0,0.0,1.0);
+        const vec3 solarDir = normalize(ub.env2.xyz);
+        float exposure = 0.0;
+        if (daylight > 0.0) {
+            const float heatShadow = ub.env.z > 0.0 ? shadowF : cloudShadow(g1.xyz, solarDir);
+            const vec3 thermalNormal = diffuseLand ? unpackThermalNormal(pointNormal.w,Nraw) : Nraw;
+            exposure = (max(dot(thermalNormal, solarDir),0.0) * heatShadow - max(solarDir.y,0.0)) * daylight;
+        }
+        Teff = surfaceTemperature(T, response, mats[matId * 4 + 3], bb.thermalState, bb.band5.y, exposure);
+    }
     // C1 天空反射 (Kirchhoff 能量守恒): ρ(θ)=ρ0+(1-ρ0)·(1-cosθ)^5 (Schlick,
     // ρ0=1-ε) —— 掠射反射增强, 海面 LWIR 地平线亮带/天空镜像来源; 反射方向按
     // GGX 粗糙度混合 (光滑面→镜像天图方向, 粗糙面→朝天半球均值近似)。
     // 发射项相应降为 (1-ρSky) 保持能量守恒; 夜间天空图仍有效 (大气热辐射)。
     const float r0 = clamp(1.0 - epsE, 0.0, 1.0);   // #4: 白沫 ε→1 ⇒ ρ0→0 (反射减弱)
     const float cosV = max(dot(N, V), 0.0);
-    const float rhoSky = r0 + (1.0 - r0) * pow(1.0 - cosV, 5.0);
+    const float rhoSky = diffuseLand ? r0 : r0 + (1.0 - r0) * pow(1.0 - cosV, 5.0);
     // 反射展开权重: 水面由 Cox-Munk α 映射 1/(1+1.24α) (α=0.18 → 0.82 与旧
     // 材质标签行为标定一致; α 随风速增大 → 混入更多朝天均值 = 展开变宽),
     // 非水材质仍用 specB.y (恒等回归)。
@@ -722,15 +740,23 @@ void main() {
                                 : clamp(1.0 - specB.y, 0.0, 1.0);
     // #5 天空反射混合云体 (march 起点=目标点, 反射射线离面向上): 晴空 × τ_c
     //    + 云发射 band4.w —— 海面 LWIR 云底镜像/亮带随云态变化
-    const float LskyR = mix(skyCloudL(g1.xyz, vec3(0.0, 1.0, 0.0), 10),
-                            skyCloudL(g1.xyz, reflect(pathDir, N), 10), smoothW);
+    const float Lsky = skyCloudL(g1.xyz, vec3(0.0, 1.0, 0.0), 10);
+    const float LskyR = diffuseLand ? Lsky
+        : mix(Lsky, skyCloudL(g1.xyz, reflect(pathDir, N), 10), smoothW);
     const float L_target = (1.0 - rhoSky) * bandExitance(Teff) / PI
                          + L_solar + rhoSky * LskyR;   // 目标辐亮度
-    // 批次2: 路径辐射沿视线方向采样天图 (均匀天图时退化为旧标量 (1-τ)·sky)
-    const float L_path = (1.0 - tau) * skyRadiance(pathDir);
+    // For authored thermal surfaces approximate the intervening air as a
+    // uniform emitting layer. A downward ray must not use the dark sky below
+    // the horizon as the source term of a warm and opaque path.
+    const bool thermalPath = response.x > 0.5 && bb.band.w >= 1.5;
+    const float pathHeight = max(0.0, 0.5 * (cb.cam.y + g1.y));
+    const float pathTemperature = clamp(293.15 + bb.thermalState.y - 0.0065 * pathHeight, 210.0, 330.0);
+    const float pathSource = thermalPath ? bandExitance(pathTemperature) / PI : skyRadiance(pathDir);
+    const float L_path = (1.0 - tau) * pathSource;
     // #5 视线穿云 (相机→目标): 云体衰减目标 + 云发射叠加 (热像穿云语义;
     // 晴空 τ_c=1/cl=0 与旧式逐位一致)
     float vTau, vCl;
     cloudMarch(cb.cam.xyz, pathDir, 12, rangeM, vTau, vCl);
-    imageStore(outP0, px, vec4(vCl * bb.band4.w + vTau * (L_target * tau + L_path), Teff, epsE, rangeKm));
+    const float cloudEmission = (thermalPath ? 1.0 - vTau : vCl) * bb.band4.w;
+    imageStore(outP0, px, vec4(cloudEmission + vTau * (L_target * tau + L_path), Teff, epsE, rangeKm));
 }

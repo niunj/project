@@ -7,6 +7,10 @@
 #include <limits>
 #include <stdexcept>
 namespace vsgraysim::earth::detail {
+inline uint8_t atlasOpacity(float alpha,bool blend,float cutoff) {
+    if(blend)return uint8_t(std::lround(std::clamp(alpha,0.f,1.f)*255.f));
+    return cutoff>=0.f&&alpha<cutoff?0:255;
+}
 struct SourcePatch {uint32_t cell;size_t triangle;std::vector<vsg::dvec3> points;};
 inline std::vector<vsg::dvec3> clipSourceTriangle(vsg::dvec3 a,vsg::dvec3 b,vsg::dvec3 c,const vsg::dvec3& low,double cell) {
     std::vector<vsg::dvec3> polygon{a,b,c};
@@ -59,9 +63,15 @@ std::shared_ptr<VoxelSurfaceAppearance> sourceAppearance(const Collector& source
         for(const auto& q:p.points){const auto w=weights(q[u],q[v]);destination.vertices.push_back({q,vsg::vec3(nAt(w)),vsg::vec2(float((tileU+(q[u]-loU)/width*span)/out->width),float((tileV+(q[v]-loV)/height*span)/out->height))});}
         for(int y=0;y<tile;++y)for(int x=0;x<tile;++x){const auto w0=weights(loU+std::clamp((x-1.)/span,0.,1.)*width,loV+std::clamp((y-1.)/span,0.,1.)*height);auto w=vsg::dvec3(std::max(0.,w0.x),std::max(0.,w0.y),std::max(0.,w0.z));w/=w.x+w.y+w.z;vsg::vec2 uv{};vsg::vec4 color{};vsg::vec3 emit{};for(int j=0;j<3;++j){uv+=source.attributes[i+j].uv*float(w[j]);color+=source.attributes[i+j].color*float(w[j]);emit+=source.attributes[i+j].emissive*float(w[j]);}
             const auto& attr=source.attributes[i];const auto texel=sample(attr.image.get(),uv,true),mr=sample(attr.mrImage.get(),uv,false);const size_t d=4*(size_t(slot/columns*tile+y)*out->width+slot%columns*tile+x);
-            for(int c=0;c<3;++c){const double z=std::clamp(double(texel[c]*color[c]),0.,1.);out->rgba[d+c]=uint8_t(std::lround(255*(z<=.0031308?12.92*z:1.055*std::pow(z,1/2.4)-.055)));}out->rgba[d+3]=255;
-            out->mr_rgba[d]=255;out->mr_rgba[d+1]=uint8_t(std::clamp(attr.roughness*mr.g,.04f,1.f)*255+.5f);out->mr_rgba[d+2]=uint8_t(std::clamp(attr.metallic*mr.b,0.f,1.f)*255+.5f);out->mr_rgba[d+3]=255;
-            if(emission){for(int c=0;c<3;++c)out->emissive_rgba[d+c]=uint8_t(std::clamp(emit[c],0.f,1.f)*255+.5f);out->emissive_rgba[d+3]=255;}
+            for(int c=0;c<3;++c){const double z=std::clamp(double(texel[c]*color[c]),0.,1.);out->rgba[d+c]=uint8_t(std::lround(255*(z<=.0031308?12.92*z:1.055*std::pow(z,1/2.4)-.055)));}
+            out->rgba[d+3]=atlasOpacity(texel.a*color.a,attr.blend,attr.alphaCutoff);
+            // The spare MR alpha tags blend tiles without changing the volume format.
+            out->mr_rgba[d]=255;out->mr_rgba[d+1]=uint8_t(std::clamp(attr.roughness*mr.g,.04f,1.f)*255+.5f);out->mr_rgba[d+2]=uint8_t(std::clamp(attr.metallic*mr.b,0.f,1.f)*255+.5f);out->mr_rgba[d+3]=attr.blend?0:255;
+            if(emission){
+                const auto texture=sample(attr.emissionImage.get(),uv,true);
+                for(int c=0;c<3;++c)out->emissive_rgba[d+c]=uint8_t(std::clamp(emit[c]*texture[c],0.f,1.f)*255+.5f);
+                out->emissive_rgba[d+3]=255;
+            }
             if(normal){vsg::dvec3 encoded(0,0,1);if(attr.normalImage){const auto tex=sample(attr.normalImage.get(),uv,false);const auto n=nAt(w);const auto du=source.attributes[i+1].uv-attr.uv,dv=source.attributes[i+2].uv-attr.uv;const double determinant=double(du.x)*dv.y-double(du.y)*dv.x;auto t=e0*double(dv.y)-e1*double(du.y);if(determinant<0)t=-t;t-=n*vsg::dot(t,n);if(vsg::length(t)<1e-10)t=e0-n*vsg::dot(e0,n);if(vsg::length(t)>1e-10){t=vsg::normalize(t);const auto b=vsg::cross(n,t)*(determinant<0?-1.:1.);const auto world=vsg::normalize(t*(tex.x*2-1.)+b*(tex.y*2-1.)+n*(tex.z*2-1.));vsg::dvec3 atlasT{};atlasT[u]=1;atlasT[axis]=-geometric[u]/geometric[axis];atlasT-=n*vsg::dot(atlasT,n);atlasT=vsg::normalize(atlasT);encoded=vsg::dvec3(vsg::dot(world,atlasT),vsg::dot(world,vsg::normalize(vsg::cross(n,atlasT))),vsg::dot(world,n));}}
                 for(int c=0;c<3;++c)out->normal_rgba[d+c]=uint8_t(std::clamp(encoded[c]*.5+.5,0.,1.)*255+.5);out->normal_rgba[d+3]=255;}
         }

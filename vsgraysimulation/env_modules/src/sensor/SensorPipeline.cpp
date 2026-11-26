@@ -107,7 +107,7 @@ vsg::ref_ptr<vsg::Node> createThermalScene() {
 // ===========================================================================
 namespace {
 
-constexpr uint32_t kUboFloats = 48;      // SensorUBO 192B
+constexpr uint32_t kUboFloats = 56;      // 224 B, trailing thermal state used by raster IR
 
 bool loadStages(const char* vertName, const char* fragName,
                 vsg::ref_ptr<vsg::ShaderStage>& vs, vsg::ref_ptr<vsg::ShaderStage>& fs,
@@ -393,6 +393,12 @@ void SensorPipeline::setEnv(const EnvAnswer& env) {
         (*ubo)[45] = float(dir[1]);
         (*ubo)[46] = float(dir[2]);
         (*ubo)[47] = 0.0f;
+        (*ubo)[48] = float(env.thermal_local_hour);
+        (*ubo)[49] = float(env.thermal_air_delta_k);
+        (*ubo)[50] = float(env.thermal_wetness);
+        (*ubo)[51] = float(env.thermal_scene_seconds);
+        (*ubo)[52] = float(env.cloud_coverage);
+        (*ubo)[54] = float(env.is_day);
         ubo->dirty();   // DYNAMIC_DATA: modifiedCount 变化触发 record 时上传
     }
 }
@@ -450,7 +456,7 @@ SensorPipeline::BuildResult SensorPipeline::buildImpl(vsg::ref_ptr<vsg::Device> 
         }
     }
 
-    // ---- UBO (48 floats = 192B, 与 shader SensorUBO 布局一致) ----
+    // ---- UBO (56 floats, legacy fields keep their offsets) ----
     ubo = vsg::floatArray::create(kUboFloats);
     ubo->properties.dataVariance = vsg::DYNAMIC_DATA;
     for (auto& f : *ubo) f = 0.0f;
@@ -470,6 +476,13 @@ SensorPipeline::BuildResult SensorPipeline::buildImpl(vsg::ref_ptr<vsg::Device> 
         (*ubo)[46] = float(dir[2]);
         (*ubo)[47] = 0.0f;
     }
+    (*ubo)[48] = float(envAnswer.thermal_local_hour);
+    (*ubo)[49] = float(envAnswer.thermal_air_delta_k);
+    (*ubo)[50] = float(envAnswer.thermal_wetness);
+    (*ubo)[51] = float(envAnswer.thermal_scene_seconds);
+    (*ubo)[52] = float(envAnswer.cloud_coverage);
+    (*ubo)[53] = float(profile.band.type == BandType::MWIR ? 2 : profile.band.type == BandType::LWIR ? 3 : 0);
+    (*ubo)[54] = float(envAnswer.is_day);
     (*ubo)[24] = lut.tMin();                                  // band
     (*ubo)[25] = lut.tMax();
     (*ubo)[26] = float((profile.band.lambda_min + profile.band.lambda_max) * 0.5 * 1e6);
@@ -514,6 +527,7 @@ SensorPipeline::BuildResult SensorPipeline::buildImpl(vsg::ref_ptr<vsg::Device> 
     auto dslScene = vsg::DescriptorSetLayout::create();   // rad: UBO + LUT
     dslScene->addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
     dslScene->addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+    dslScene->addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
     auto dslChain = vsg::DescriptorSetLayout::create();   // optics/elec: UBO + in
     dslChain->addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
     dslChain->addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
@@ -577,7 +591,6 @@ SensorPipeline::BuildResult SensorPipeline::buildImpl(vsg::ref_ptr<vsg::Device> 
     // ---- 描述符集 ----
     auto uboDesc = vsg::DescriptorBuffer::create(ubo, 0);
     auto lutDesc = makeSampledImage(sampler, lutView, 1);
-    auto radSet = vsg::DescriptorSet::create(dslScene, vsg::Descriptors{uboDesc, lutDesc});
     // P0 采样源 (B2): RT → bandRT->p0 (GENERAL 布局); 光栅 → radColor (SHADER_READ_ONLY)
     auto p0ImageInfo = useRT
         ? vsg::ImageInfo::create(sampler, bandRT_->p0, VK_IMAGE_LAYOUT_GENERAL)
@@ -616,7 +629,6 @@ SensorPipeline::BuildResult SensorPipeline::buildImpl(vsg::ref_ptr<vsg::Device> 
     // inject its unrelated projection/modelview matrices into sensor parameters.
     auto layoutDisp = vsg::PipelineLayout::create(vsg::DescriptorSetLayouts{dslDisp,dslView}, vsg::PushConstantRanges{});
 
-    auto bindRad = vsg::BindDescriptorSet::create(VK_PIPELINE_BIND_POINT_GRAPHICS, layoutRad, 0, radSet);
     // #2/#3 观察口描述符: albedo/槽表取场景资源池, 天空图/云图取 BandRT (共享
     // 同一 GPU 纹理, 与 RT TV 链同源); RT 模块不存在 (光栅回退) 时绑 1×1 占位。
     vsg::ref_ptr<vsg::ImageView> visAlbedo;
@@ -643,17 +655,23 @@ SensorPipeline::BuildResult SensorPipeline::buildImpl(vsg::ref_ptr<vsg::Device> 
     vsg::ref_ptr<vsg::BufferInfo> spectral=shared?shared->spectralDataInfo:vsg::ref_ptr<vsg::BufferInfo>{};
     if(!spectral){
         const auto count=rtMaterials&&!rtMaterials->empty()?rtMaterials->size():size_t(1);
-        auto data=vsg::floatArray::create(count*8);for(auto& value:*data)value=0;
+        auto data=vsg::floatArray::create(count*16);for(auto& value:*data)value=0;
         for(size_t index=0;index<count;++index){
-            auto* fields=data->data(index*8);fields[0]=-1;fields[5]=.5;
+            auto* fields=data->data(index*16);fields[0]=fields[2]=fields[3]=-1;fields[5]=.5;
             if(rtMaterials&&!rtMaterials->empty()){
                 const auto& material=(*rtMaterials)[index];
                 fields[0]=material.rho_tv>=0?material.rho_tv:(material.emissivity>0?1-material.emissivity:-1);
+                fields[2]=material.eps_mwir;fields[3]=material.eps_lwir;
                 fields[4]=material.spec_strength;fields[5]=material.spec_roughness;fields[6]=material.dielectric_model==1?1:0;
+                std::copy(material.thermal_surface.begin(),material.thermal_surface.end(),fields+8);
+                std::copy(material.thermal_source.begin(),material.thermal_source.end(),fields+12);
             }
         }
         spectral=vsg::BufferInfo::create(data);
     }
+    auto radSet = vsg::DescriptorSet::create(dslScene, vsg::Descriptors{uboDesc, lutDesc,
+        vsg::DescriptorBuffer::create(vsg::BufferInfoList{spectral},2,0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)});
+    auto bindRad = vsg::BindDescriptorSet::create(VK_PIPELINE_BIND_POINT_GRAPHICS,layoutRad,0,radSet);
     // #5 体积云 UBO (12 float = 3 vec4; setCloudVolume 每帧数值去重注入)
     uboVolume_ = vsg::floatArray::create(12);
     uboVolume_->properties.dataVariance = vsg::DYNAMIC_DATA;

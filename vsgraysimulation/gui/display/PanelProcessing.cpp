@@ -1,6 +1,7 @@
 #include "PanelProcessing.h"
 #include "TrackManager.h"
 #include <vsgraysim/broker/SimDataBroker.h>
+#include <rocky_env/SensorApi.h>
 #include <vsgraysim/layer3b_signal/SensorSignalProcessor.h>
 #include <algorithm>
 #include <cmath>
@@ -44,12 +45,39 @@ void radarRangeProfiles(const RadarFrame& frame,uint32_t pulseIndex,PanelResult&
         }else out.curveDb[bin]=out.radialDb[bin];
     }
 }
-QImage grayscale(const std::vector<float>& values,uint32_t w,uint32_t h,bool stretch,bool thermal){
-    QImage image(int(w),int(h),QImage::Format_RGB32);float lo=0,hi=1;
+QImage grayscale(const std::vector<float>& values,uint32_t w,uint32_t h,bool stretch,bool thermal,float lo=0,float hi=1){
+    QImage image(int(w),int(h),QImage::Format_RGB32);
     if(stretch){lo=std::numeric_limits<float>::infinity();hi=-lo;for(float value:values)if(std::isfinite(value)){lo=std::min(lo,value);hi=std::max(hi,value);}if(!std::isfinite(lo)){lo=0;hi=1;}}
     const float span=hi-lo;for(uint32_t y=0;y<h;++y){auto* row=reinterpret_cast<QRgb*>(image.scanLine(int(y)));for(uint32_t x=0;x<w;++x){const float value=values[size_t(y)*w+x];const float t=std::isfinite(value)?(span>1e-12f?std::clamp((value-lo)/span,0.f,1.f):(value>0?.5f:0.f)):0;
         if(thermal)row[x]=qRgb(int(255*std::clamp(3*t,0.f,1.f)),int(255*std::clamp(3*t-1,0.f,1.f)),int(255*std::clamp(3*t-2,0.f,1.f)));else {const auto level=int(std::lround(t*255));row[x]=qRgb(level,level,level);}}}return image;
 }
+}
+QImage infraredRadianceImage(const std::vector<float>& values, uint32_t width, uint32_t height,
+                              double minMicrons, double maxMicrons, bool automatic, bool thermalPalette) {
+    float lo = 0, hi = 1;
+    if (minMicrons > 0 && maxMicrons > minMicrons && maxMicrons <= 100) {
+        auto radiance = [&](double t) {
+            return float(rockyenv::sensor::bandExitance(minMicrons*1e-6,maxMicrons*1e-6,t) / std::acos(-1.0));
+        };
+        lo = radiance(265);
+        hi = radiance(335);
+    }
+    if (automatic) {
+        std::vector<float> finite;
+        finite.reserve(std::min<size_t>(values.size(),4096));
+        const size_t stride = std::max<size_t>(1,(values.size()+4095)/4096);
+        for (size_t i=0;i<values.size();i+=stride)
+            if (std::isfinite(values[i])) finite.push_back(values[i]);
+        if (finite.size() >= 8) {
+            const auto lower = finite.begin()+finite.size()*2/100;
+            const auto upper = finite.begin()+finite.size()*98/100;
+            std::nth_element(finite.begin(),lower,finite.end());
+            const float lowerValue = *lower;
+            std::nth_element(lower,upper,finite.end());
+            if (*upper > lowerValue+1e-9f) {lo = lowerValue; hi = *upper;}
+        }
+    }
+    return grayscale(values,width,height,false,thermalPalette,lo,hi);
 }
 PanelProcessor::PanelProcessor():worker_([this]{run();}){}
 PanelProcessor::~PanelProcessor(){{std::lock_guard lock(mutex_);stop_=true;}wake_.notify_one();worker_.join();}
@@ -114,6 +142,9 @@ void PanelProcessor::run(){
                     const auto span=float(input.isarDynamicRangeDb);
                     for(auto& value:display)value=out.maximum>0.f?std::clamp(1.f+(amplitudeDb(value)-peakDb)/span,0.f,1.f):0.f;
                     out.image=grayscale(display,out.width,out.height,false,input.thermal);
+                }else if(input.type==SensorType::IR&&out.stage==0){
+                    out.image=infraredRadianceImage(display,out.width,out.height,out.bandMinMicrons,out.bandMaxMicrons,
+                                                    input.stretch,input.thermal);
                 }else{
                     if(input.type==SensorType::SAR&&input.logarithmic)for(auto& value:display)value=amplitudeDb(value);
                     out.image=grayscale(display,out.width,out.height,input.stretch,input.thermal);

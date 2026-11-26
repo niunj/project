@@ -1,0 +1,18 @@
+# HIMARS repaired material
+# Matte painted military-vehicle surface; texture remains the primary base color.
+
+newmtl Himars
+Ka 0.150000 0.150000 0.150000
+Kd 1.000000 1.000000 1.000000
+Ks 0.080000 0.080000 0.080000
+Ns 28.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+Tr 0.000000
+illum 2
+Pr 0.720000
+Pm 0.000000
+Pc 0.000000
+Pcr 0.000000
+map_Kd Himars.tif

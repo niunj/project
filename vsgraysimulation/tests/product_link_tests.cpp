@@ -26,6 +26,7 @@ using namespace vsgraysim;
 using Clock=std::chrono::steady_clock;
 void require(bool value,const char* message) { if(!value) throw std::runtime_error(message); }
 constexpr uint32_t kImageSide=512;
+constexpr uint32_t kEquipmentCount=5;
 float radianceAt(size_t index) { return .125f+float((index*13)%1024)*.125f; }
 nlohmann::json earthFixture() {
     return {{"geo_anchor",{{"lat",25.078},{"lon",121.772},{"alt",10.5},{"heading_deg",23.0}}},
@@ -84,7 +85,7 @@ int display(const std::string& service,uint32_t first) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     require(found && net.simOnline(),"display did not discover the isolated simulation process");
-    for(uint32_t id:{first,first+1,first+2}) {
+    for(uint32_t id=first;id<first+kEquipmentCount;++id) {
         auto equipment=EquipmentRegistry::instance().findById(id);
         require(equipment && equipment->remote,"discovery did not produce remote equipment identities");
         require(net.linkAttach(id),"remote equipment link was rejected");
@@ -101,7 +102,8 @@ int display(const std::string& service,uint32_t first) {
     sendByte(3,'A');
     IrFrame infrared; RadarFrame radar; SarFrame sar; bool received=false;
     while(deadline.remaining()>0) {
-        if(broker.latestIr(first,&infrared) && broker.latestRadar(first+1,&radar) && broker.latestSar(first+2,&sar)) { received=true; break; }
+        if(broker.latestIr(first,&infrared) && broker.latestRadar(first+1,&radar) && broker.latestSar(first+2,&sar)
+           &&broker.sonarSnapshot(first+3)&&broker.sonarSnapshot(first+4)) { received=true; break; }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     require(received,"typed measurement data did not arrive over the process link");
@@ -112,10 +114,16 @@ int display(const std::string& service,uint32_t first) {
         "P2 RD frame lost sampling/CPI metadata or complex data");
     require(sar.frame_id==0 && sar.stage==0 && sar.sample_rate_hz==20e6f && sar.range_min==5 && sar.echo_data.size()==4 && sar.echo_data[1]==std::complex<float>(3,4),
         "P0 SAR raw IQ lost sampling/gate metadata or data");
+    const auto depth=broker.sonarSnapshot(first+3),column=broker.sonarSnapshot(first+4);
+    require(depth->valid()&&!depth->water_column_enabled&&depth->water_depth_m==16.5&&depth->echo_range_m==0.,
+        "legacy depth sounder fields changed in transport");
+    require(column->valid()&&column->water_column_enabled&&column->echo_range_m==4.25&&column->tick==40&&
+        column->surface_revision==depth->surface_revision&&column->sim_time==12.5,
+        "water-column sounding lost its echo or scene metadata in transport");
     sendByte(3,'F'); expectByte(3,'C',deadline);
     ControlCommand command; command.type=ControlCommand::Type::PowerOff; command.equipment_id=first; command.equipment_type=SensorType::IR;
     net.sendControl(command); sendByte(3,'P'); expectByte(3,'O',deadline);
-    for(uint32_t id:{first,first+1,first+2}) require(net.linkDetach(id),"remote detach failed");
+    for(uint32_t id=first;id<first+kEquipmentCount;++id)require(net.linkDetach(id),"remote detach failed");
     std::this_thread::sleep_for(std::chrono::milliseconds(150)); // finish any already-delivered callback
     const auto before=broker.channelStats(first+2).published_frames;
     sendByte(3,'D'); expectByte(3,'G',deadline); expectByte(3,'Q',deadline);
@@ -153,34 +161,47 @@ int simulation(const char* executable) {
     const int control=synchronization.value[0]; Deadline deadline;
     auto& broker=SimDataBroker::instance(); auto& net=BrokerNet::instance();
     broker.serverOnline(true);
-    for(uint32_t offset=0;offset<3;++offset) {
+    for(uint32_t offset=0;offset<kEquipmentCount;++offset) {
         EquipmentInfo info; info.equipment_id=first+offset; info.platform_id=77; info.platform_name="fixture aircraft";
-        info.type=offset==0 ? SensorType::IR : offset==1 ? SensorType::RADAR : SensorType::SAR; info.name="isolated sensor"; info.powered=true;
+        constexpr SensorType types[]{SensorType::IR,SensorType::RADAR,SensorType::SAR,SensorType::SONAR,SensorType::SONAR};
+        info.type=types[offset];info.name="isolated sensor";info.powered=true;
         EquipmentRegistry::instance().registerEquipment(info);
     }
     net.startSimRole(configuration(service)); require(net.transportEnabled(),"simulation transport did not start");
     net.setLinkGate([&](const std::set<uint32_t>& linked) {
-        uint32_t mask=0; for(uint32_t offset=0;offset<3;++offset) if(linked.count(first+offset)) mask|=1u<<offset;
+        uint32_t mask=0; for(uint32_t offset=0;offset<kEquipmentCount;++offset) if(linked.count(first+offset)) mask|=1u<<offset;
         gate.store(mask,std::memory_order_release);
     });
     net.setSimMeta(service,12.5,40,true);
     net.setPlatformTelemetry(R"([{"platform_id":77,"name":"fixture aircraft","position":[100,1250.5,-25],"velocity":[80,0,0],"speed":80,"yaw":90,"pitch":0,"roll":2.5,"sim_time":12.5}])");
     net.setEarthContext(earthFixture().dump());
     sendByte(control,'R'); expectByte(control,'A',deadline);
-    require(gate.load(std::memory_order_acquire)==7,"simulation link gate did not open for all selected sensors");
+    require(gate.load(std::memory_order_acquire)==(1u<<kEquipmentCount)-1,"simulation link gate did not open for all selected sensors");
     IrFrame infrared; infrared.surface_revision=earthFixture().at("surface_revision"); infrared.sensor_id=first; infrared.resize(kImageSide,kImageSide); infrared.stage=0; for(size_t pixel=0;pixel<infrared.radiance.size();++pixel) infrared.radiance[pixel]=radianceAt(pixel);
     RadarFrame radar; radar.sensor_id=first+1; radar.resize(2,2); radar.stage=2; radar.sample_rate_hz=30e6; radar.prf=40; radar.coherent_pulses=2; radar.rd_map={{1,2},{3,4},{5,6},{7,8}};
     SarFrame sar; sar.sensor_id=first+2; sar.resize(2,2); sar.stage=0; sar.sample_rate_hz=20e6f; sar.range_min=5; sar.echo_data={{1,2},{3,4},{5,6},{7,8}};
+    SonarFrame bottom;
+    bottom.sensor_id=first+3;bottom.platform_id=77;bottom.tick=40;bottom.sim_time=12.5;
+    bottom.surface_revision=infrared.surface_revision;bottom.range_limit_m=30.;bottom.transducer_draft_m=1.5;
+    bottom.bottom=BottomReturn::Valid;bottom.clearance_m=15.;bottom.water_depth_m=16.5;bottom.two_way_ms=20.;
+    SonarFrame column=bottom;
+    column.sensor_id=first+4;column.bottom=BottomReturn::NoBottom;
+    column.clearance_m=column.water_depth_m=column.two_way_ms=0.;
+    column.water_column_enabled=true;column.echo_range_m=4.25;
     while(!ready(control,10)) {
         require(deadline.remaining()>0,"display did not receive measurements before deadline");
         require(broker.publishIr(infrared) && broker.publishRadar(radar) && broker.publishSar(sar),"simulation rejected valid fixture measurements");
+        ++bottom.frame_id;
+        column.frame_id=bottom.frame_id;
+        require(broker.publishSonar(bottom)&&broker.publishSonar(column),"simulation rejected valid soundings");
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     expectByte(control,'F',deadline); sendByte(control,'C'); expectByte(control,'P',deadline);
     while(broker.isEquipmentPowered(first) && deadline.remaining()>0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     require(!broker.isEquipmentPowered(first),"display control only changed local UI state, not simulation power");
     sendByte(control,'O'); expectByte(control,'D',deadline);
-    require(gate.load(std::memory_order_acquire)==0 && !net.linkAllows(first) && !net.linkAllows(first+1) && !net.linkAllows(first+2),"simulation gate stayed open after remote detach");
+    require(gate.load(std::memory_order_acquire)==0,"simulation gate stayed open after remote detach");
+    for(uint32_t id=first;id<first+kEquipmentCount;++id)require(!net.linkAllows(id),"detached sensor still forwards frames");
     sendByte(control,'G'); sar.frame_id=999;
     for(int attempt=0;attempt<3;++attempt) require(broker.publishSar(sar),"unlinked publication fixture was not accepted locally");
     sendByte(control,'Q'); expectByte(control,'X',deadline);

@@ -1,0 +1,23 @@
+{
+  "format": "voxel-scene-v1",
+  "fixed_step_seconds": 0.02,
+  "geo_anchor": {"lat": 25.045277777778, "lon": 121.551388888889, "alt": 35.0118179321},
+  "utc_origin": {"year": 2026, "month": 11, "day": 18, "hours_utc": 4},
+  "objects": [
+    {
+      "id": "taipei-terrain", "role": "terrain",
+      "source": {
+        "type": "earth", "map": "taipei-m1a2-motion.map.json",
+        "earth": {"coverage": {"min_x": -520, "max_x": 520, "min_z": -520, "max_z": 520},
+                  "strict": true, "grid_size": 129, "imagery_size": 512},
+        "cell_size_m": 8.125, "bottom_m": -90, "hd_subdivisions": 2, "mode": "hd"
+      }
+    },
+    {
+      "id": "m1a2", "role": "target", "position_m": [0, 0.2, 0], "velocity_mps": [0, 0, 2.5],
+      "source": {"type": "mesh", "path": "../../models/M1A2/M1A2.obj", "up_axis": "y",
+                 "max_dimension": 128, "fill_interior": true, "surface_detail": "source_clipped"},
+      "physics": {"motion": "prescribed", "support": "none", "fracture": false}
+    }
+  ]
+}

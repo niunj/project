@@ -1,6 +1,8 @@
+#include "VoxelTerrainPages.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cerrno>
 #include <cstdlib>
 #include <dlfcn.h>
@@ -13,6 +15,7 @@
 #include <stdexcept>
 #include <unistd.h>
 #include <vsgraysim/earth/VoxelScenePackage.h>
+#include <vsgraysim/earth/SceneTasks.h>
 #include <zlib.h>
 namespace vsgraysim::earth {
 namespace {
@@ -103,9 +106,9 @@ void validateManifest(const json &m) {
         if (!m.at("assets").contains(id))
             throw std::invalid_argument("scene package references missing asset");
     };
-    std::set<std::string> ids;
+    std::map<std::string, const json*> objects;
     for (const auto &object : m.at("objects")) {
-        if (!ids.insert(object.at("id").get<std::string>()).second)
+        if (!objects.emplace(object.at("id").get<std::string>(), &object).second)
             throw std::invalid_argument("duplicate package object ID");
         reference(object.at("state"));
         reference(object.at("volume"));
@@ -118,6 +121,40 @@ void validateManifest(const json &m) {
         for (const auto &item : m.at(key).items())
             reference(item.value());
     }
+    if (!m.contains("terrain_pages")) return;
+    const auto& catalog = m.at("terrain_pages");
+    if (!catalog.is_object() || catalog.size() > 256)
+        throw std::invalid_argument("invalid terrain page catalog");
+    std::set<std::string> owners;
+    for (const auto& [patch, entry] : catalog.items()) {
+        const auto owner = entry.at("object").get<std::string>();
+        if (!owners.insert(owner).second || !objects.count(owner) || !m.at("earth_patches").contains(patch))
+            throw std::invalid_argument("terrain page owner or source patch missing");
+        const auto& object = *objects.at(owner);
+        const auto& grid = object.at("grid");
+        const terrain_pages::Layout layout(entry.at("grid"));
+        if (grid.at("dimensions") != layout.dimensions || grid.at("origin_m") != layout.origin ||
+            grid.at("cell_size_m") != layout.cell || object.at("role") != "terrain" ||
+            object.at("physics").at("motion") != "static")
+            throw std::invalid_argument("terrain pages disagree with the indexed object grid");
+        if (!entry.at("pages").is_array() || entry.at("pages").size() != 4)
+            throw std::invalid_argument("terrain page layout requires four assets");
+        for (const auto& digest : entry.at("pages")) reference(digest);
+    }
+}
+
+json readAsset(const fs::path& path, const json& manifest, const std::string& id) {
+    const auto& entry = manifest.at("assets").at(id);
+    const auto size = entry.at("expanded_bytes").get<uint64_t>();
+    const auto compressed = bytes(assetPath(path, entry), assetLimit);
+    if (compressed.size() != entry.at("stored_bytes").get<uint64_t>())
+        throw std::invalid_argument("scene asset length mismatch");
+    std::vector<uint8_t> data(size);
+    uLongf decoded = size;
+    if (uncompress(data.data(), &decoded, compressed.data(), compressed.size()) != Z_OK ||
+        decoded != size || VoxelScenePackage::sha256(data) != id)
+        throw std::invalid_argument("corrupt scene package asset: " + id);
+    return json::from_cbor(data);
 }
 
 } // namespace
@@ -243,7 +280,6 @@ json VoxelScenePackage::checkpoint(const std::string &name) {
     const auto path = fs::absolute(name);
     const auto manifest = inspect(name);
     auto result = manifest.at("checkpoint");
-    uint64_t total = 0;
     std::map<std::string, json> cache;
     std::map<std::string, size_t> references;
     for (const auto &entry : manifest.at("objects")) {
@@ -255,27 +291,17 @@ json VoxelScenePackage::checkpoint(const std::string &name) {
     for (const auto *key : {"earth_patches", "surface_appearances"})
         for (const auto &entry : manifest.at(key).items())
             ++references[entry.value()];
+    const auto catalog = manifest.value("terrain_pages", json::object());
+    std::map<std::string, std::string> ownerPatches;
+    for (const auto& [patch, entry] : catalog.items()) {
+        ownerPatches.emplace(entry.at("object").get<std::string>(), patch);
+        for (const auto& digest : entry.at("pages")) ++references[digest];
+    }
     auto read = [&](const std::string &id) -> json {
-        if (!digestName(id))
-            throw std::invalid_argument("invalid scene asset digest");
         if (auto found = cache.find(id); found != cache.end())
             return found->second;
-        const auto &entry = manifest.at("assets").at(id);
-        const auto size = entry.at("expanded_bytes").get<uint64_t>();
-        if (!size || size > assetLimit || size > totalLimit - total)
-            throw std::invalid_argument("scene package expansion budget exceeded");
-        total += size;
-        const auto compressed = bytes(assetPath(path, entry), assetLimit);
-        if (compressed.size() != entry.at("stored_bytes").get<uint64_t>())
-            throw std::invalid_argument("scene asset length mismatch");
-        std::vector<uint8_t> data(size);
-        uLongf decoded = size;
-        if (uncompress(data.data(), &decoded, compressed.data(), compressed.size()) != Z_OK ||
-            decoded != size || sha256(data) != id)
-            throw std::invalid_argument("corrupt scene package asset: " + id);
-        auto value = json::from_cbor(data);
-        if (references.at(id) > 1)
-            cache.emplace(id, value);
+        auto value = readAsset(path, manifest, id);
+        if (references.at(id) > 1) cache.emplace(id, value);
         return value;
     };
     result["objects"] = json::array();
@@ -288,19 +314,65 @@ json VoxelScenePackage::checkpoint(const std::string &name) {
         if (object.at("id") != id)
             throw std::invalid_argument("scene package object identity mismatch");
         object["volume"] = read(entry.at("volume"));
+        if (const auto owner = ownerPatches.find(id); owner != ownerPatches.end()) {
+            const auto& ref = owner->second;
+            const auto& pages = catalog.at(ref);
+            auto patch = read(manifest.at("earth_patches").at(ref));
+            auto& volume = object.at("volume");
+            if (object.at("earth_patch_ref") != ref || object.at("parent_id") != "" ||
+                object.at("physics").at("motion") != "static" || object.at("base_pose") != entry.at("grid").at("base_pose") ||
+                terrain_pages::index(patch, volume) != pages.at("grid") ||
+                patch.contains("heights_m") || patch.contains("imagery_rgba_hex") ||
+                patch.contains("sea_reference_m") || volume.contains("occupied_runs"))
+                throw std::invalid_argument("terrain page state disagrees with its catalog");
+            std::array<json, 4> data;
+            for (size_t i = 0; i < data.size(); ++i) data[i] = read(pages.at("pages")[i]);
+            terrain_pages::restore(terrain_pages::Layout(pages.at("grid")), data, patch, volume);
+            result["earth_patches"][ref] = std::move(patch);
+        }
         if (entry.contains("sensor_materials"))
             object["sensor_materials"] = read(entry.at("sensor_materials"));
         result["objects"].push_back(std::move(object));
     }
     for (const auto *key : {"earth_patches", "surface_appearances"}) {
         if (!manifest.at(key).empty()) {
-            result[key] = json::object();
             for (const auto &entry : manifest.at(key).items())
-                result[key][entry.key()] = read(entry.value());
+                if (!result.contains(key) || !result.at(key).contains(entry.key()))
+                    result[key][entry.key()] = read(entry.value());
         }
     }
     return result;
 }
+std::future<json> VoxelScenePackage::terrainPagesAsync(const std::string& name,
+                                                       std::array<double, 4> bounds) {
+    if (!std::all_of(bounds.begin(), bounds.end(), [](double x) { return std::isfinite(x); }) ||
+        bounds[0] > bounds[2] || bounds[1] > bounds[3])
+        throw std::invalid_argument("invalid terrain page request bounds");
+    static SceneTasks tasks(1, 1);
+    const auto path = fs::absolute(name);
+    return tasks.submit(SceneTaskKind::Terrain, [path, bounds] {
+        const auto manifest = inspect(path.string());
+        const auto catalog = manifest.value("terrain_pages", json::object());
+        auto result = json::array();
+        for (const auto& [patch, entry] : catalog.items()) {
+            const auto& grid = entry.at("grid");
+            const terrain_pages::Layout layout(grid);
+            for (int page = 0; page < 4; ++page) {
+                const auto region = layout.bounds(page);
+                if (region[0] > bounds[2] || region[1] > bounds[3] ||
+                    region[2] < bounds[0] || region[3] < bounds[1])
+                    continue;
+                auto data = readAsset(path, manifest, entry.at("pages")[page]);
+                terrain_pages::validatePage(layout, page, data);
+                result.push_back({{"patch", patch}, {"object", entry.at("object")}, {"page", page},
+                    {"grid", grid}, {"cell_rect", layout.cells(page)}, {"height_rect", layout.heights(page)},
+                    {"imagery_rect", layout.pixels(page)}, {"bounds_xz_m", region}, {"data", std::move(data)}});
+            }
+        }
+        return result;
+    });
+}
+
 json VoxelScenePackage::save(const std::string &name, const json &topic, const json &checkpoint) {
     if (checkpoint.at("format") != "voxel-scene-checkpoint-v1" ||
         topic.at("format") != "earth-scene-topic-v1")
@@ -363,6 +435,11 @@ json VoxelScenePackage::save(const std::string &name, const json &topic, const j
             {"uri", uri}, {"stored_bytes", compressed.size()}, {"expanded_bytes", data.size()}};
         return digest;
     };
+    const auto paging = topic.value("terrain_paging", std::string());
+    if (!paging.empty() && paging != "quad-v1")
+        throw std::invalid_argument("unsupported terrain paging option");
+    std::map<std::string, json> pagedPatches;
+    const auto earth = checkpoint.find("earth_patches");
     for (auto object : checkpoint.at("objects")) {
         json entry = {{"id", object.at("id")},
                       {"role", object.at("role")},
@@ -372,6 +449,24 @@ json VoxelScenePackage::save(const std::string &name, const json &topic, const j
                          {"dimensions", object.at("volume").at("dimensions")},
                          {"cell_size_m", object.at("volume").at("cell_size_m")},
                          {"base_pose", object.at("base_pose")}};
+        if (!paging.empty() && earth != checkpoint.end() && object.at("role") == "terrain" &&
+            object.at("physics").at("motion") == "static" && object.value("parent_id", std::string()).empty() && object.contains("earth_patch_ref")) {
+            const auto ref = object.at("earth_patch_ref").get<std::string>();
+            if (!pagedPatches.count(ref)) {
+                const auto& original = earth->at(ref);
+                auto& volume = object.at("volume");
+                const auto grid = terrain_pages::index(original, volume);
+                if (!grid.is_null()) {
+                    auto patch = original;
+                    const auto chunks = terrain_pages::split(terrain_pages::Layout(grid), patch, volume);
+                    auto assets = json::array();
+                    for (const auto& chunk : chunks) assets.push_back(store(chunk));
+                    pagedPatches.emplace(ref, std::move(patch));
+                    manifest["terrain_pages"][ref] = {
+                        {"object", object.at("id")}, {"grid", grid}, {"pages", std::move(assets)}};
+                }
+            }
+        }
         entry["volume"] = store(object.at("volume"));
         object.erase("volume");
         if (object.contains("sensor_materials")) {
@@ -384,12 +479,17 @@ json VoxelScenePackage::save(const std::string &name, const json &topic, const j
     for (const auto *key : {"earth_patches", "surface_appearances"}) {
         manifest[key] = json::object();
         const auto table = checkpoint.value(key, json::object());
-        for (const auto &entry : table.items())
-            manifest[key][entry.key()] = store(entry.value());
+        for (const auto &entry : table.items()) {
+            const auto paged = key == std::string_view("earth_patches") ?
+                pagedPatches.find(entry.key()) : pagedPatches.end();
+            manifest[key][entry.key()] = store(paged == pagedPatches.end() ? entry.value() : paged->second);
+        }
     }
     manifest["residency"] = {{"mode", "bounded-authoritative-checkpoint"},
                              {"far_terrain", "existing-map-streaming"},
                              {"all_chunks_are_not_full_region_physics", true}};
+    if (manifest.contains("terrain_pages"))
+        manifest["residency"]["terrain_storage"] = "indexed-quad-pages";
     validateManifest(manifest);
     const auto text = manifest.dump(2);
     if (text.size() > 8 * 1024 * 1024)

@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 /// @file SceneSource.h —— 多传感器仿真渲染: 场景数据源抽象 (设计文档 §3/§14)。
 ///
 /// 职责 (设计文档 §14 gap#1 场景数据源升级):
@@ -82,6 +83,10 @@ struct RadarMaterial {
     float spec_strength = 0.0f; ///< 镜面强度 (0=朗伯; 水面 1.0 → 太阳耀斑)
     float spec_roughness = 0.5f;///< GGX 粗糙度 (spec_strength>0 时生效)
     bool terrain = false;      ///< Scene ground, independent of scattering material overrides
+    // [enabled, solar response K, time constant hours, wet cooling K]
+    std::array<float,4> thermal_surface{};
+    // [steady temperature rise K, start s, run time s, time constant s]
+    std::array<float,4> thermal_source{};
 };
 
 /// 热面组 (objects[].face_groups[].lwir_params + radar_x_params 同名映射)。

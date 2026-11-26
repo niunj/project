@@ -1,6 +1,6 @@
 #pragma once
 #include "CockpitProfile.h"
-#include <QImage>
+#include "base/PlatformPresentation.h"
 #include <QWidget>
 #include <QStringList>
 #include <QMap>
@@ -10,9 +10,9 @@ class QPainter;
 
 namespace vsgraysim::gui::display {
 class EquipmentSession;class ImageDisplayPanel;
-class TexturedCockpit final : public QWidget {
+class PlatformInstruments final : public QWidget {
 public:
-    explicit TexturedCockpit(QWidget* parent=nullptr);
+    explicit PlatformInstruments(QWidget* parent=nullptr);
     bool loadProfile(const QString&,QString& error);
     const CockpitProfile& profile()const{return profile_;}
     void setTelemetry(const nlohmann::json&,bool fresh);
@@ -43,9 +43,11 @@ private:
     QPointF normalized(const QPointF&)const;
     void dragTo(const QPointF&);
     void drawInstrument(QPainter&,const CockpitInstrument&);
+    void drawTelemetry(QPainter&);
+    void drawControls(QPainter&);
     CockpitProfile profile_;
-    QImage background_,grips_;
     nlohmann::json state_=nlohmann::json::object();
+    PlatformDomain domain_=PlatformDomain::Air;
     bool fresh_=false,enabled_=false;
     double throttle_=0,elevator_=0,aileron_=0,rudder_=0,lighting_=1;
     QPointF press_;

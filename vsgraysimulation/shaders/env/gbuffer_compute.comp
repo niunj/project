@@ -1,4 +1,6 @@
 #version 460
+#extension GL_GOOGLE_include_directive : enable
+#include "surface_thermal.glsl"
 // Software GPU ray traversal. Same G-buffer contract as the hardware RT path;
 // immutable mesh-local BVHs and per-measurement instance matrices.
 layout(local_size_x=8,local_size_y=8) in;
@@ -17,6 +19,7 @@ struct Instance { mat4 objectToWorld; mat4 worldToObject; uvec4 meta; };
 layout(std430,binding=13) readonly buffer Nodes { BvhNode nodes[]; };
 layout(std430,binding=14) readonly buffer Primitives { uint primitives[]; };
 layout(std430,binding=15) readonly buffer Instances { Instance instances[]; };
+layout(std430,binding=16) readonly buffer ThermalNormals { vec4 shadingNormals[]; };
 layout(push_constant) uniform Push { mat4 viewInv; mat4 projInv; } pc;
 vec3 vertex(uint index) { return vec3(positions[3*index],positions[3*index+1],positions[3*index+2]); }
 bool box(vec3 origin,vec3 direction,vec3 lo,vec3 hi,float limit) {
@@ -70,10 +73,16 @@ void main() {
     uvec3 i=uvec3(indices[3*best],indices[3*best+1],indices[3*best+2]);
     vec2 property=props[i.x]*bary.x+props[i.y]*bary.y+props[i.z]*bary.z;
     vec3 localNormal=cross(vertex(i.y)-vertex(i.x),vertex(i.z)-vertex(i.x));
-    vec3 normal=normalize(transpose(mat3(instances[bestInstance].worldToObject))*localNormal);
+    const mat3 normalMatrix = transpose(mat3(instances[bestInstance].worldToObject));
+    vec3 normal=normalize(normalMatrix*localNormal);
     if(dot(normal,direction)>0) normal=-normal;
+    float heatNormal = 0.0;
+    if (shadingNormals.length() > 1) {
+        const vec3 local = shadingNormals[i.x].xyz * bary.x + shadingNormals[i.y].xyz * bary.y + shadingNormals[i.z].xyz * bary.z;
+        heatNormal = packThermalNormal(normalMatrix * local);
+    }
     vec2 uv=uvs[i.x]*bary.x+uvs[i.y]*bary.y+uvs[i.z]*bary.z;
     imageStore(outG0,pixel,vec4(property,closest,1));
     imageStore(outG1,pixel,vec4(origin+direction*closest,float(materialIds[i.x])));
-    imageStore(outG2,pixel,vec4(normal,0)); imageStore(outG3,pixel,vec4(uv,float(slots[i.x]),0));
+    imageStore(outG2,pixel,vec4(normal,heatNormal)); imageStore(outG3,pixel,vec4(uv,float(slots[i.x]),0));
 }

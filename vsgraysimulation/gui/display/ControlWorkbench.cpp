@@ -41,6 +41,7 @@ SensorType panelType(const QString& kind) {
     if(kind=="ir") return SensorType::IR;
     if(kind=="vis") return SensorType::VIS;
     if(kind=="sar") return SensorType::SAR;
+    if(kind=="sonar") return SensorType::SONAR;
     return SensorType::RADAR;
 }
 Qt::DockWidgetArea dockArea(const QString& area) {
@@ -93,7 +94,25 @@ nlohmann::json ControlWorkbench::connectionStatus() const {
     for(const auto& b:bindings_){auto values=b.panel->property("processingSamples").toList();if(values.empty())continue;std::vector<double> sorted;for(const auto& value:values)sorted.push_back(value.toDouble());std::sort(sorted.begin(),sorted.end());out["processing"].push_back({{"panel",b.spec.id.toStdString()},{"samples",sorted.size()},{"p50_ms",sorted[(sorted.size()-1)/2]},{"p95_ms",sorted[size_t((sorted.size()-1)*.95)]},{"off_gui",b.panel->property("processingOffGui").toBool()},{"frame_id",b.panel->property("processedFrameId").toULongLong()},{"sim_time",b.panel->property("processedSimTime").toDouble()},{"coalesced",b.panel->property("coalescedDisplayInputs").toULongLong()}});}
     out["render_2d"]=nlohmann::json::array();for(auto* image:findChildren<ScrollableImageView*>()){const auto values=image->property("paintSamples").toList();if(values.empty())continue;std::vector<double> sorted;for(const auto& value:values)sorted.push_back(value.toDouble());std::sort(sorted.begin(),sorted.end());out["render_2d"].push_back({{"samples",sorted.size()},{"p50_ms",sorted[(sorted.size()-1)/2]},{"p95_ms",sorted[size_t((sorted.size()-1)*.95)]},{"width",image->width()},{"height",image->height()}});}return out;
 }
-void ControlWorkbench::openPlatformConsole(const QString& mode,uint32_t platform){if(views_&&!views_->openConsole(mode,platform,selected_equip_,BrokerNet::instance().lastSimMeta().scene_session_id))logEvent(tr("无法打开平台控制台"));}
+void ControlWorkbench::openPlatformConsole(const QString& mode,uint32_t platform){
+    if(!views_)return;
+    const auto meta=BrokerNet::instance().lastSimMeta();
+    QString selection=mode;
+    if(platform&&mode=="aircraft"){
+        const auto telemetry=connect_remote_?nlohmann::json::parse(meta.platforms_json,nullptr,false):local_platforms_;
+        if(telemetry.is_array())for(const auto& item:telemetry){
+            if(!item.is_object()||!item.contains("platform_id")||item.at("platform_id")!=platform)continue;
+            const auto it=item.find("console");
+            if(it!=item.end()&&it->is_string()){
+                const auto offered=QString::fromStdString(it->get<std::string>());
+                if(offered=="aircraft"||offered=="helicopter"||offered=="airliner"||offered=="uav")selection=offered;
+            }
+            break;
+        }
+    }
+    if(!views_->openConsole(selection,platform,selected_equip_,meta.scene_session_id))
+        logEvent(tr("无法打开平台控制台"));
+}
 void ControlWorkbench::closePlatformConsoles(){if(views_)views_->closeConsoles();}
 void ControlWorkbench::openEquipmentView(uint32_t id){if(!views_||!linked_ids_.count(id))return;for(const auto& e:selected_equip_)if(e.equipment_id==id){if(!views_->open(e,BrokerNet::instance().lastSimMeta().scene_session_id))logEvent(tr("无法打开装备显示：进程数量或状态限制"));return;}}
 void ControlWorkbench::closeEquipmentView(uint32_t id,bool force){if(views_)views_->close(id,force);}
@@ -152,10 +171,10 @@ void ControlWorkbench::selectConsole(const QString& id){
     if(separate_views_){if(QStringList{"aircraft","helicopter","airliner","uav"}.contains(id)){uint32_t platform=0;auto* current=tree_select_->currentItem();if(current){if(current->parent())current=current->parent();platform=current->data(0,Qt::UserRole).toUInt();}openPlatformConsole(id,platform);}else for(const auto& e:selected_equip_)openEquipmentView(e.equipment_id);return;}
     if(!cockpit_panels_.empty())console_profiles_[layout_.id]=cockpit_panels_.front().panel->cockpitProfilePath();
     auto workspace=WorkspaceProfile::preset(id);if(auto saved=console_profiles_.find(id);saved!=console_profiles_.end())workspace.cockpit_profile=saved->second;
-    if(id=="mission"||id=="radar"||id=="infrared"||id=="optical"){
+    if(id=="mission"||id=="radar"||id=="infrared"||id=="optical"||id=="sonar"){
         std::vector<WorkspacePanel> panels;
-        for(const auto& e:selected_equip_){const bool matches=id=="mission"||(id=="radar"&&(e.type==SensorType::RADAR||e.type==SensorType::SAR))||(id=="infrared"&&e.type==SensorType::IR)||(id=="optical"&&e.type==SensorType::VIS);if(!matches||e.type==SensorType::LASER)continue;if(panels.size()>=20){logEvent(tr("同屏最多装配20个传感器面板，其余设备可通过来源选择查看"));break;}
-            const auto kind=e.type==SensorType::RADAR?"radar":e.type==SensorType::IR?"ir":e.type==SensorType::SAR?"sar":"vis";
+        for(const auto& e:selected_equip_){const bool matches=id=="mission"||(id=="radar"&&(e.type==SensorType::RADAR||e.type==SensorType::SAR))||(id=="infrared"&&e.type==SensorType::IR)||(id=="optical"&&e.type==SensorType::VIS)||(id=="sonar"&&e.type==SensorType::SONAR);if(!matches||e.type==SensorType::LASER)continue;if(panels.size()>=20){logEvent(tr("同屏最多装配20个传感器面板，其余设备可通过来源选择查看"));break;}
+            const auto kind=QString::fromLatin1(sensorTypeName(e.type));
             panels.push_back({"device_"+QString::number(e.equipment_id),kind,QString::fromStdString(e.name)+" #"+QString::number(e.equipment_id),e.equipment_id,"right"});}
         if(!panels.empty()){for(const auto& panel:workspace.panels)if(panel.kind=="earth"||panel.kind=="cockpit"||panel.kind=="links"||panel.kind=="events")panels.push_back(panel);workspace.panels=std::move(panels);}
     }
@@ -184,8 +203,7 @@ void ControlWorkbench::rebuildWorkspace() {
         dock->setProperty("workspacePrimary",spec.kind!="links" && spec.kind!="events");
         if(spec.kind=="cockpit"){auto* panel=new AircraftCockpitPanel(dock);QString error;if(layout_.cockpit_profile!="config/cockpits/f16c.json"&&!panel->loadCockpitProfile(layout_.cockpit_profile,error))logEvent(tr("机型面板加载失败：%1").arg(error));panel->payloadConnectionRequested=[this]{buildSelectTree();if(auto* binding=findChild<QDockWidget*>("equipment_binding")){binding->show();binding->raise();}};
             panel->payloadPowerRequested=[this,panel](uint32_t id){const auto platform=panel->controls()->selectedTelemetry().value("platform_id",uint32_t(0));for(const auto& e:selected_equip_)if(e.equipment_id==id&&e.platform_id==platform)for(auto& session:sessions_)if(session->equipmentId()==id&&session->connected()&&!session->powerRequestPending()){session->setPowered(!session->powered());logEvent(session->lastControlStatus());return;}};
-            const bool shared=shared_scene_view_||(layout_.id=="mission"&&std::any_of(layout_.panels.begin(),layout_.panels.end(),[](const auto& p){return p.kind=="earth";}));
-            panel->useSharedSceneView(shared);cockpit_panels_.push_back({panel,spec.equipment_id});content=panel;}
+            cockpit_panels_.push_back({panel,spec.equipment_id});content=panel;}
         else if(spec.kind=="flight"){auto* panel=new FlightPanel(dock);flight_panels_.push_back({panel,spec.equipment_id});content=panel;}
         else if(spec.kind=="earth"){auto* panel=new EarthPanel(dock);earth_panels_.push_back({panel,spec.equipment_id});content=panel;}
         else if(spec.kind=="links"){auto* table=linkTable(dock);table->setMinimumHeight(160);link_tables_.push_back(table);content=table;}
@@ -218,6 +236,10 @@ void ControlWorkbench::rebuildWorkspace() {
             for(auto* dock:panel_docks_)if(!dynamic_cast<AircraftCockpitPanel*>(dock->widget()))dock->hide();
             resizeDocks({left},{1050},Qt::Horizontal);resizeDocks({left},{650},Qt::Vertical);
         }
+    }
+    if(!cockpit_panels_.empty()) {
+        auto* sharedEarth=layout_.id=="mission"&&!earth_panels_.empty()?earth_panels_.front().panel:nullptr;
+        cockpit_panels_.front().panel->setSharedSceneTarget(sharedEarth,shared_viewport_);
     }
     if(!layout_.dock_state.isEmpty() && !restoreState(layout_.dock_state,1))logEvent(tr("已恢复模板布局：停靠状态不可用"));
     setWindowTitle(tr("显控工作台 · %1").arg(layout_.title));preset_->setCurrentIndex(preset_->findData(layout_.id));
@@ -260,6 +282,21 @@ void ControlWorkbench::onBindRequested() {
     std::set<uint32_t> selected;
     for(int t=0;t<tree_select_->topLevelItemCount();++t)for(int i=0;i<tree_select_->topLevelItem(t)->childCount();++i){auto* item=tree_select_->topLevelItem(t)->child(i);if(item->checkState(0)==Qt::Checked)selected.insert(item->data(0,Qt::UserRole).toUInt());}
     std::vector<EquipmentInfo> equip;for(const auto& e:online_equip_)if(selected.count(e.equipment_id))equip.push_back(e);
+    if(equip.empty()&&connect_remote_){
+        auto& net=BrokerNet::instance();
+        const auto context=nlohmann::json::parse(net.lastSimMeta().earth_json,nullptr,false);
+        if(context.is_object()&&context.contains("voxel_scene")){
+            const auto& scene=context.at("voxel_scene");
+            if(scene.is_object()&&scene.contains("equipment_states")){
+                const auto& states=scene.at("equipment_states");
+                if(states.is_object()&&states.contains("visual_only")&&states.at("visual_only")==true){
+                    world_lease_=net.linkAttach(0,false);
+                    logEvent(world_lease_?tr("已连接场景世界"):tr("场景世界建链失败"));
+                    return;
+                }
+            }
+        }
+    }
     if(equip.empty()){logEvent(tr("请先勾选需要连接的装备"));return;}rebuildForSelection(equip);
 }
 void ControlWorkbench::disconnectEquipment() {
@@ -285,13 +322,13 @@ void ControlWorkbench::rebuildForSelection(const std::vector<EquipmentInfo>& equ
     }
     logEvent(tr("已连接 %1 / %2 个装备").arg(sessions_.size()).arg(equip.size()));updateSessions();
     if(separate_views_)return;
-    if(layout_.id=="radar"||layout_.id=="infrared"||layout_.id=="optical"){selectConsole(layout_.id);return;}
+    if(layout_.id=="radar"||layout_.id=="infrared"||layout_.id=="optical"||layout_.id=="sonar"){selectConsole(layout_.id);return;}
     if(layout_.id=="mission" && layout_.dock_state.isEmpty()&&!shared_scene_view_) {
         auto p=WorkspaceProfile::preset("mission");p.panels.clear();
         for(const auto& e:selected_equip_) {
             if(p.panels.size()>=20){logEvent(tr("综合台最多显示 20 个观测面板，可定制绑定其余装备"));break;}
-            QString kind;
-            switch(e.type){case SensorType::RADAR:kind="radar";break;case SensorType::IR:kind="ir";break;case SensorType::SAR:kind="sar";break;case SensorType::VIS:kind="vis";break;default:continue;}
+            if(e.type==SensorType::LASER)continue;
+            const auto kind=QString::fromLatin1(sensorTypeName(e.type));
             p.panels.push_back({"eq_"+QString::number(e.equipment_id),kind,QString::fromStdString(e.name),e.equipment_id,p.panels.empty()?"left":"right"});
         }
         p.panels.push_back({"cockpit","cockpit",tr("飞机操作台"),0,"right"});
@@ -332,7 +369,7 @@ void ControlWorkbench::onTick() {
     }
     auto refreshProducts=[&] {
         const bool ready=!display_surface_revision_ || (std::all_of(earth_panels_.begin(),earth_panels_.end(),
-            [&](const auto& binding){return binding.panel->surfaceReady(display_surface_revision_);})&&std::all_of(cockpit_panels_.begin(),cockpit_panels_.end(),[&](const auto& b){return b.panel->usesSharedSceneView()||b.panel->earthDisplay()->surfaceReady(display_surface_revision_);}));
+            [&](const auto& binding){return binding.panel->surfaceReady(display_surface_revision_);})&&std::all_of(cockpit_panels_.begin(),cockpit_panels_.end(),[&](const auto& b){return b.panel->usesSharedSceneView()||!b.panel->earthDisplay()->isVisible()||b.panel->earthDisplay()->surfaceReady(display_surface_revision_);}));
         for(auto& s:sessions_) s->tick(display_surface_revision_,equipment_view_?true:ready,!connect_remote_&&local_scene_state_&&!local_running_);
         for(auto& b:bindings_) b.panel->tick(sessionFor(b.spec));
         std::vector<std::pair<EquipmentSession*,uint32_t>> payloads;for(auto& session:sessions_)for(const auto& e:selected_equip_)if(e.equipment_id==session->equipmentId())payloads.emplace_back(session.get(),e.platform_id);

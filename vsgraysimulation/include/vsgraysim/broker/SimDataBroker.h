@@ -29,6 +29,7 @@
 
 #include "vsgraysim/core/SensorTypes.h"
 #include "vsgraysim/broker/SensorFrames.h"
+#include "vsgraysim/broker/SonarFrame.h"
 #include "vsgraysim/broker/EquipmentInfo.h"
 #include "vsgraysim/broker/GpuBuffer.h"
 
@@ -128,6 +129,9 @@ public:
     bool publishSar(const SarFrame& frame);
     bool publishIr(const IrFrame& frame);
     bool publishVis(const VisFrame& frame);
+    bool publishSonar(const SonarFrame& frame);
+    std::shared_ptr<const SonarFrame> sonarSnapshot(uint32_t id) const;
+    void setSonarTap(std::function<void(const SonarFrame&)> tap);
 
     /// 发布 GPU 驻留帧: 帧本体经 D2D 拷贝进通道 GPU 缓冲 (不落主机),
     /// 仅更新元数据。meta 的载荷 vector 忽略, 只取类型化元数据字段。
@@ -252,6 +256,7 @@ private:
         std::shared_ptr<const SarFrame> sar_host;
         std::shared_ptr<const IrFrame> ir_host;
         std::shared_ptr<const VisFrame> vis_host;
+        std::shared_ptr<const SonarFrame> sonar_host;
     };
     std::unordered_map<uint32_t, EquipmentChannel> channels_;
 
@@ -275,6 +280,7 @@ private:
     std::function<void(const SarFrame&)>   sar_tap_;
     std::function<void(const IrFrame&)>    ir_tap_;
     std::function<void(const VisFrame&)>   vis_tap_;
+    std::function<void(const SonarFrame&)> sonar_tap_;
 
     /// 获取或创建通道
     EquipmentChannel& getChannel(uint32_t equipment_id);

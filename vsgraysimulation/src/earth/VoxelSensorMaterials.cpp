@@ -13,10 +13,28 @@ vsg::dvec3 triple(const json& j){if(!j.is_array()||j.size()!=3)throw std::invali
 }
 json normalizeVoxelMaterial(const json& source){
     if(!source.is_object())throw std::invalid_argument("voxel material must be an object");
-    const std::set<std::string> fields{"density_kg_m3","temperature_k","emissivity","rho_tv","rho_swir","color_rgba","eps_mwir","eps_lwir","radar"};for(const auto& item:source.items())if(!fields.count(item.key()))throw std::invalid_argument("unknown voxel material field: "+item.key());
+    const std::set<std::string> fields{"density_kg_m3","temperature_k","emissivity","rho_tv","rho_swir","color_rgba","eps_mwir","eps_lwir","radar","thermal_response"};for(const auto& item:source.items())if(!fields.count(item.key()))throw std::invalid_argument("unknown voxel material field: "+item.key());
     json out={{"density_kg_m3",value(source,"density_kg_m3",2600,.001,1e6)},{"temperature_k",value(source,"temperature_k",288.15,1,5000)},{"emissivity",value(source,"emissivity",.92,0,1)},{"rho_tv",value(source,"rho_tv",.25,0,1)},{"rho_swir",value(source,"rho_swir",.2,0,1)}};
     const auto color=source.value("color_rgba",json::array({.54,.49,.37,1}));if(!color.is_array()||color.size()!=4)throw std::invalid_argument("material color requires RGBA");for(const auto& x:color)if(!x.is_number()||!std::isfinite(x.get<double>())||x.get<double>()<0||x.get<double>()>1)throw std::invalid_argument("invalid material color");out["color_rgba"]=color;
     for(const char* key:{"eps_mwir","eps_lwir"})if(source.contains(key))out[key]=value(source,key,0,0,1);
+    if (source.contains("thermal_response")) {
+        const auto& response = source.at("thermal_response");
+        if (!response.is_object()) throw std::invalid_argument("thermal_response must be an object");
+        constexpr std::array<const char*, 7> keys = {"solar_gain_k","inertia_h","wet_cooling_k",
+            "source_gain_k","source_start_s","source_run_s","source_tau_s"};
+        for (const auto& field : response.items())
+            if (std::find(keys.begin(),keys.end(),field.key()) == keys.end())
+                throw std::invalid_argument("unknown thermal_response field: "+field.key());
+        out["thermal_response"] = {
+            {"solar_gain_k",value(response,"solar_gain_k",0,0,80)},
+            {"inertia_h",value(response,"inertia_h",2,.05,48)},
+            {"wet_cooling_k",value(response,"wet_cooling_k",0,0,25)},
+            {"source_gain_k",value(response,"source_gain_k",0,0,400)},
+            {"source_start_s",value(response,"source_start_s",0,0,1e7)},
+            {"source_run_s",value(response,"source_run_s",0,0,1e7)},
+            {"source_tau_s",value(response,"source_tau_s",60,.01,1e7)}
+        };
+    }
     if(source.contains("radar")){const auto& r=source.at("radar");if(!r.is_object())throw std::invalid_argument("radar material must be an object");for(const auto& p:r.items())if(p.key()!="dielectric_real"&&p.key()!="dielectric_imag"&&p.key()!="dielectric_model"&&p.key()!="sigma0_db"&&p.key()!="surface_rough"&&p.key()!="rcs_scale")throw std::invalid_argument("unknown radar material field: "+p.key());
         const auto model=r.value("dielectric_model",json(0));if(!model.is_number_integer()||model.get<int>()<0||model.get<int>()>3)throw std::invalid_argument("invalid radar dielectric model");
         out["radar"]={{"dielectric_real",value(r,"dielectric_real",6,1,1e8)},{"dielectric_imag",value(r,"dielectric_imag",0,0,1e8)},{"dielectric_model",model},{"sigma0_db",value(r,"sigma0_db",-20,-120,120)},{"surface_rough",value(r,"surface_rough",.5,0,1)},{"rcs_scale",value(r,"rcs_scale",1,0,1e8)}};

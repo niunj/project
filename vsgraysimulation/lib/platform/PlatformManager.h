@@ -165,6 +165,9 @@ private:
         std::string mode="route", owner;
         uint64_t revision=0;
         bool failsafe=false;
+        bool gearDown=false, navLights=false, landingLight=false;
+        double gearExtension=0;
+        uint64_t systemsRevision=0;
         std::chrono::steady_clock::time_point deadline;
     };
     void stabilizeFlight(uint32_t id, FlightState&);

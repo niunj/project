@@ -1,6 +1,7 @@
 #include <vsgraysim/broker/VoxelEquipmentSource.h>
 /// @file ViewportConfig.cpp
 #include "ViewportConfig.h"
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -23,6 +24,7 @@ ViewportConfig ViewportConfig::fromPreset(const std::string& name)
         cfg.add("rocky_sky",{{"hours_utc",4.0}});
         add_common();
         cfg.add("voxel_scene",{{"scene_json","config/voxel/workshop.vscene.json"},{"paused",true}});
+        cfg.add("engagement_visual");
     } else if (name == "scene_designer") {
         // 场景设计: rocky 真实地球为底座 (首位挂载, 建立地理锚点内容根),
         // 模型/标注/特效按局部米制摆放在锚点 ENU 切平面上 → 落到地球表面。
@@ -88,7 +90,7 @@ ViewportConfig ViewportConfig::fromPreset(const std::string& name)
                 {{"id", "relationship_visual"}, {"label", "平台标注"}},
                 {{"id", "sensor_fov"}, {"label", "传感器视锥"}},
                 {{"id", "detection_effect"}, {"label", "探测范围"}},
-                {{"id", "engagement_visual"}, {"label", "交战过程"}},
+                {{"id", "engagement_visual"}, {"label", "尾焰 / 烟尘"}},
                 {{"id", "trail"}, {"label", "运动轨迹"}},
                 {{"id", "reference_grid"}, {"label", "参考网格"}},
             })}
@@ -99,6 +101,7 @@ ViewportConfig ViewportConfig::fromPreset(const std::string& name)
         cfg.add("rocky_cloud", {{"cover",0.5}});
         cfg.add("rocky_ocean", {{"ocean_size",8000.0}});
         add_common();
+        cfg.add("sensor_fov");
     } else if (name == "env_lab") {
         // 环境模块验证台 (env_lab): Rocky 地球基座 —— 先挂 rocky_map (默认锚点,
         // 建立 VSGContext 与 ECEF 世界根), sky/cloud/ocean 以锚点 ENU 为基准
@@ -117,6 +120,8 @@ ViewportConfig ViewportConfig::fromPreset(const std::string& name)
     } else {
         add_common();   // 未知预设 → 仅基础三件套
     }
+    if(name=="earth_display"||name=="scene_designer"||name=="simulation_display"||name=="voxel_workshop")
+        cfg.add("scene_audio");
     return cfg;
 }
 
@@ -132,9 +137,30 @@ ViewportConfig ViewportConfig::fromTopicFile(const std::string& path,const std::
     nlohmann::json runtime={{"scene_json",scenePath},{"background_loading",true},{"paused",topic.value("paused",true)},{"frame_scene",!topic.contains("camera")}};
     for(const auto* visualSetting:{"clustered_rendering","cluster_error_pixels"})
         if(earth.contains(visualSetting))runtime[visualSetting]=earth.at(visualSetting);
+    if(project.packageManifest.contains("terrain_pages"))runtime["terrain_display_paging"]=true;
     if(topic.contains("camera"))runtime["camera_local"]=topic.at("camera");
     if(topic.contains("checkpoint")){runtime["checkpoint"]=topic.at("checkpoint");runtime["background_loading"]=false;}
-    cfg.add("voxel_scene",runtime);return cfg;
+    cfg.add("voxel_scene",runtime);
+    if(project.equipmentDocument.is_object()) {
+        const auto& equipment=project.equipmentDocument.at("equipment");
+        if(std::any_of(equipment.begin(),equipment.end(),[](const auto& spec){return spec.contains("visual");})) {
+            auto equipmentConfig=project.equipmentDocument;
+            equipmentConfig["topic"]=project.path;
+            cfg.remove("sensor_fov");
+            cfg.add("sensor_fov",{{"preview_equipment",std::move(equipmentConfig)}});
+        }
+    }
+    cfg.add("engagement_visual");cfg.add("trail");
+    cfg.remove("scene_audio");
+    nlohmann::json acoustics=nlohmann::json::object();
+    if(topic.contains("acoustics"))acoustics["acoustics"]=topic.at("acoustics");
+    if(project.equipmentDocument.is_object()){
+        auto equipment=project.equipmentDocument;
+        equipment["topic"]=project.path;
+        acoustics["preview_equipment"]=std::move(equipment);
+    }
+    cfg.add("scene_audio",std::move(acoustics));
+    return cfg;
 }
 
 ViewportConfig ViewportConfig::fromJson(const nlohmann::json& j)
