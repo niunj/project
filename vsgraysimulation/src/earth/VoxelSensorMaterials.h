@@ -13,8 +13,11 @@ class VoxelSensorMaterials {
 public:
     static std::shared_ptr<const VoxelSensorMaterials> load(const nlohmann::json&,const VoxelTerrain&,const nlohmann::json& base,bool checkpoint=false);
     nlohmann::json encode()const;
-    std::shared_ptr<const VoxelSensorMaterials> paint(const nlohmann::json& region,const nlohmann::json& material)const;
+    std::shared_ptr<const VoxelSensorMaterials> paint(const nlohmann::json& region,const nlohmann::json& material,
+        const nlohmann::json& radarFallback={})const;
     std::shared_ptr<const VoxelSensorMaterials> settled(const VoxelTerrain&)const;
+    std::shared_ptr<const VoxelSensorMaterials> remapped(const VoxelTerrain& source,const VoxelTerrain& target,
+                                                        const std::vector<uint32_t>& destinations)const;
     const nlohmann::json& at(const vsg::dvec3& local)const;
     const std::vector<nlohmann::json>& palette()const{return palette_;}
     uint8_t index(const vsg::dvec3& local)const;

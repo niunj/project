@@ -272,8 +272,33 @@ VoxelSceneObject objectImpl(const json& j,const fs::path& directory,Cache& cache
     else throw std::invalid_argument("unknown voxel source type: "+type);
     cache[cacheKey]=result.volume;validateVoxelBody(result,j,false);return result;
 }
+std::shared_ptr<const std::vector<VoxelPoseKeyframe>> parsePoseTrack(const json& keys) {
+    if(!keys.is_array()||keys.size()<2||keys.size()>256)
+        throw std::invalid_argument("pose_track requires 2..256 keys");
+    auto track=std::make_shared<std::vector<VoxelPoseKeyframe>>();
+    track->reserve(keys.size());
+    for(const auto& key:keys){
+        const double time=number(key.at("seconds"),0.,86400.,"pose key time");
+        if(!track->empty()&&time-track->back().seconds<.001)
+            throw std::invalid_argument("pose_track times must increase by at least 1 ms");
+        const auto& q=key.at("rotation_xyzw");
+        if(!q.is_array()||q.size()!=4)throw std::invalid_argument("pose key requires a quaternion");
+        const vsg::dquat rotation(number(q[0],-1.,1.,"pose key quaternion"),
+            number(q[1],-1.,1.,"pose key quaternion"),number(q[2],-1.,1.,"pose key quaternion"),
+            number(q[3],-1.,1.,"pose key quaternion"));
+        if(std::abs(vsg::length(rotation)-1.)>1e-6)
+            throw std::invalid_argument("pose key quaternion must be normalized");
+        track->push_back({time,triple(key.at("position_m"),"pose key position"),rotation});
+    }
+    return track;
+}
+bool sameChart(const simcore::geo::GeoAnchor& a,const simcore::geo::GeoAnchor& b) {
+    return a.lat_deg==b.lat_deg && a.lon_deg==b.lon_deg &&
+           a.alt_m==b.alt_m && a.heading_deg==b.heading_deg;
+}
 VoxelSceneObject object(const json& j,const fs::path& directory,Cache& cache,uint64_t tick,bool checkpoint,const simcore::geo::GeoAnchor& anchor,const EarthPatches& patches={},const json& appearances=json::object(),const json& policy=json::object()) {
     auto out=objectImpl(j,directory,cache,tick,checkpoint,anchor,patches,appearances,policy);
+    if(checkpoint)out.crushedAtTick=integer(j.value("crushed_at_tick",json(0)),tick,"crush tick");
     if(j.contains("rotor_drive")) {
         const auto& drive=j.at("rotor_drive");
         if(!drive.is_object())throw std::invalid_argument("invalid rotor_drive");
@@ -286,27 +311,7 @@ VoxelSceneObject object(const json& j,const fs::path& directory,Cache& cache,uin
             number(drive.value("spin_up_seconds",0.),0.,86400.,"rotor spin-up duration"),
             drive.value("water_jet",false)};
     }
-    if(j.contains("pose_track")){
-        const auto& keys=j.at("pose_track");
-        if(!keys.is_array()||keys.size()<2||keys.size()>256)
-            throw std::invalid_argument("pose_track requires 2..256 keys");
-        auto track=std::make_shared<std::vector<VoxelPoseKeyframe>>();
-        track->reserve(keys.size());
-        for(const auto& key:keys){
-            const double time=number(key.at("seconds"),0.,86400.,"pose key time");
-            if(!track->empty()&&time-track->back().seconds<.001)
-                throw std::invalid_argument("pose_track times must increase by at least 1 ms");
-            const auto& q=key.at("rotation_xyzw");
-            if(!q.is_array()||q.size()!=4)throw std::invalid_argument("pose key requires a quaternion");
-            const vsg::dquat rotation(number(q[0],-1.,1.,"pose key quaternion"),
-                number(q[1],-1.,1.,"pose key quaternion"),number(q[2],-1.,1.,"pose key quaternion"),
-                number(q[3],-1.,1.,"pose key quaternion"));
-            if(std::abs(vsg::length(rotation)-1.)>1e-6)
-                throw std::invalid_argument("pose key quaternion must be normalized");
-            track->push_back({time,triple(key.at("position_m"),"pose key position"),rotation});
-        }
-        out.poseTrack=std::move(track);
-    }
+    if(j.contains("pose_track"))out.poseTrack=parsePoseTrack(j.at("pose_track"));
     const auto response=j.value("motion_response",std::string{});
     if(!response.empty()){
         if(!out.poseTrack||(response!="waves"&&response!="gusts"))
@@ -332,6 +337,7 @@ json encodedObject(const VoxelSceneObject& o,const std::string& earthRef) {
         {"physics",encodeVoxelBody(o)},{"anchor_cells",o.anchors},{"broken_bonds",o.brokenBonds},{"parent_id",o.parentId},
         {"material",o.material},{"provenance",o.provenance},{"volume",o.volume->encodeVolume()}};
     if(o.sensorMaterials)result["sensor_materials"]=o.sensorMaterials->encode();
+    if(o.crushedAtTick)result["crushed_at_tick"]=o.crushedAtTick;
     if(o.poseTrack){
         auto& keys=result["pose_track"]=json::array();
         for(const auto& key:*o.poseTrack)
@@ -601,11 +607,24 @@ VoxelSceneSnapshotPtr sampleVoxelSceneHistory(const std::vector<VoxelSceneSnapsh
     synchronizeVoxelRotorPoses(*interpolated);
     return interpolated;
 }
-void VoxelScene::edit(const json& commands,uint64_t revision) {
+void VoxelScene::edit(const json& commands,uint64_t revision,VoxelSceneSnapshotPtr prepared) {
     impl_->own();if(!impl_->paused)throw std::logic_error("pause voxel simulation before authoring");
     const auto current=snapshot();if(current->revision!=revision)throw std::logic_error("stale voxel scene revision");
-    if(!commands.is_array()||commands.empty()||commands.size()>256)throw std::invalid_argument("invalid voxel edit transaction");
+    if(!commands.is_array()||commands.size()>256||(commands.empty()&&!prepared))
+        throw std::invalid_argument("invalid voxel edit transaction");
     auto next=std::make_shared<VoxelSceneSnapshot>(*current);auto cache=impl_->assets;bool topology=false;
+    if(prepared) {
+        if(prepared->objects.empty()||!sameChart(current->anchor,prepared->anchor))
+            throw std::invalid_argument("empty import or prepared asset geodetic chart mismatch");
+        for(const auto& [id,source]:prepared->objects) {
+            auto imported=source;
+            imported.basePose=source.pose(prepared->tick,prepared->fixedStep);
+            imported.motionOriginTick=current->tick;
+            if(!next->objects.emplace(id,std::move(imported)).second)
+                throw std::invalid_argument("duplicate imported object: "+id);
+        }
+        topology=true;
+    }
     for(const auto& command:commands) {
         const auto kind=command.at("kind").get<std::string>();
         if(kind=="environment") {
@@ -638,7 +657,13 @@ void VoxelScene::edit(const json& commands,uint64_t revision) {
                     json::array({angular.x,angular.y,angular.z})),"angular velocity");
             }
             if (kind=="material" || (targetProperties && command.contains("material"))) {
-                object.material = material(command.at("material"));
+                auto values=command.at("material");
+                if(kind=="material"&&command.value("merge",false)){
+                    auto merged=object.material;
+                    merged.update(values);
+                    values=std::move(merged);
+                }
+                object.material = material(values);
                 topology = true;
             }
             if (kind=="sensor_materials" || (targetProperties && command.contains("sensor_materials"))) {
@@ -648,9 +673,47 @@ void VoxelScene::edit(const json& commands,uint64_t revision) {
                 topology = true;
             }
         }
+        else if(kind=="pose_track") {
+            found->second.poseTrack=parsePoseTrack(command.at("keys"));
+        }
         else if(kind=="sensor_paint") {
-            auto& o=found->second;auto chart=o.sensorMaterials?o.sensorMaterials:VoxelSensorMaterials::load({{"palette",json::array({json::object()})}},*o.volume,o.material);
-            o.sensorMaterials=chart->paint(command.at("region"),command.at("material"));o.provenance["sensor_properties_source"]="user-authored";topology=true;
+            auto& o=found->second;
+            const auto& patch=command.at("material");
+            if(!patch.is_object()||patch.empty()||patch.contains("density_kg_m3")||patch.contains("color_rgba"))
+                throw std::invalid_argument("spectral paint requires optical/thermal/radar properties only");
+            auto base=o.material;
+            json radarFallback;
+            if(o.earth&&patch.contains("radar")){
+                const auto& parameters=o.earth->materials();
+                const auto& radar=parameters.at("radar_x_params");
+                radarFallback={{"dielectric_real",radar.at("dielectric_real")},
+                    {"dielectric_imag",radar.at("dielectric_imag")},{"surface_rough",radar.at("surface_rough")},
+                    {"sigma0_db",parameters.at("sar_c_params").at("sigma0_db")}};
+                if(!base.contains("radar"))base["radar"]=radarFallback;
+            }
+            auto region=command.at("region");
+            if(region.is_null()&&!o.sensorMaterials){
+                auto merged=base;
+                merged.update(patch);
+                if(base.contains("radar")&&patch.contains("radar")){
+                    auto radar=base.at("radar");
+                    radar.update(patch.at("radar"));
+                    merged["radar"]=std::move(radar);
+                }
+                o.material=material(merged);
+            }else{
+                if(region.is_null()){
+                    const auto low=o.volume->gridOrigin();
+                    const auto n=o.volume->dimensions();
+                    const auto high=low+vsg::dvec3(n[0],n[1],n[2])*o.volume->resolution_m;
+                    region={{"min_m",{low.x,low.y,low.z}},{"max_m",{high.x,high.y,high.z}}};
+                }
+                auto chart=o.sensorMaterials?o.sensorMaterials:VoxelSensorMaterials::load(
+                    {{"palette",json::array({json::object()})}},*o.volume,o.material);
+                o.sensorMaterials=chart->paint(region,patch,radarFallback);
+            }
+            o.provenance["sensor_properties_source"]="user-authored";
+            topology=true;
         }
         else if(kind=="terrain_brush") {
             auto& o=found->second;if(!o.earth||o.body.motion!="static"||!o.parentId.empty())throw std::invalid_argument("terrain brush requires a static Earth root");
@@ -663,6 +726,12 @@ void VoxelScene::edit(const json& commands,uint64_t revision) {
         else if(kind=="physics") {
             auto& o=found->second;o.basePose=o.pose(current->tick,current->fixedStep);o.motionOriginTick=current->tick;
             auto input=command;input["anchor_cells"]=o.anchors;input["broken_bonds"]=o.brokenBonds;input["parent_id"]=o.parentId;
+            if(command.value("merge",false)){
+                auto configured=encodeVoxelBody(o);
+                configured.update(command.at("physics"));
+                if(configured.contains("crush")&&configured.at("crush").is_null())configured.erase("crush");
+                input["physics"]=std::move(configured);
+            }
             const auto bonds=o.brokenBonds;o.anchors.clear();o.brokenBonds.clear();
             const bool resetSupport=command.at("physics").contains("support");validateVoxelBody(o,input,!resetSupport);
             if(resetSupport)o.brokenBonds=bonds;topology=true;
@@ -691,6 +760,7 @@ VoxelScene::Advance VoxelScene::advanceTo(double seconds,uint32_t budget) {
     const auto initial=snapshot();const double ticks=std::floor(seconds/initial->fixedStep+1e-8);
     if(ticks>maxTick||ticks<double(initial->tick))throw std::invalid_argument("voxel scene cannot rewind; restore a checkpoint");
     const uint64_t target=uint64_t(ticks);Advance result;
+    const auto elapsed=[](const auto begin){return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();};
     if(impl_->paused){result.pendingSteps=target-initial->tick;return result;}
     while(result.steps<budget&&snapshot()->tick<target) {
         auto next=std::make_shared<VoxelSceneSnapshot>(*snapshot());++next->tick;++next->revision;
@@ -706,12 +776,16 @@ VoxelScene::Advance VoxelScene::advanceTo(double seconds,uint32_t budget) {
             if(kind=="damage"||kind=="settle") {
                 VoxelTerrainPhysics physics(targetObject.volume);
                 if(kind=="damage") {
+                    const auto begin=std::chrono::steady_clock::now();
                     auto point=triple(e.value.at("point_m"),"damage point");
                     if(e.value.value("space",std::string("scene"))=="scene")point=vsg::inverse(targetObject.pose(next->tick,next->fixedStep))*point;
                     removed=physics.damage({point,{0,0,0},e.value.value("energy_j",0.),e.value.value("radius_m",0.)});
+                    result.damageCarveMs+=elapsed(begin);
                 } else {moved=physics.collapse();if(moved&&targetObject.sensorMaterials)targetObject.sensorMaterials=targetObject.sensorMaterials->settled(*targetObject.volume);}
                 if(removed||moved) {
+                    const auto begin=std::chrono::steady_clock::now();
                     targetObject.volume=physics.commit();targetObject.collision.reset();changed=true;
+                    if(removed)result.damageVolumeMs+=elapsed(begin);
                     if(!targetObject.volume->occupiedCount()){targetObject.velocity=vsg::dvec3{};targetObject.angularVelocity=vsg::dvec3{};}
                     fracture=fractureVoxelObject(*next,id);
                     const double impulse=e.value.value("blast_impulse_ns",0.);
@@ -753,7 +827,46 @@ VoxelScene::Advance VoxelScene::advanceTo(double seconds,uint32_t budget) {
             next->journal.push_back({{"sequence",e.sequence},{"tick",next->tick},{"event",e.value},{"removed_voxels",removed},{"settled_voxels",moved},
                 {"broken_bonds",fracture.brokenBonds},{"fracture_energy_j",fracture.spentEnergy},{"fragments",fracture.fragments}});++consumed;
         }
-        if(changed){budgets(*next);impl_->dynamics.detect(*next);}
+        std::optional<std::chrono::steady_clock::time_point> crushBegin;
+        if(!impl_->dynamics.impacts.empty()){
+            size_t cells=0,vertices=0;
+            for(const auto& [id,o]:next->objects){cells+=o.volume->cellCount();vertices+=o.surface().vertices().size();}
+            for(const auto& [id,impact]:impl_->dynamics.impacts){
+                if(impact.impulse<=0.)continue;
+                auto& o=next->objects.at(id);
+                if(o.volume!=snapshot()->objects.at(id).volume)continue;
+                if(!crushBegin)crushBegin=std::chrono::steady_clock::now();
+                const auto beforeCells=o.volume->cellCount(),beforeVertices=o.surface().vertices().size();
+                if(cells>maxSceneCells||vertices>maxSceneVertices)continue;
+                if(crushVoxelObject(o,next->tick,next->fixedStep,impact,maxSceneCells-cells+beforeCells,
+                                     maxSceneVertices-vertices+beforeVertices)){
+                    cells=cells-beforeCells+o.volume->cellCount();
+                    vertices=vertices-beforeVertices+o.surface().vertices().size();
+                    ++result.crushedBodies;changed=true;
+                }
+            }
+        }
+        if(changed){
+            const auto begin=std::chrono::steady_clock::now();
+            budgets(*next);
+            const auto previous=snapshot();
+            for(const auto& [id,object]:next->objects)if(object.earth&&object.geometry) {
+                const auto old=previous->objects.find(id);
+                if(old!=previous->objects.end()&&old->second.geometry==object.geometry)continue;
+                const auto stats=voxelEarthMeshStats(object.surface());
+                result.terrainMeshMs+=stats.ms;result.terrainMeshStitchMs+=stats.stitchMs;
+                result.terrainMeshRebuilt+=stats.rebuilt;result.terrainMeshReused+=stats.reused;
+            }
+            const auto collisionBegin=std::chrono::steady_clock::now();
+            result.topologyRefreshMs+=std::chrono::duration<double,std::milli>(collisionBegin-begin).count();
+            const auto terrain=impl_->dynamics.detect(*next,.001,previous.get());
+            result.terrainBvhMs+=terrain.ms;
+            result.terrainBvhRebuilt+=terrain.rebuilt;
+            result.terrainBvhReused+=terrain.reused;
+            result.collisionRefreshMs+=elapsed(collisionBegin);
+        }
+        if(crushBegin)result.crushMs+=std::chrono::duration<double,std::milli>(
+            std::chrono::steady_clock::now()-*crushBegin).count();
         if(changed)++next->contentRevision;
         impl_->publish(next);
         impl_->pending.erase(impl_->pending.begin(),impl_->pending.begin()+consumed);
@@ -762,11 +875,23 @@ VoxelScene::Advance VoxelScene::advanceTo(double seconds,uint32_t budget) {
     result.pendingSteps=target-snapshot()->tick;return result;
 }
 void VoxelScene::importPrepared(VoxelSceneSnapshotPtr prepared,uint64_t revision){
-    impl_->own();if(!impl_->paused)throw std::logic_error("pause before importing assets");const auto current=snapshot();
-    if(!prepared||prepared->objects.empty()||current->revision!=revision)throw std::invalid_argument("empty import or stale scene revision");
-    const auto& a=current->anchor;const auto& b=prepared->anchor;if(a.lat_deg!=b.lat_deg||a.lon_deg!=b.lon_deg||a.alt_m!=b.alt_m||a.heading_deg!=b.heading_deg)throw std::invalid_argument("prepared asset geodetic chart mismatch");
-    auto next=std::make_shared<VoxelSceneSnapshot>(*current);for(const auto& [id,source]:prepared->objects){auto o=source;o.basePose=o.pose(prepared->tick,prepared->fixedStep);o.motionOriginTick=current->tick;if(!next->objects.emplace(id,std::move(o)).second)throw std::invalid_argument("duplicate imported object: "+id);}
-    ++next->revision;++next->contentRevision;next->contacts.clear();impl_->publish(next);
+    if(!prepared)throw std::invalid_argument("empty prepared import");
+    edit(json::array(),revision,std::move(prepared));
+}
+void VoxelScene::restoreAuthored(VoxelSceneSnapshotPtr before,uint64_t revision) {
+    impl_->own();
+    const auto current=snapshot();
+    if(!impl_->paused||!before||current->revision!=revision||before->tick!=current->tick||
+       before->fixedStep!=current->fixedStep||!sameChart(before->anchor,current->anchor))
+        throw std::logic_error("cannot undo across another edit or simulation step");
+    for(const auto& event:impl_->pending)
+        if(!before->objects.count(event.value.at("object").get<std::string>()))
+            throw std::invalid_argument("cancel pending events before undoing their object");
+    auto restored=std::make_shared<VoxelSceneSnapshot>(*before);
+    restored->revision=current->revision+1;
+    restored->contentRevision=current->contentRevision+1;
+    impl_->publish(restored);
+    impl_->assets.clear();
 }
 json encodeVoxelSceneSnapshot(VoxelSceneSnapshotPtr current) {
     if(!current)throw std::invalid_argument("empty scene snapshot");const auto& a=current->anchor;auto objects=json::array(),pending=json::array();

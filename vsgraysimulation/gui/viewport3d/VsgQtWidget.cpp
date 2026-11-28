@@ -722,7 +722,14 @@ QImage VsgQtWidget::grabFrame() {
     // An explicit readback schedules its own fenced frame. A continuously
     // rendering viewport must not starve screenshots behind a 32 ms gate.
 
-    if (!readback_ || !window_->getSwapchain()) return unavailable(QStringLiteral("no swapchain readback command"));
+    if (!readback_) return unavailable(QStringLiteral("no swapchain readback command"));
+    if (capture_requested_) return unavailable(QStringLiteral("a frame capture is already active"));
+    try {
+        // A model preview can capture before the viewer has drawn its first frame.
+        if (!window_->getOrCreateSwapchain()) return unavailable(QStringLiteral("no swapchain"));
+    } catch (const vsg::Exception& error) {
+        return unavailable(QString::fromStdString(error.message));
+    }
     const auto format = window_->surfaceFormat().format;
     const bool bgra = format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
     if (!bgra && format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_R8G8B8A8_SRGB) return unavailable(QStringLiteral("unsupported swapchain format"));
@@ -730,10 +737,13 @@ QImage VsgQtWidget::grabFrame() {
     const auto extent = window_->extent2D();
     const auto size = VkDeviceSize(extent.width) * extent.height * 4;
     if (!size) return unavailable(QStringLiteral("empty swapchain extent"));
-    auto buffer = vsg::createBufferAndMemory(device, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_SHARING_MODE_EXCLUSIVE, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (!buffer) return unavailable(QStringLiteral("readback allocation failed"));
-    readback_->dstBuffer = buffer;
+    auto& buffer = readback_->dstBuffer;
+    if (!buffer || buffer->size < size) {
+        auto allocation = vsg::createBufferAndMemory(device, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_SHARING_MODE_EXCLUSIVE, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (!allocation) return unavailable(QStringLiteral("readback allocation failed"));
+        buffer = std::move(allocation);
+    }
     readback_->recordedExtent = {};
     capture_requested_ = true;
     const bool active = frame();
@@ -742,7 +752,6 @@ QImage VsgQtWidget::grabFrame() {
     const auto result = viewer_->waitForFences(0, UINT64_MAX);
     capture_requested_ = false;
     const auto captured = readback_->recordedExtent;
-    readback_->dstBuffer = {};
     if (!captured.width || !captured.height) return unavailable(QStringLiteral("copy not recorded; native visible=%1, active=%2").arg(window_->visible()).arg(active));
     if (!active || result != VK_SUCCESS) return unavailable(QStringLiteral("readback fence failed: %1").arg(int(result)));
     auto memory = buffer->getDeviceMemory(device->deviceID);
@@ -754,6 +763,34 @@ QImage VsgQtWidget::grabFrame() {
     memory->unmap();
     setProperty("frameCaptureStatus",QStringLiteral("captured"));
     return pixels;
+}
+
+void VsgQtWidget::setWorkspaceEarth(const simcore::geo::GeoAnchor& anchor, bool globe) {
+    const bool changed = !workspace_anchor_ || workspace_globe_ != globe ||
+        workspace_anchor_->lat_deg != anchor.lat_deg || workspace_anchor_->lon_deg != anchor.lon_deg ||
+        workspace_anchor_->alt_m != anchor.alt_m || workspace_anchor_->heading_deg != anchor.heading_deg;
+    workspace_anchor_ = anchor;
+    workspace_globe_ = globe;
+    if (changed) {
+        workspace_camera_ = {};
+        applyWorkspaceCamera();
+    }
+}
+
+bool VsgQtWidget::applyWorkspaceCamera() {
+    if (!camera_ || !workspace_anchor_) return false;
+    auto look = camera_->viewMatrix.cast<vsg::LookAt>();
+    if (!look) return false;
+    const auto pose = simcore::geo::workspaceEarthCamera(*workspace_anchor_,workspace_globe_,workspace_camera_);
+    look->eye = pose.eye;
+    look->center = pose.center;
+    look->up = pose.up;
+    if (auto perspective = camera_->projectionMatrix.cast<vsg::Perspective>()) {
+        const auto clip = simcore::geo::cameraClip(pose);
+        perspective->nearDistance = clip.first;
+        perspective->farDistance = clip.second;
+    }
+    return true;
 }
 
 void VsgQtWidget::resetCamera() {
@@ -776,6 +813,8 @@ void VsgQtWidget::resetCamera() {
             }
         }
     }
+    workspace_camera_ = {};
+    if (applyWorkspaceCamera()) return;
     // 地球底座 (rocky_map) 自定义相机: 命中则跳过局部包围盒自适应。
     if (camera_override_ && camera_override_(camera_.get())) return;
     auto lookAt = dynamic_cast<vsg::LookAt*>(camera_->viewMatrix.get());
@@ -1005,6 +1044,16 @@ void VsgQtWidget::mouseMoveEvent(QMouseEvent* event) {
 
     const bool ctrl  = drag_modifiers_ & Qt::ControlModifier;
     const bool shift = drag_modifiers_ & Qt::ShiftModifier;
+    if (workspace_anchor_) {
+        if (last_mouse_button_ == Qt::RightButton)
+            workspace_camera_.dolly(std::exp(delta.y() * simcore::geo::EarthNavigation::dollyPerPixel));
+        else if (shift || (ctrl && last_mouse_button_ == Qt::LeftButton))
+            workspace_camera_.pan(delta.x(),delta.y());
+        else workspace_camera_.orbit(delta.x(),delta.y());
+        applyWorkspaceCamera();
+        event->accept();
+        return;
+    }
 
     // Middle drag: orbit; Shift+middle drag: pan (Blender convention).
     if (last_mouse_button_ == Qt::MiddleButton) {
@@ -1047,12 +1096,32 @@ void VsgQtWidget::wheelEvent(QWheelEvent* event) {
 
     // Blender-style wheel zoom: exponential dolly, 15° per notch.
     const double steps = double(event->angleDelta().y()) / 120.0;
+    if (workspace_anchor_) {
+        workspace_camera_.dolly(std::pow(simcore::geo::EarthNavigation::zoomPerNotch,steps));
+        applyWorkspaceCamera();
+        event->accept();
+        return;
+    }
     zoomLookAt(lookAt, std::pow(0.82, steps), projectionFar(camera_.get()));
 
     event->accept();
 }
 
 void VsgQtWidget::keyPressEvent(QKeyEvent* event) {
+    if (workspace_anchor_) {
+        switch (event->key()) {
+            case Qt::Key_Left: workspace_camera_.orbit(-12,0); break;
+            case Qt::Key_Right: workspace_camera_.orbit(12,0); break;
+            case Qt::Key_Up: workspace_camera_.orbit(0,12); break;
+            case Qt::Key_Down: workspace_camera_.orbit(0,-12); break;
+            case Qt::Key_Plus: case Qt::Key_Equal: workspace_camera_.dolly(simcore::geo::EarthNavigation::zoomPerNotch); break;
+            case Qt::Key_Minus: workspace_camera_.dolly(1. / simcore::geo::EarthNavigation::zoomPerNotch); break;
+            default: QWidget::keyPressEvent(event); return;
+        }
+        applyWorkspaceCamera();
+        event->accept();
+        return;
+    }
     if(orbital_navigation_ && camera_ && event->modifiers()==Qt::NoModifier) {
         if(event->key()==Qt::Key_End) {resetCamera();event->accept();return;}
         if(event->key()==Qt::Key_Home) {

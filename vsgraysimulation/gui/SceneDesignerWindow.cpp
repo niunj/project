@@ -1,8 +1,10 @@
+#include "voxel/ModelLibraryDialog.h"
 #include <vsg/app/Camera.h>
 #include <simcore/GeoFrame.h>
 #include <vsg/maths/transform.h>
 #include <vsgraysim/broker/VoxelEquipmentSource.h>
 #include "viewport3d/VoxelSceneFeature.h"
+#include "viewport3d/EarthViewFeature.h"
 #include "viewport3d/TerrainLayerFeature.h"
 /// @file SceneDesignerWindow.cpp
 /// @brief Scene designer implementation (7 个分类 Dock).
@@ -11,6 +13,7 @@
 #include <vsgraysim/earth/VoxelUsdEdits.h>
 #include <vsgraysim/earth/VoxelScenePackage.h>
 #include "voxel/SceneAuthoringPanel.h"
+#include "voxel/SmartDeploymentPanel.h"
 #include "base/DockBuilder.h"
 #include "base/WidgetFactory.h"
 #include "base/ThemeManager.h"
@@ -49,11 +52,13 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QProcess>
 #include <QRadioButton>
 #include <QSaveFile>
 #include <QScopedValueRollback>
+#include <QShortcut>
 #include <QTimer>
 #include <QActionGroup>
 #include <QSignalBlocker>
@@ -364,8 +369,10 @@ bool SceneDesignerWindow::confirmUnsavedChanges()
 void SceneDesignerWindow::buildCentralWidget()
 {
     viewport_ = new viewport3d::Viewport3DView(this);
-    viewport_->applyConfig(
-        topic_path_.isEmpty()?viewport3d::ViewportConfig::fromPreset("scene_designer"):viewport3d::ViewportConfig::fromTopicFile(topic_path_.toStdString(),"scene_designer"));
+    auto config = topic_path_.isEmpty() ? viewport3d::ViewportConfig::fromPreset("scene_designer")
+        : viewport3d::ViewportConfig::fromTopicFile(topic_path_.toStdString(),"scene_designer");
+    config.useWorkspaceTerrain();
+    viewport_->applyConfig(config);
     if(!topic_path_.isEmpty())viewport_->configureFeature("voxel_scene",{{"paused",true}});
     connect(viewport_,&viewport3d::Viewport3DView::beforeFrameTick,this,[this]{
         if(!topic_path_.isEmpty()){auto* feature=viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");viewport_->context().setSimulationTime(feature&&feature->runtime()?feature->runtime()->snapshot()->timeSeconds():0.);}
@@ -373,7 +380,6 @@ void SceneDesignerWindow::buildCentralWidget()
     viewport_->setAutoFrame(true, /*target_fps=*/60);
     viewport_->setIdleSuspend(topic_path_.isEmpty(), /*idle_ms=*/3000);   // 编辑器按需渲染: 空闲停帧
 
-    // 中央区: [三维视图 | 关系图] Tab, 关系图与 3D 同层同位。
     auto* central_tabs = new QTabWidget(this);
     central_tabs->setObjectName("CentralTabs");
     central_tabs->setStyleSheet(
@@ -382,7 +388,46 @@ void SceneDesignerWindow::buildCentralWidget()
         "  border:1px solid #262e3b; border-bottom:none; }"
         "QTabBar::tab:selected { background:#1d4f8a; color:#eaf2fc; }"
         "QTabBar::tab:hover { background:#222b3c; }");
-    central_tabs->addTab(viewport_, tr("三维视图"));
+    auto* globe = new viewport3d::Viewport3DView(central_tabs);
+    globe->widget()->setImGuiEnabled(false);
+    connect(globe,&viewport3d::Viewport3DView::frameTick,this,[globe,surface=earth::EarthSurfaceSnapshotPtr{}](const auto&) mutable {
+        auto* feature = globe->featureAs<viewport3d::EarthViewFeature>("rocky_map");
+        auto ready = feature ? feature->surfaceSnapshot() : nullptr;
+        if (ready && ready != surface) globe->setIdleSuspend(true,3000);
+        surface = std::move(ready);
+    });
+    const int globeTab = central_tabs->addTab(globe,tr("地球"));
+    const int terrainTab = central_tabs->addTab(viewport_, tr("局部地形 TB"));
+    central_tabs->setCurrentIndex(terrainTab);
+    central_tabs->setTabToolTip(globeTab,tr("地球 (Home)"));
+    central_tabs->setTabToolTip(terrainTab,tr("局部地形 TB (End)"));
+    connect(central_tabs,&QTabWidget::currentChanged,this,
+        [this,globe,globeTab,terrainTab,central_tabs,source=QString(),configured=false](int tab) mutable {
+            const bool earthVisible = tab == globeTab;
+            if (earthVisible && (!configured || source != topic_path_)) {
+                auto globeConfig = topic_path_.isEmpty() ? viewport3d::ViewportConfig::fromPreset("earth_display")
+                    : viewport3d::ViewportConfig::fromTopicFile(topic_path_.toStdString(),"earth_display");
+                globeConfig.useWorkspaceGlobe();
+                globe->setIdleSuspend(false,3000);
+                globe->applyConfig(globeConfig);
+                configured = true;
+                source = topic_path_;
+            }
+            globe->setAutoFrame(earthVisible,30);
+            viewport_->setAutoFrame(tab == terrainTab,60);
+            if (tab == globeTab || tab == terrainTab) {
+                auto* current = tab == globeTab ? globe : viewport_;
+                current->markActivity();
+                current->widget()->setFocus();
+            }
+        });
+    for (auto* view : {globe,viewport_}) {
+        for (const auto& [key,tab] : {std::pair{Qt::Key_Home,globeTab},std::pair{Qt::Key_End,terrainTab}}) {
+            auto* shortcut = new QShortcut(QKeySequence(key),view->widget());
+            shortcut->setContext(Qt::WidgetShortcut);
+            connect(shortcut,&QShortcut::activated,central_tabs,[central_tabs,tab] { central_tabs->setCurrentIndex(tab); });
+        }
+    }
 
     graph_bindings_ = new display::RelationshipGraphView(central_tabs);
     graph_bindings_->setEditable(true);   // 场景设计软件: 可编辑协作关系
@@ -399,7 +444,37 @@ void SceneDesignerWindow::buildCentralWidget()
                 onBindingRemoveGraph(f, t);
             });
 
-    setCentralWidget(central_tabs);
+    auto* central = new QWidget(this);
+    auto* layout = new QVBoxLayout(central);
+    layout->setContentsMargins(0,0,0,0);
+    layout->setSpacing(4);
+    layout->addWidget(central_tabs,1);
+    SmartDeploymentPanel::Host host{
+        [this]()->earth::VoxelScene*{
+            if(topic_baseline_pending_||publishing_scene_)return nullptr;
+            auto* feature=viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");
+            return feature?feature->runtime():nullptr;
+        },
+        [this]()->nlohmann::json&{return topic_document_;},
+        [this]{return topic_path_;},
+        [this]{
+            const auto* row=tree_scene_?tree_scene_->currentItem():nullptr;
+            return row?row->data(0,kRoleObjectId).toString():QString{};
+        },
+        [this]{
+            viewport_->markActivity();
+            refreshSceneTree();
+            updateUndoActions();
+            const auto equipment=topic_document_.value("equipment",nlohmann::json::object());
+            sb_sensors_->setText(tr("装备 %1").arg(equipment.value("equipment",nlohmann::json::array()).size()));
+        }
+    };
+    auto* deployment = new SmartDeploymentPanel(std::move(host),viewport_->widget(),central);
+    layout->addWidget(deployment);
+    connect(central_tabs,&QTabWidget::currentChanged,deployment,[deployment,globeTab,terrainTab](int tab) {
+        deployment->setVisible(tab == globeTab || tab == terrainTab);
+    });
+    setCentralWidget(central);
 
     facade_ = new viewport3d::SceneDesignFacade(viewport_, this);
     // 地形编辑门面 (程序化生成/笔刷/水面/分析/工程存取): 依赖 scene_designer
@@ -525,8 +600,25 @@ void SceneDesignerWindow::buildSceneTreeDock()
             [this](QTreeWidgetItem* item, int) {
                 if (!item) return;
                 const QString oid = item->data(0, kRoleObjectId).toString();
-                if (oid.isEmpty() || !facade_) return;
-                facade_->focusOnEntity(oid);
+                if(oid.isEmpty())return;
+                if(!topic_path_.isEmpty()){
+                    auto* feature=viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene");
+                    if(!feature||!feature->runtime()||!viewport_->context().camera())return;
+                    const auto scene=feature->runtime()->snapshot();
+                    const auto object=scene->objects.find(oid.toStdString());
+                    auto look=viewport_->context().camera()->viewMatrix.cast<vsg::LookAt>();
+                    if(object==scene->objects.end()||!look)return;
+                    const auto bounds=object->second.localBounds();
+                    if(!bounds.valid())return;
+                    const auto centre=object->second.pose(scene->tick,scene->fixedStep)*((bounds.min+bounds.max)*.5);
+                    const auto axis=look->eye-look->center;
+                    if(vsg::length(axis)<1e-6)return;
+                    look->center=simcore::geo::localToECEF(scene->anchor,centre);
+                    look->eye=look->center+vsg::normalize(axis)*std::max(2.5,2.8*vsg::length(bounds.max-bounds.min));
+                    viewport_->markActivity();
+                    return;
+                }
+                if(facade_)facade_->focusOnEntity(oid);
             });
     // 右键菜单: 场景树内增删 传感器/电磁分组/航路点/实体 (属性变量面板不再提供增删)。
     connect(tree_scene_, &QTreeWidget::customContextMenuRequested, this,
@@ -1441,6 +1533,15 @@ void SceneDesignerWindow::buildProductMenuItems(QMenuBar* mb)
         if (!earth::VoxelScenePackage::extension(path.toStdString())) path += ".vsimscene";
         saveScenarioToPath(path, terrainPages);
     };
+    topicMenu->addAction(tr("智能部署…"),this,[this]{
+        if(topic_path_.isEmpty()||topic_baseline_pending_||publishing_scene_){
+            statusBar()->showMessage(tr("请先打开并加载地球体素专题"),4000);
+            return;
+        }
+        auto* tabs = findChild<QTabWidget*>("CentralTabs");
+        if (tabs->currentIndex() > 1) tabs->setCurrentWidget(viewport_);
+        if (auto* input = findChild<QPlainTextEdit*>("deploymentInstruction")) input->setFocus();
+    });
     topicMenu->addAction(tr("发布体素场景包…"), this, [publishVoxelScene] { publishVoxelScene(false); });
     topicMenu->addAction(tr("发布分块体素场景包…"), this, [publishVoxelScene] { publishVoxelScene(true); });
     if (earth::voxelUsdEditsAvailable()) {
@@ -1464,6 +1565,11 @@ void SceneDesignerWindow::buildProductMenuItems(QMenuBar* mb)
         catch(const std::exception& error){QMessageBox::warning(this,tr("装备配置无效"),QString::fromUtf8(error.what()));}
     });
     auto* mTools = mb->addMenu(tr("&工具"));
+    mTools->addAction(tr("模型工作台…"),this,[this] {
+        auto* library=new ModelLibraryDialog(this);
+        library->setAttribute(Qt::WA_DeleteOnClose);
+        library->show();
+    });
     mTools->addAction(tr("验证场景"), this, &SceneDesignerWindow::onValidateScene);
     mTools->addAction(tr("体素场景工坊…"), this, [this] {
         const auto executable = QCoreApplication::applicationDirPath() + "/vsgraysim_voxel_workshop";
@@ -1598,11 +1704,51 @@ void SceneDesignerWindow::refreshSceneTree()
 {
     if (!tree_scene_) return;
     if(!topic_path_.isEmpty()) {
-        const QSignalBlocker blocker(tree_scene_);tree_scene_->clear();auto* root=new QTreeWidgetItem(tree_scene_,{edt_scenario_name_->text()});root->setData(0,kRoleNodeKind,int(prop::NodeKind::Scenario));
+        const auto selected=tree_scene_->currentItem()
+            ?tree_scene_->currentItem()->data(0,kRoleObjectId).toString():QString{};
+        const QSignalBlocker blocker(tree_scene_);
+        tree_scene_->clear();
+        auto* root=new QTreeWidgetItem(tree_scene_,{edt_scenario_name_->text()});
+        root->setData(0,kRoleNodeKind,int(prop::NodeKind::Scenario));
+        std::map<std::string,QTreeWidgetItem*> rows;
+        std::map<uint32_t,std::string> mounted;
+        std::map<std::string,QString> platformNames;
+        const auto equipment=topic_document_.value("equipment",nlohmann::json::object());
+        for(const auto& platform:equipment.value("platforms",nlohmann::json::array())){
+            const auto id=platform.at("object").get<std::string>();
+            mounted.emplace(platform.at("id").get<uint32_t>(),id);
+            platformNames.emplace(id,QString::fromStdString(platform.at("name").get<std::string>()));
+        }
         auto* feature=viewport_?viewport_->featureAs<viewport3d::VoxelSceneFeature>("voxel_scene"):nullptr;
-        if(feature&&feature->runtime())for(const auto& [id,object]:feature->runtime()->snapshot()->objects){auto* row=new QTreeWidgetItem(root,{QString::fromStdString(id)+tr(" · %1").arg(object.earth?tr("新数据地形"):tr("体素目标"))});row->setData(0,kRoleNodeKind,-1);row->setToolTip(0,tr("完整体素状态随专题保存；使用体素地形与多波段属性面板编辑"));}
-        if(topic_document_.contains("equipment"))for(const auto& equipment:topic_document_["equipment"].at("equipment")){auto* row=new QTreeWidgetItem(root,{QString::fromStdString(equipment.at("name").get<std::string>())+QString(" #%1").arg(equipment.at("id").get<uint32_t>())});row->setData(0,kRoleNodeKind,-1);}
-        root->setExpanded(true);return;
+        if(feature&&feature->runtime())for(const auto& [id,object]:feature->runtime()->snapshot()->objects){
+            const auto objectId=QString::fromStdString(id);
+            const auto type=object.earth?tr("新数据地形"):tr("体素目标");
+            const auto name=platformNames.count(id)?platformNames.at(id)+QString(" [%1]").arg(objectId):objectId;
+            auto* row=new QTreeWidgetItem(root,{name+QString(" · ")+type});
+            rows.emplace(id,row);
+            row->setData(0,kRoleNodeKind,-1);
+            row->setData(0,kRoleObjectId,objectId);
+            if(objectId==selected) tree_scene_->setCurrentItem(row);
+            if(object.poseTrack){
+                auto* route=new QTreeWidgetItem(row,{tr("航迹 · %1 个关键点").arg(object.poseTrack->size())});
+                route->setData(0,kRoleNodeKind,-1);
+                route->setData(0,kRoleObjectId,objectId);
+                row->setExpanded(true);
+            }
+        }
+        for(const auto* list:{"equipment","navigation","depth_sounders"}){
+            for(const auto& sensor:equipment.value(list,nlohmann::json::array())){
+                auto* parent=root;
+                auto mount=mounted.find(sensor.value("platform_id",uint32_t(0)));
+                if(mount!=mounted.end()&&rows.count(mount->second))parent=rows.at(mount->second);
+                const auto name=QString::fromStdString(sensor.at("name").get<std::string>());
+                auto* row=new QTreeWidgetItem(parent,{name+QString(" #%1").arg(sensor.at("id").get<uint32_t>())});
+                row->setData(0,kRoleNodeKind,-1);
+                parent->setExpanded(true);
+            }
+        }
+        root->setExpanded(true);
+        return;
     }
     QString prev_id;
     if (auto* cur = tree_scene_->currentItem())
@@ -3630,10 +3776,12 @@ void SceneDesignerWindow::loadScenarioFromFile(const QString& path)
         try {
             const auto project=VoxelSceneProject::open(path.toStdString());
             auto config=viewport3d::ViewportConfig::fromTopicFile(project.path,"scene_designer");config.add("voxel_scene",{{"paused",true}});
+            config.useWorkspaceTerrain();
             if(!confirmUnsavedChanges())return;
             topic_path_=QString::fromStdString(project.path);topic_document_=project.document;topic_baseline_pending_=true;
             current_scenario_path_=topic_path_;setWindowFilePath(current_scenario_path_);clearObjects();
             edt_scenario_name_->setText(QString::fromStdString(topic_document_.value("name",std::string("体素专题"))));
+            findChild<QTabWidget*>("CentralTabs")->setCurrentWidget(viewport_);
             viewport_->setIdleSuspend(false);viewport_->applyConfig(config);viewport_->markActivity();return;
         }catch(const std::exception& error){QMessageBox::warning(this,tr("打开失败"),QString::fromUtf8(error.what()));return;}
     }
@@ -3659,7 +3807,13 @@ void SceneDesignerWindow::loadScenarioFromFile(const QString& path)
         QMessageBox::warning(this,tr("地表数据无效"),QString::fromStdString(error.what()));return;
     }
     if (!confirmUnsavedChanges()) return;
-    if(!topic_path_.isEmpty()){topic_path_.clear();topic_document_=nlohmann::json();topic_baseline_pending_=false;voxelTopicUi(*this,false);viewport_->applyConfig(viewport3d::ViewportConfig::fromPreset("scene_designer"));}
+    if(!topic_path_.isEmpty()){
+        topic_path_.clear();topic_document_=nlohmann::json();topic_baseline_pending_=false;voxelTopicUi(*this,false);
+        auto config = viewport3d::ViewportConfig::fromPreset("scene_designer");
+        config.useWorkspaceTerrain();
+        findChild<QTabWidget*>("CentralTabs")->setCurrentWidget(viewport_);
+        viewport_->applyConfig(config);
+    }
     clock_config_ = std::move(importedClock);
 
     clearObjects();

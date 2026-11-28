@@ -51,7 +51,7 @@ public:
     SceneBuilder captureSceneBuilder() const;
     using TexturedSceneBuilder=std::function<void(GpuSensorRuntime&,const std::vector<SceneInstance>&,
         const std::vector<RadarMaterial>&,const SharedSceneResources::TexArraySpec*)>;
-    TexturedSceneBuilder captureTexturedSceneBuilder() const;
+    TexturedSceneBuilder captureTexturedSceneBuilder(bool reuse=true) const;
     uint64_t rejectedSceneWindows()const{return rejected_scene_windows_;}
     void swap(GpuSensorRuntime& other) noexcept { impl_.swap(other.impl_); }
     void replaceScene(const std::vector<SceneInstance>&,const std::vector<RadarMaterial>&,
@@ -60,6 +60,12 @@ public:
                    const std::function<bool(uint32_t)>& enabled={}, double sceneValidFrom=0);
     const std::string& deviceName() const;
     bool hardwareRayTracing() const;
+    struct SceneBuildStatistics {
+        SharedSceneResources::Stats resources;
+        double resourcesMs=0,accelerationSubmitMs=0,graphsMs=0;
+        bool hardware=false;
+    };
+    SceneBuildStatistics sceneBuildStatistics()const;
     struct Statistics {
         uint64_t graphSubmissions=0,readbackBatches=0,measurements=0;
         uint64_t stationaryCpis=0,dynamicCpis=0,multiEquipmentBatches=0;

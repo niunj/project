@@ -29,10 +29,13 @@ set(GUI_SOURCES
     LauncherWindow.cpp
     HealthPanel.cpp
     SceneDesignerWindow.cpp
+    voxel/SmartDeploymentPanel.cpp
+    voxel/ModelLibraryDialog.cpp
+    voxel/SharedSceneWorkspace.cpp
     voxel/SceneAuthoringPanel.cpp
     SimulationControlWindow.cpp
     SimulationWorkerClient.cpp
-    SimulationEngineWorker.cpp
+    SimulationServicePanel.cpp
     ${BASE_UI_SOURCES}
     PreviewRenderer.cpp
     AssetBrowserWidget.cpp
@@ -177,6 +180,7 @@ target_link_libraries(vsgraysim_gui_lib PUBLIC
     vsgraysim_telemetry
     vsgraysim_platform
     Qt6::Widgets
+    PRIVATE Qt6::Network vsgraysim_deployment_adapter
 )
 target_include_directories(vsgraysim_gui_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

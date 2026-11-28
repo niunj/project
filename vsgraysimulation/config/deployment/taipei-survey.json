@@ -1,0 +1,12 @@
+{
+  "format": "scene-deployment-v1",
+  "actions": [
+    {"op":"add_target","model":"skywalker-x8","id":"survey-x8","name":"台北测绘无人机","position":{"local_m":[0,0,0],"agl_m":250}},
+    {"op":"route","object":"survey-x8","speed_mps":17,"points":[{"local_m":[0,0,0],"agl_m":250},{"local_m":[55,0,75],"agl_m":255},{"local_m":[120,0,125],"agl_m":260}]},
+    {"op":"attach_sensor","object":"survey-x8","profile":"survey-tv"},
+    {"op":"attach_sensor","object":"survey-x8","profile":"survey-lwir"},
+    {"op":"attach_sensor","object":"survey-x8","profile":"survey-pulse"},
+    {"op":"material","object":"survey-x8","parameters":{"rho_tv":0.36,"eps_lwir":0.88,"radar":{"rcs_scale":1.1}}},
+    {"op":"weather","preset":"fair_clouds"}
+  ]
+}

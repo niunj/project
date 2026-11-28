@@ -189,6 +189,16 @@ void Viewport3DView::onTimerTick()
 
 void Viewport3DView::renderFrame()
 {
+    renderFrameImpl(false);
+}
+
+QImage Viewport3DView::renderAndGrabFrame()
+{
+    return renderFrameImpl(true);
+}
+
+QImage Viewport3DView::renderFrameImpl(bool capture)
+{
     const int64_t now = QDateTime::currentDateTime().toMSecsSinceEpoch();
     if (start_ms_ == 0) start_ms_ = now;
     if (last_tick_ms_ == 0) last_tick_ms_ = now;
@@ -211,7 +221,11 @@ void Viewport3DView::renderFrame()
         if (f->attached() && f->enabled()) f->onFrame(ctx_, tick);
     emit frameTick(tick);
 
-    if (widget_ && widget_->isReady()) widget_->frame();
+    QImage image;
+    if (widget_ && widget_->isReady()) {
+        if (capture) image = widget_->grabFrame();
+        else widget_->frame();
+    }
 
     // FPS 统计 (500 ms 窗口)。
     if (fps_state_.last_ms == 0) fps_state_.last_ms = now;
@@ -230,6 +244,7 @@ void Viewport3DView::renderFrame()
         frame_timer_.stop();
         suspended_ = true;
     }
+    return image;
 }
 
 // ---------------------------------------------------------------------------

@@ -189,15 +189,19 @@ std::size_t VoxelTerrainPhysics::damage(const DamageEvent& event) {
     }
     std::size_t removed = 0;
     for (int z = gridMin[2]; z <= gridMax[2]; ++z)
-        for (int y = gridMin[1]; y <= gridMax[1]; ++y)
-            for (int x = gridMin[0]; x <= gridMax[0]; ++x) {
+        for (int x = gridMin[0]; x <= gridMax[0]; ++x) {
+            const auto before=removed;
+            for (int y = gridMin[1]; y <= gridMax[1]; ++y) {
                 if (!occupied(x, y, z)) continue;
                 const auto c = voxelCentre(x, y, z);
                 if (vsg::length(c - centre) <= radius) {
-                    setOccupied(x, y, z, false);
-                    ++removed;++destroyed_;
+                    occupied_[index(x,y,z)]=false;
+                    ++removed;
                 }
             }
+            if (removed!=before) recomputeTop(x,z);
+        }
+    destroyed_+=removed;
     if (removed) ++revision_;
     return removed;
 }
@@ -282,14 +286,16 @@ std::shared_ptr<VoxelTerrain> VoxelTerrainPhysics::commit() const {
     result->valid_samples=0;
     result->min_height=std::numeric_limits<double>::infinity();
     result->max_height=-result->min_height;
+    int lowest=layers_;
     for(int z=0;z<columns_z_;++z)for(int x=0;x<columns_x_;++x) {
-        if(std::isfinite(top_[z*columns_x_+x]))++result->valid_samples;
-        for(int y=0;y<layers_;++y)if(occupied(x,y,z)) {
-            result->min_height=std::min(result->min_height,base_y_+y*cell_size_);
-            result->max_height=std::max(result->max_height,base_y_+(y+1)*cell_size_);
-        }
+        const auto top=top_[z*columns_x_+x];
+        if(!std::isfinite(top))continue;
+        ++result->valid_samples;
+        result->max_height=std::max(result->max_height,top);
+        for(int y=0;y<lowest;++y)if(occupied(x,y,z)){lowest=y;break;}
     }
-    if(!result->valid_samples)result->min_height=result->max_height=base_y_;
+    if(result->valid_samples)result->min_height=base_y_+lowest*cell_size_;
+    else result->min_height=result->max_height=base_y_;
     result->rebuildMesh();
     return result;
 }

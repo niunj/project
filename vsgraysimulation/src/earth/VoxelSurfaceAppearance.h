@@ -28,6 +28,8 @@ struct VoxelSurfaceAppearance {
     struct SurfacePatch {uint32_t cell;std::vector<SurfaceVertex> vertices;};
     std::vector<SurfacePatch> patches;
     std::vector<bool> originalOccupancy;
+    // Reshaped cells draw their occupied faces; the rest retain source patches.
+    std::vector<bool> flatFaceCells;
     bool detailed()const{return !patches.empty();}
     bool reconstructed()const{return detailed()||!corners.empty();}
     int64_t cellAt(const vsg::dvec3& p)const {

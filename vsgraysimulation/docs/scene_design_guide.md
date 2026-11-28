@@ -1485,6 +1485,17 @@ QT_QPA_PLATFORM=xcb build/source-refresh/gui/sim_earth_gui_tests \
 
 这条航线从船边穿过波面至潜艇桨后。输出每秒 25 张 Vulkan 帧和同钟采样的 48 kHz 立体声 PCM，以及各时刻的水下混合比例、转速与声路距离。
 
+### 动态目标的撞击压扁
+
+在场景设计器选中体素目标，打开「目标撞击压扁」设置影响半径、起始速度和变形强度。场景文件也可在目标的 `physics` 下添加 `"crush": {"radius_m": 3, "yield_speed_mps": 4, "max_strain": 0.65}`。设置会随检查点保存，在目标进入动态刚体阶段后生效。
+
+首次高于阈值的有效接触从 Bullet 读取冲击位置、法向和冲量。受压区的占用沿法向压缩，并将体素分配到附近有支撑的空位。体素数量、质量和分区传感器材质随重排保留。变形网格与碰撞形状同时发布，符合条件的未变形单元保留原始贴图三角面。配置的参数表示塑性近似强度，适合场景观感及刚体交互。台北演示在机身实际触地并压扁后，沿预设翼根平面分离碎块。
+
+```bash
+QT_QPA_PLATFORM=xcb build/source-refresh/gui/sim_earth_gui_tests \
+  --aircraft-impact-capture build/impact-crush/taipei
+```
+
 用以下命令生成同航线、同 UTC 的开关对照专题，并在原生 Vulkan 地球视口拍摄。
 
 ```bash

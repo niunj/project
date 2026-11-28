@@ -21,6 +21,12 @@ public:
     uint64_t rejectedSceneWindows()const;
     uint64_t contentRevision()const;
     rockyenv::sensor::GpuSensorRuntime::Statistics statistics()const;
+    struct TopologyBuild {
+        uint64_t contentRevision=0;
+        double dataMs=0,totalMs=0;
+        rockyenv::sensor::GpuSensorRuntime::SceneBuildStatistics gpu;
+    };
+    TopologyBuild latestTopologyBuild()const;
 private:
     struct Impl;std::unique_ptr<Impl> impl_;
 };

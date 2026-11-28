@@ -213,6 +213,12 @@ void VoxelTerrain::rebuildMesh() {
             };
             if (!occupied_[at(x,y,z)]) continue;
             ++occupied_count_;centreSum+=vsg::dvec3(x+.5,y+.5,z+.5);
+            const auto centre=base+vsg::dvec3(x+.5,y+.5,z+.5)*size;
+            bool useSourcePatches=appearance_&&appearance_->detailed();
+            if(useSourcePatches&&!appearance_->flatFaceCells.empty()){
+                const auto source=appearance_->cellAt(centre);
+                useSourcePatches=source>=0&&!appearance_->flatFaceCells[size_t(source)];
+            }
             for (int axis = 0; axis < 3; ++axis) for (int side : {-1, 1}) {
                 std::array<int,3> adjacent{x, y, z};
                 adjacent[axis] += side;
@@ -222,7 +228,7 @@ void VoxelTerrain::rebuildMesh() {
                     occupied_[at(adjacent[0], adjacent[1], adjacent[2])]) continue;
                 // Source patches already describe the original exterior. Only
                 // newly exposed voxel cuts receive neutral cell-face geometry.
-                if(appearance_&&appearance_->detailed()){
+                if(useSourcePatches){
                     const auto neighbour=base+vsg::dvec3(adjacent[0]+.5,adjacent[1]+.5,adjacent[2]+.5)*size;
                     const auto original=appearance_->cellAt(neighbour);
                     if(original<0||!appearance_->originalOccupancy[size_t(original)])continue;
@@ -248,7 +254,7 @@ void VoxelTerrain::rebuildMesh() {
                     vertices_.push_back(point);if(appearance_&&appearance_->reconstructed())surface_normals.push_back(normal);
                 }
                 if(appearance_) {
-                    const auto uv=appearance_->uv(base+vsg::dvec3(x+.5,y+.5,z+.5)*size,axis*2+(side>0));
+                    const auto uv=appearance_->uv(centre,axis*2+(side>0));
                     imagery_uv.insert(imagery_uv.end(),uv.begin(),uv.end());
                 }
                 indices_.insert(indices_.end(),

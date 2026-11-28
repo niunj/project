@@ -2,7 +2,7 @@
 #include <BulletCollision/CollisionDispatch/btCompoundCollisionAlgorithm.h>
 #include <BulletCollision/CollisionDispatch/btCollisionObjectWrapper.h>
 #include <BulletCollision/CollisionDispatch/btManifoldResult.h>
-#include <BulletCollision/CollisionShapes/btBvhTriangleMeshShape.h>
+#include <BulletCollision/CollisionShapes/btConcaveShape.h>
 #include <BulletCollision/CollisionShapes/btCompoundShape.h>
 #include <algorithm>
 #include <vector>
@@ -29,7 +29,7 @@ class TerrainCompoundAlgorithm final : public btCompoundCollisionAlgorithm {
         btVector3 meshWorldLow,meshWorldHigh;
         std::vector<unsigned char>& candidates;
         std::vector<const btDbvtNode*> stack;
-        Triangles(const btDbvtNode* node,const btCompoundShape& shape,const btBvhTriangleMeshShape& mesh,const btTransform& meshWorld,const btTransform& world,btScalar pad,btScalar aabbPad,std::vector<unsigned char>& selected)
+        Triangles(const btDbvtNode* node,const btCompoundShape& shape,const btConcaveShape& mesh,const btTransform& meshWorld,const btTransform& world,btScalar pad,btScalar aabbPad,std::vector<unsigned char>& selected)
             :root(node),compound(shape),meshToCompound((meshWorld.inverse()*world).inverse()),compoundToMesh(meshWorld.inverse()*world),meshInverse(meshWorld.inverse()),compoundWorld(world),absoluteBasis(compoundToMesh.getBasis().absolute()),padding(pad),aabbPadding(aabbPad),candidates(selected){
             stack.reserve(128);btVector3 low,high;mesh.getAabb(world.inverse()*meshWorld,low,high);referenceBounds=btDbvtVolume::FromMM(low,high);mesh.getAabb(meshWorld,meshWorldLow,meshWorldHigh);
         }
@@ -77,11 +77,12 @@ public:
         const auto* compoundWrap=m_isSwapped?b:a;const auto* meshWrap=m_isSwapped?a:b;
         const auto* compound=static_cast<const btCompoundShape*>(compoundWrap->getCollisionShape());
         const auto* tree=compound->getDynamicAabbTree();
-        if(fallback_||!tree||meshWrap->getCollisionShape()->getShapeType()!=TRIANGLE_MESH_SHAPE_PROXYTYPE||compound->getUpdateRevision()!=m_compoundShapeRevision||result->m_closestPointDistanceThreshold>0) {
+        const int meshType=meshWrap->getCollisionShape()->getShapeType();
+        if(fallback_||!tree||(meshType!=TRIANGLE_MESH_SHAPE_PROXYTYPE&&meshType!=FAST_CONCAVE_MESH_PROXYTYPE)||compound->getUpdateRevision()!=m_compoundShapeRevision||result->m_closestPointDistanceThreshold>0) {
             // Generic Bullet supports mutable/nested/fallback configurations.
             fallback_=true;btCompoundCollisionAlgorithm::processCollision(a,b,info,result);return;
         }
-        const auto* mesh=static_cast<const btBvhTriangleMeshShape*>(meshWrap->getCollisionShape());
+        const auto* mesh=static_cast<const btConcaveShape*>(meshWrap->getCollisionShape());
         if(childOrder_.empty()) {
             std::vector<const btDbvtNode*> stack;if(tree->m_root)stack.push_back(tree->m_root);
             while(!stack.empty()){const auto* node=stack.back();stack.pop_back();if(node->isleaf())childOrder_.push_back(node->dataAsInt);else{stack.push_back(node->childs[0]);stack.push_back(node->childs[1]);}}

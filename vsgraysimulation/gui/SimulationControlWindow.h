@@ -81,6 +81,7 @@ class SimulationControlWindow : public ui::BaseWindow {
 public:
     explicit SimulationControlWindow(QWidget* parent = nullptr);
     ~SimulationControlWindow() override;
+    void connectSimulationService(const QUrl&, const QString& run);
 
     /// 装载一个场景文件 (workspace/scenes/*.json): 展示摘要+3D预览, 并直接初始化。
     void loadScenarioFile(const QString& path);
@@ -166,6 +167,7 @@ private:
     Simulation sim_;
     std::shared_ptr<VoxelEquipmentSource> voxel_source_;
     std::unique_ptr<SimulationWorkerClient> engine_worker_;
+    QDockWidget* service_dock_=nullptr;
     QTableWidget* task_pool_table_=nullptr;
     AsyncVoxelSceneReadView remote_voxel_view_;
     std::string worker_view_generation_;

@@ -12,5 +12,5 @@ struct VoxelSceneSensorData {
 };
 /// Same geometry, object transforms and material temperatures as the display.
 /// Retain snapshot with a measurement; rebuild resources on contentRevision.
-VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr);
+VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr,bool splitTerrain=false);
 }

@@ -68,6 +68,244 @@ double percentile95(std::vector<double> times) {
     return times[size_t(std::ceil(.95 * times.size())) - 1];
 }
 
+void runTerrainCollision(VoxelSceneFeature& feature,Viewport3DView& view,const QString& output) {
+    auto& scene=*feature.runtime();
+    const auto initial=scene.snapshot();
+    const auto terrain=std::find_if(initial->objects.begin(),initial->objects.end(),[](const auto& entry){
+        return entry.second.earth&&entry.second.parentId.empty();
+    });
+    require(terrain!=initial->objects.end()&&initial->objects.size()==1&&initial->tick==0,
+            "terrain collision capture requires an initial terrain-only topic");
+    const auto& terrainId=terrain->first;
+    const auto& bounds=terrain->second.surface();
+    const double seamX=(bounds.min_x+bounds.max_x)*.5, seamZ=(bounds.min_z+bounds.max_z)*.5;
+    const vsg::dvec3 down{0,-1,0};
+    const auto height=[&](double x,double z) {
+        const auto hit=raycastVoxelScene(*scene.snapshot(),{x,bounds.max_height+100,z},down,5000,true);
+        require(bool(hit),"missing terrain collision fixture ground");
+        return hit->position.y;
+    };
+    double z=seamZ-350, leastSlope=std::numeric_limits<double>::infinity();
+    for(double at=seamZ-760;at<seamZ-350;at+=5) {
+        const double spread=std::abs(height(seamX-3,at)-height(seamX+3,at))+
+                            std::abs(height(seamX,at-2)-height(seamX,at+2));
+        if(spread<leastSlope){z=at;leastSlope=spread;}
+    }
+    const double seamY=height(seamX,z);
+    const double craterY=height(seamX,seamZ);
+    const auto insertBody=[&](const char* id,const vsg::dvec3& p,double restitution,double velocity,bool fracture) {
+        scene.edit(json::array({{{"kind","add"},{"object",{
+            {"id",id},{"position_m",{p.x,p.y,p.z}},{"velocity_mps",{0,velocity,0}},
+            {"material",{{"color_rgba",{.88,.33,.11,1.}}}},
+            {"source",{{"type","box"},{"dimensions",{6,2,4}},{"origin_m",{-3,-1,-2}},{"cell_size_m",1}}},
+            {"physics",{{"motion","dynamic"},{"friction",.65},{"restitution",restitution},
+                          {"linear_damping",0.},{"fracture",fracture}}}
+        }}}}),scene.snapshot()->revision);
+    };
+    // Set ground restitution for this controlled rebound test. Both runs
+    // use the same contact material, geometry and integration interval.
+    scene.edit(json::array({{{"kind","physics"},{"object",terrainId},{"merge",true},
+        {"physics",{{"restitution",.75}}}}}),scene.snapshot()->revision);
+    insertBody("seam-probe",{seamX,seamY+1.25,z},0.,-2.,false);
+    scene.schedule({{"kind","damage"},{"object",terrainId},{"tick",1},{"space","object"},
+        {"point_m",{seamX,craterY,seamZ}},{"radius_m",220.}});
+    const auto basis=simcore::geo::makeEnuToWorldMatrix(initial->anchor);
+    const auto camera=view.context().camera()->viewMatrix.cast<vsg::LookAt>();
+    const auto up=basis*vsg::dvec4(0,1,0,0);camera->up={up.x,up.y,up.z};
+    const auto directory=std::filesystem::absolute(output.toStdString());
+    std::filesystem::create_directories(directory);
+    view.setAutoFrame(false);view.setIdleSuspend(false);
+    const auto drawFrame=[&] {
+        QThread::msleep(25);
+        view.context().setSimulationTime(scene.snapshot()->timeSeconds());
+        const auto serial=view.widget()->property("renderFrameSerial").toULongLong();
+        QElapsedTimer timer;timer.start();
+        view.markActivity();view.renderFrame();view.context().viewer()->deviceWaitIdle();
+        require(view.widget()->property("renderFrameSerial").toULongLong()==serial+1,"terrain validation failed to submit a native frame");
+        return timer.nsecsElapsed()/1e6;
+    };
+    const auto capture=[&](const char* file,vsg::dvec3 focus,vsg::dvec3 offset) {
+        camera->eye=basis*(focus+offset);camera->center=basis*focus;
+        drawFrame();
+        const auto image=view.grabFrame();
+        require(!image.isNull()&&image.save(QString::fromStdString((directory/file).string())),"terrain collision Vulkan readback failed");
+    };
+    capture("01-before.png",{seamX,craterY,seamZ},{-510,460,585});
+    const double dt=initial->fixedStep;
+    const auto step=[&](int tick) {
+        scene.setPaused(false);
+        QElapsedTimer timer;timer.start();
+        const auto result=scene.advanceTo(tick*dt,1);
+        const double simulationMs=timer.nsecsElapsed()/1e6;
+        scene.setPaused(true);
+        require(result.steps==1&&!result.pendingSteps,"terrain collision capture missed a step");
+        return json{{"tick",tick},{"simulation_ms",simulationMs},{"terrain_bvh_ms",result.terrainBvhMs},
+            {"collider_refresh_ms",result.collisionRefreshMs},{"rebuilt",result.terrainBvhRebuilt},{"reused",result.terrainBvhReused},
+            {"terrain_mesh_ms",result.terrainMeshMs},{"terrain_stitch_ms",result.terrainMeshStitchMs},
+            {"mesh_rebuilt",result.terrainMeshRebuilt},{"mesh_reused",result.terrainMeshReused}};
+    };
+    json events=json::array({step(1)});
+    const double floor=height(seamX,seamZ);
+    require(craterY-floor>20.,"damage did not excavate the canonical surface");
+    capture("02-crater.png",{seamX,craterY,seamZ},{-510,460,585});
+    events[0]["render_atlas_reuse"]=feature.terrainAtlasReuseStats();
+    const vsg::dvec3 hinge{seamX+2,floor+4,seamZ+30};
+    const auto hingePosition=std::array{hinge.x,hinge.y,hinge.z};
+    const double hingeHalfAngle=3.*vsg::PI/8.;
+    scene.edit(json::array({{{"kind","add"},{"object",{
+        {"id","hinged-part"},{"material",{{"color_rgba",{.28,.64,.9,1.}}}},
+        {"pose_track",json::array({{{"seconds",0.},{"position_m",hingePosition},{"rotation_xyzw",{0,0,0,1}}},
+            {{"seconds",1.8},{"position_m",hingePosition},{"rotation_xyzw",{0,std::sin(hingeHalfAngle),0,std::cos(hingeHalfAngle)}}}})},
+        {"source",{{"type","box"},{"dimensions",{6,1,2}},{"origin_m",{0,0,-1}},{"cell_size_m",1}}}
+    }}}}),scene.snapshot()->revision);
+    insertBody("drop",{seamX,floor+4,seamZ},.85,-6.,true);
+    scene.schedule({{"kind","fracture"},{"object","drop"},{"tick",2},{"space","object"},
+        {"point_m",{0,0,0}},{"normal",{1,0,0}},{"radius_m",12.},{"energy_j",1e6}});
+    events.push_back(step(2));
+    const auto detached=scene.snapshot()->journal.back().at("fragments").get<std::vector<std::string>>();
+    require(detached.size()==1,"drop did not generate two fracture bodies");
+    const auto fracture=scene.snapshot();
+    for(const auto& id:{std::string("drop"),detached.front()}) {
+        const auto& body=fracture->objects.at(id);
+        const auto centre=body.localCentreOfMass();
+        // Separate the cut faces before landing. This prevents a fragment
+        // hitting its sibling from being mistaken for a terrain rebound.
+        scene.schedule({{"kind","impulse"},{"object",id},{"tick",3},{"space","object"},
+            {"point_m",{centre.x,centre.y,centre.z}},
+            {"impulse_ns",{std::copysign(body.massKg(),centre.x),0,0}}});
+    }
+    const auto scheduleDamage=[&](int tick,double x,double z,double radius) {
+        scene.schedule({{"kind","damage"},{"object",terrainId},{"tick",tick},{"space","object"},
+            {"point_m",{x,height(x,z),z}},{"radius_m",radius}});
+    };
+    scheduleDamage(20,seamX+555,seamZ,170.);
+    scheduleDamage(50,seamX-620,seamZ+670,130.);
+    size_t left=0,right=0,across=0,fragmentContacts=0;
+    double rebound=0.,maxRangeDelta=0.;
+    int firstLanding=0;
+    json flight=json::array();
+    double previousVerticalSpeed=fracture->objects.at(detached.front()).velocity.y;
+    const auto hingeVolume=fracture->objects.at("hinged-part").volume;
+    std::unique_ptr<VoxelScene> restored;
+    size_t restoredSteps=0,animationChecks=0;
+    for(int tick=3;tick<=100;++tick) {
+        const auto elapsed=step(tick);
+        if(tick==20||tick==50) {
+            events.push_back(elapsed);
+            capture(tick==20?"06-second-cut.png":"07-third-cut.png",{seamX,craterY,seamZ},{-1020,920,1170});
+            events.back()["render_atlas_reuse"]=feature.terrainAtlasReuseStats();
+        }
+        const auto state=scene.snapshot();
+        if(tick==3) {
+            restored=VoxelScene::load(scene.checkpoint());restored->setPaused(false);
+        } else {
+            restored->advanceTo(tick*dt,1);
+            const auto fresh=restored->snapshot();
+            for(const auto& [id,body]:state->objects) {
+                const auto& replay=fresh->objects.at(id);
+                require(body.basePose==replay.basePose&&body.velocity==replay.velocity&&body.angularVelocity==replay.angularVelocity,
+                        "incremental terrain collision and cold checkpoint replay produced different body states");
+            }
+            require(state->contacts.size()==fresh->contacts.size(),"cold collision tree changed support contact count");
+            ++restoredSteps;
+        }
+        bool contactLeft=false,contactRight=false;
+        for(const auto& contact:state->contacts) {
+            if(contact.a!=terrainId&&contact.b!=terrainId)continue;
+            const auto& id=contact.a==terrainId?contact.b:contact.a;
+            const auto point=contact.a==terrainId?contact.pointA:contact.pointB;
+            if(id=="seam-probe") {contactLeft|=point.x<seamX-.001;contactRight|=point.x>seamX+.001;}
+            if(std::find(detached.begin(),detached.end(),id)!=detached.end()) {
+                ++fragmentContacts;
+            }
+        }
+        left+=contactLeft;right+=contactRight;across+=contactLeft&&contactRight;
+        if(tick==20||tick==40||tick==75)for(double x:{seamX-3.,seamX-.02,seamX+.02,seamX+3.,seamX+125.}) {
+            const vsg::dvec3 origin{x,craterY+160,seamZ+9.25};
+            const auto visual=scene.raycast(origin,down,750),rigid=scene.rigidRaycast(origin,down,750);
+            require(visual&&rigid&&visual->object==rigid->object,"cut/seam collision hit disagrees with the visible triangles");
+            maxRangeDelta=std::max(maxRangeDelta,std::abs(visual->distance-rigid->distance));
+        }
+        for(const auto& id:detached) {
+            const auto& body=state->objects.at(id);
+            if(previousVerticalSpeed<-.4&&body.velocity.y>.4) {
+                const auto pose=body.pose(tick,dt);
+                const auto box=body.localBounds();
+                double distance=std::numeric_limits<double>::infinity();
+                for(double x:{box.min.x,box.max.x})for(double y:{box.min.y,box.max.y})for(double z:{box.min.z,box.max.z}) {
+                    const auto p=pose*vsg::dvec3(x,y,z);
+                    distance=std::min(distance,std::abs(p.y-height(p.x,p.z)));
+                }
+                // A contact can occur inside the fixed step and be released
+                // by its final substep. Check the measured reversal at the floor.
+                if(distance<.2){rebound=std::max(rebound,body.velocity.y);if(!firstLanding)firstLanding=tick;}
+            }
+            previousVerticalSpeed=body.velocity.y;
+            flight.push_back({{"tick",tick},{"id",id},{"y",body.pose(tick,dt)[3].y},{"vy",body.velocity.y}});
+        }
+        if(tick==8||tick==22||tick==55)capture(tick==8?"03-falling.png":tick==22?"04-rebound.png":"05-followup.png",
+            {seamX,floor+2,seamZ},{-21,15,30});
+        if(tick==10||tick==50||tick==90) {
+            const auto& animated=state->objects.at("hinged-part");
+            const auto pose=animated.pose(tick,dt);
+            const auto tip=pose*vsg::dvec3(5.8,.4,0);
+            require(tick==50||(tick==10?tip.x>seamX:tip.x<seamX),"hinged part did not cross the terrain block seam");
+            const auto testRay=pose*vsg::dvec3(4,3,0);
+            const auto visible=scene.raycast(testRay,down,5),rigid=scene.rigidRaycast(testRay,down,5);
+            require(animated.volume==hingeVolume&&visible&&rigid&&visible->object=="hinged-part"&&rigid->object==visible->object&&
+                    std::abs(visible->distance-rigid->distance)<.001,"animated voxel part lost its occupied geometry or collision pose");
+            capture(tick==10?"hinge-start.png":tick==50?"hinge-mid.png":"hinge-end.png",hinge+vsg::dvec3(2,0,-2),{-8,10,13});
+            require(feature.display().placements.at("hinged-part")->matrix==pose,"animated voxel display pose differs from its collision pose");
+            ++animationChecks;
+        }
+    }
+    if(!(left&&right&&across&&firstLanding&&rebound>.4&&maxRangeDelta<.03))
+        throw std::runtime_error("seam/fragment validation: "+json{{"left",left},{"right",right},{"both",across},
+            {"fragment_contacts",fragmentContacts},{"rebound_mps",rebound},{"range_error_m",maxRangeDelta},
+            {"seam_z",z},{"seam_height_spread_m",leastSlope}}.dump());
+    GpuSensorSpec optical;
+    optical.id=901;optical.period_seconds=dt;optical.output=ProductStage::Scene;
+    optical.profile.width=9;optical.profile.height=7;optical.profile.fov_deg=1.;
+    optical.profile.detector.integration_ms=1.;optical.profile.band=BandSpec::make(BandType::TV);
+    auto infrared=optical;infrared.id=902;infrared.profile.band=BandSpec::make(BandType::MWIR);
+    VoxelSensorSession sensors(scene,{optical,infrared},view.context().window()->getOrCreateDevice(),"terrain-collision-capture");
+    const auto rayOrigin=[&](uint32_t id){return vsg::dvec3(seamX+(id==optical.id?-.02:.02),craterY+160,seamZ+9.25);};
+    scheduleDamage(103,seamX,seamZ+9.25,58.);
+    size_t products=0;
+    std::set<uint64_t> measuredRevisions;
+    double gpuRangeError=0.;
+    for(int tick=101;tick<=107;++tick) {
+        const auto elapsed=step(tick);
+        if(tick==103)events.push_back(elapsed);
+        sensors.advanceTo(tick*dt,[&](uint32_t id,double){
+            GpuAperture aperture;aperture.position=rayOrigin(id);aperture.forward=down;aperture.up={0,0,-1};return aperture;
+        },{},[&](GpuMeasurementProduct&& product) {
+            constexpr size_t pixel=(3*9+4)*4+3;
+            const auto truth=scene.sample((product.start_time+product.end_time)*.5);
+            const auto hit=raycastVoxelScene(*truth,rayOrigin(product.sensor_id),down,750);
+            require(hit&&hit->object==terrainId&&product.rgba.size()>pixel,"GPU sensor missed the canonical crater floor");
+            gpuRangeError=std::max(gpuRangeError,std::abs(product.rgba[pixel]*1000.-hit->distance));
+            measuredRevisions.insert(truth->contentRevision);
+            ++products;
+        });
+    }
+    require(products>=6&&measuredRevisions.size()==2&&gpuRangeError<.05,"optical/IR and collision geometry revision mismatch");
+    capture("08-sensor-cut.png",{seamX,craterY,seamZ},{-510,460,585});
+    events.back()["render_atlas_reuse"]=feature.terrainAtlasReuseStats();
+    std::vector<double> stableFrames;
+    for(int i=0;i<5;++i)drawFrame();
+    for(int i=0;i<32;++i)stableFrames.push_back(drawFrame());
+    const json report={{"step_events",events},{"seam_left_ticks",left},{"seam_right_ticks",right},
+        {"seam_both_ticks",across},{"fragment_contacts",fragmentContacts},{"first_landing_tick",firstLanding},
+        {"rebound_mps",rebound},{"collision_range_max_error_m",maxRangeDelta},{"crater_depth_m",craterY-floor},
+        {"gpu_sensor_products",products},{"gpu_range_max_error_m",gpuRangeError},
+        {"gpu_measured_revisions",measuredRevisions},{"stable_vulkan_frame_p95_ms",percentile95(stableFrames)},
+        {"stable_vulkan_frames_ms",std::move(stableFrames)},
+        {"restored_steps_identical",restoredSteps},{"animation_pose_checks",animationChecks},
+        {"flight",std::move(flight)}};
+    std::ofstream(directory/"terrain-collision.json")<<report.dump(2)<<'\n';
+}
+
 void runPageTraversal(VoxelSceneFeature& feature, Viewport3DView& view, const QString& topic,
                       const QString& output, double firstFrameMs, double physicsReadyMs) {
     auto& scene = *feature.runtime();
@@ -1314,6 +1552,8 @@ void runEarthTopicStillCapture(const QString& topic, const QString& output, Eart
     require(feature->runtime()->snapshot() == snapshot, "paused topic changed physical state");
     if (mode == EarthTopicCapture::TerrainTraverse) {
         runPageTraversal(*feature, *view, topic, output, firstFrameMs, physicsReadyMs);
+    } else if (mode == EarthTopicCapture::TerrainCollision) {
+        runTerrainCollision(*feature,*view,output);
     } else if (mode == EarthTopicCapture::Thermal) {
         runThermalCapture(*feature->runtime(), *view, output);
     } else if(mode==EarthTopicCapture::G63Motion) {

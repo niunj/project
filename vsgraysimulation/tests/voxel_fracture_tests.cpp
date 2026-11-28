@@ -1,6 +1,7 @@
 #include <vsgraysim/earth/VoxelScene.h>
 #include <vsgraysim/earth/VoxelSceneSensors.h>
 #include "../src/earth/VoxelTerrain.h"
+#include "../src/earth/VoxelSensorMaterials.h"
 #include <vsg/all.h>
 #include <iostream>
 #include <stdexcept>
@@ -165,5 +166,52 @@ void reconstructedMassCentre() {
     require(vsg::length(after.second-before.second-vsg::cross(point,kick))<.15,"contact-skin bounds replaced the intrinsic inertia of occupied voxel mass");
     std::cout<<"PASS: rotated/translated reconstructed mass centre, torque-free centre impulse and deterministic free flight\n";
 }
+void impactCrush() {
+    auto target=body("cab",{12,6,12},{-1.5,1.2,-1.5},"dynamic");
+    target["source"]["cell_size_m"]=.25;
+    target["velocity_mps"]={0,-8,0};
+    target["physics"]["crush"]={{"radius_m",4.},{"yield_speed_mps",3.},{"max_strain",.75}};
+    target["sensor_materials"]={{"palette",json::array({json::object(),{{"temperature_k",390.}}})},
+        {"regions",json::array({{{"min_m",{0.,0.,0.}},{"max_m",{3.,1.5,1.5}},{"material",1}}})}};
+    const json definition={{"format","voxel-scene-v1"},{"objects",json::array({
+        body("floor",{16,1,16},{-8,-1,-8},"static"),target})}};
+    auto scene=VoxelScene::load(definition);
+    const auto before=scene->snapshot();
+    scene->setPaused(false);
+    unsigned crushedBodies=0;
+    for(int k=1;k<=40&&!scene->snapshot()->objects.at("cab").crushedAtTick;++k)
+        crushedBodies+=scene->advanceTo(k*.02,1).crushedBodies;
+    const auto after=scene->snapshot();
+    const auto& intact=before->objects.at("cab");
+    const auto& wreck=after->objects.at("cab");
+    const auto countWarm=[](const auto& o){
+        const auto n=o.volume->dimensions();
+        size_t warm=0;
+        for(size_t i=0;i<o.volume->cellCount();++i)if(o.volume->occupancy()[i]){
+            const auto p=o.volume->gridOrigin()+vsg::dvec3(i%n[0]+.5,i/n[0]%n[1]+.5,i/(size_t(n[0])*n[1])+.5)*o.volume->resolution_m;
+            if(o.sensorMaterials->index(p)==1)++warm;
+        }
+        return warm;
+    };
+    require(crushedBodies==1&&wreck.crushedAtTick==after->tick&&after->objects.size()==2&&
+        wreck.volume!=intact.volume&&wreck.massKg()==intact.massKg(),"hard contact did not conserve and deform the intact body");
+    require(wreck.volume->centreOfMass().y<intact.volume->centreOfMass().y-.04,
+        "the occupied mass did not compact toward the contact");
+    require(countWarm(wreck)==countWarm(intact),"impact lost part of the sensor material partition");
+    const auto display=makeVoxelSceneDisplay(*after);
+    const auto sensors=makeVoxelSceneSensorData(after);
+    require(display.placements.at("cab")->matrix==wreck.pose(after->tick,.02)&&
+        sensors.snapshot->contentRevision==after->contentRevision,"deformed surface was not published to both consumers");
+    for(int x=-4;x<=4;++x)for(int z=-4;z<=4;++z)
+        rays(*scene,{x*.31+.017,5.,z*.31+.063},{0,-1,0});
+    auto restored=VoxelScene::load(scene->checkpoint());
+    restored->advanceTo(.9,80);scene->advanceTo(.9,80);
+    require(restored->checkpoint()==scene->checkpoint(),"impact deformation failed checkpoint continuation");
+    auto gentle=definition;gentle["objects"][1]["position_m"]={-1.5,.02,-1.5};
+    gentle["objects"][1]["velocity_mps"]={0,-.25,0};
+    auto light=VoxelScene::load(gentle);light->setPaused(false);light->advanceTo(.75,80);
+    require(!light->snapshot()->objects.at("cab").crushedAtTick,"ordinary gentle contact caused permanent deformation");
+    std::cout<<"PASS: impact yield, flattened occupancy, mass and sensor palette conservation, exact rays and replay\n";
 }
-int main()try{damageDetachAndLand();bondsAndImpulse();concaveAndFastContact();rollbackAndHole();damageBlastImpulse();fractionalCellRays();reconstructedMassCentre();reconstructedLanding();return 0;}catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}
+}
+int main()try{damageDetachAndLand();bondsAndImpulse();concaveAndFastContact();rollbackAndHole();damageBlastImpulse();fractionalCellRays();reconstructedMassCentre();reconstructedLanding();impactCrush();return 0;}catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}

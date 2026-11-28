@@ -1,0 +1,27 @@
+{
+  "models": [
+    {
+      "id": "g63", "name": "奔驰 AMG G 63", "category": "地面车辆",
+      "description": "带材质的整车 GLB · 适合检查玻璃、灯组和漆面",
+      "asset": "models/Mercedes-AMG-G63/mercedes-amg-g63.glb", "up_axis": "y"
+    },
+    {
+      "id": "skywalker-x8", "name": "Skywalker X8", "category": "固定翼无人机",
+      "description": "台北近海巡查平台 · 2.1 cm 体素设置",
+      "asset": "models/RealPlatforms/SkywalkerX8/x8_body.dae", "up_axis": "y",
+      "voxel_scene": "config/earth/taipei-service-coast.vscene.json", "voxel_object": "survey-wing"
+    },
+    {
+      "id": "survey-vessel", "name": "近岸测量船", "category": "水面船舶",
+      "description": "台北近海测深场景 · 船体与舱面预览",
+      "asset": "models/OceanDemo/test-vessel.obj", "up_axis": "y",
+      "voxel_scene": "config/earth/taipei-service-coast.vscene.json", "voxel_object": "survey-vessel"
+    },
+    {
+      "id": "f16", "name": "F-16", "category": "固定翼飞机",
+      "description": "台北陆地场景平台 · 原始蒙皮和体素表面对照",
+      "asset": "models/F-16/F-16.obj", "up_axis": "y",
+      "voxel_scene": "config/earth/taipei-equipment.vscene.json", "voxel_object": "aircraft"
+    }
+  ]
+}

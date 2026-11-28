@@ -23,6 +23,7 @@ class SceneAuthoringPanel final : public QWidget {
     void refresh();
     void sculpt();
     void material();
+    void impactCrush();
     void environment();
     void import(bool terrain);
     void run(std::function<void()>);

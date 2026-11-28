@@ -10,6 +10,7 @@ class TerrainCloudShadow {
 public:
     TerrainCloudShadow(const EarthSurfaceSnapshot&,vsg::ref_ptr<vsg::VertexIndexDraw>,
                        std::shared_ptr<rockyenv::CloudGpuResources> cloud={}, const EarthSurfaceSnapshot* pinnedTexture=nullptr);
+    TerrainCloudShadow(const TerrainCloudShadow&,vsg::ref_ptr<vsg::VertexIndexDraw> geometry);
     void update(const PlanetWeatherFrame&,const vsg::vec3& horizon,const vsg::vec3& zenith,bool atmosphere,const VoxelOcean* ocean=nullptr);
     vsg::ref_ptr<vsg::StateGroup> node;
 private:

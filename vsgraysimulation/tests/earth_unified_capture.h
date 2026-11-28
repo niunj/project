@@ -9,7 +9,7 @@ void runEarthUrbanCapture(const QString& baseline, const QString& district, cons
                          const QString& inspection={},bool compareClusters=false);
 
 enum class EarthTopicCapture {
-    Still, TerrainTraverse, Thermal, G63Motion, DeckTakeoff, SonarCrossing, DieselPropeller, EnvironmentMotion, MarineAudio
+    Still, TerrainTraverse, TerrainCollision, Thermal, G63Motion, DeckTakeoff, SonarCrossing, DieselPropeller, EnvironmentMotion, MarineAudio
 };
 void runEarthTopicStillCapture(const QString& topic, const QString& output,
                                EarthTopicCapture mode = EarthTopicCapture::Still);

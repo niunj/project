@@ -22,6 +22,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QDoubleSpinBox>
+#include <QLabel>
 #include <QComboBox>
 #include "viewport3d/PlatformMotionFeature.h"
 #include <QTableWidget>
@@ -170,6 +171,15 @@ void installFormalValidation(SimulationControlWindow& window){
                 if(!samples.empty()){auto sorted=samples;std::sort(sorted.begin(),sorted.end());status["render"]={{"samples",sorted.size()},{"p50_ms",sorted[(sorted.size()-1)/2]},{"p95_ms",sorted[size_t((sorted.size()-1)*.95)]},{"fenced",widget->property("renderFrameFenced").toBool()},{"width",widget->width()},{"height",widget->height()}};}
             }
             if(view)status["voxel_read_error"]=view->property("publishedVoxelReadError").toString().toStdString();
+            if (auto* product=window.findChild<QLabel*>("serviceProductValues")) {
+                auto* image=window.findChild<QLabel*>("serviceProductImage");
+                auto* notice=window.findChild<QLabel*>("serviceCommandNotice");
+                status["service_console"]={{"equipment_id",product->property("equipmentId").toUInt()},
+                    {"platform_id",product->property("platformId").toUInt()},
+                    {"frame_id",product->property("frameId").toString().toStdString()},
+                    {"values",product->text().toStdString()},{"image_visible",image&&!image->pixmap().isNull()},
+                    {"notice",notice ? notice->text().toStdString() : std::string{}}};
+            }
             status["view_ready"]=ready;status["ui_command_seq"]=last;write("probe-simulation.json",status);
             const auto file=root()+"/probe-command-simulation.json";if(!QFileInfo::exists(file))return;
             json command;try{std::ifstream(file.toStdString())>>command;}catch(...){return;}
@@ -180,6 +190,27 @@ void installFormalValidation(SimulationControlWindow& window){
             else if(action=="step")QMetaObject::invokeMethod(&window,"onStepOnce");
             else if(action=="stop")QMetaObject::invokeMethod(&window,"onStop");
             else if(action=="restart")QMetaObject::invokeMethod(&window,"onRestartWorker");
+            else if(action=="service_select_equipment") {
+                auto* box=window.findChild<QComboBox*>("serviceEquipment");
+                require(box,"service equipment selector missing");
+                const auto index=box->findData(command.at("equipment_id").get<uint32_t>());
+                require(index>=0,"equipment missing from service selector");
+                box->setCurrentIndex(index);
+            }
+            else if(action=="service_course") {
+                auto* box=window.findChild<QComboBox*>("servicePlatforms");
+                auto* heading=window.findChild<QDoubleSpinBox*>("serviceHeading");
+                auto* speed=window.findChild<QDoubleSpinBox*>("serviceSpeed");
+                auto* submit=window.findChild<QPushButton*>("serviceSendCourse");
+                require(box&&heading&&speed&&submit,"service course controls missing");
+                const auto index=box->findData(command.at("platform_id").get<uint32_t>());
+                require(index>=0,"platform missing from service selector");
+                box->setCurrentIndex(index);
+                heading->setValue(command.at("heading_deg").get<double>());
+                speed->setValue(command.at("speed_mps").get<double>());
+                require(submit->isEnabled(),"course controls disabled");
+                submit->click();
+            }
             else if(action=="capture")capture(window,QString::fromStdString(command.value("name",std::string("probe-simulation"))));
             else if(action=="reset_metrics"){samples.clear();gap=0;if(auto* supervisor=dynamic_cast<SimulationWorkerClient*>(window.findChild<QObject*>("simulation_engine_supervisor")))supervisor->command("reset_metrics");}
             else if(action=="quit")QApplication::quit();

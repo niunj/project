@@ -10,6 +10,8 @@
 #include <QDir>
 #include <QSurfaceFormat>
 #include <QTimer>
+#include <QUrl>
+#include <QRegularExpression>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/async.h>
@@ -70,7 +72,7 @@ int main(int argc, char** argv) {
         return vsgraysim::runVoxelMeasurementWorker(argc,argv);
 
     if(argc>1&&std::string(argv[1])=="--engine-worker")
-        return vsgraysim::gui::runSimulationEngineWorker(argc,argv);
+        return vsgraysim::service::runSimulationEngineWorker(argc,argv);
 
     if (QT6_PLUGIN_PATH[0] != 0)
         qputenv("QT_PLUGIN_PATH", QT6_PLUGIN_PATH);
@@ -112,13 +114,29 @@ int main(int argc, char** argv) {
     });
     health_timer->start(2000);
 
+    QString service_run;
+    QUrl service_url;
+    if (argc > 1 && std::string_view(argv[1]) == "--service-run") {
+        if (argc < 3) return 64;
+        service_run = QString::fromUtf8(argv[2]);
+        service_url = QUrl(argc > 3 ? QString::fromUtf8(argv[3]) : QStringLiteral("http://127.0.0.1:8765"));
+        if (!QRegularExpression("^r[1-9][0-9]*$").match(service_run).hasMatch() ||
+            service_url.scheme() != "http" ||
+            (service_url.host() != "127.0.0.1" && service_url.host() != "localhost") ||
+            !service_url.userInfo().isEmpty() || service_url.hasQuery() || service_url.hasFragment() ||
+            (!service_url.path().isEmpty() && service_url.path() != "/")) {
+            spdlog::error("Usage: vsgraysim_sim_control --service-run r1 http://127.0.0.1:8765");
+            return 64;
+        }
+    }
+
     // 支持命令行传入场景文件路径
     QString scenario_path;
-    if (argc > 1)
+    if (argc > 1 && service_run.isEmpty())
         scenario_path = QString::fromUtf8(argv[1]);
 
     // 无场景参数时, 先弹出"选择模板和工程"启动页
-    if (scenario_path.isEmpty()) {
+    if (scenario_path.isEmpty() && service_run.isEmpty()) {
         vsgraysim::gui::SimStartDialog dlg;
         if (dlg.exec() == QDialog::Accepted)
             scenario_path = dlg.scenarioPath();
@@ -130,7 +148,9 @@ int main(int argc, char** argv) {
         window.setTelemetryManager(telemetry.get());
         window.show();
 
-        if (!scenario_path.isEmpty())
+        if (!service_run.isEmpty())
+            window.connectSimulationService(service_url, service_run);
+        else if (!scenario_path.isEmpty())
             window.loadScenarioFile(scenario_path);
 
 #ifdef VSGRAYSIM_FORMAL_VALIDATION

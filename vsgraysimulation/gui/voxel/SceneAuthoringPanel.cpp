@@ -63,6 +63,7 @@ SceneAuthoringPanel::SceneAuthoringPanel(std::function<earth::VoxelScene *()> wo
     button(tr("导入影像 / 高程工作区…"), [this] { import(true); });
     button(tr("地形抬升 / 降低 / 平整 / 平滑…"), [this] { sculpt(); });
     button(tr("光学 / 红外 / 雷达属性…"), [this] { material(); });
+    button(tr("目标撞击压扁…"), [this] { impactCrush(); });
     button(tr("时间 / 天气 / 雨雪…"), [this] { environment(); });
     status_ = new QLabel;
     status_->setWordWrap(true);
@@ -340,6 +341,34 @@ void SceneAuthoringPanel::material() {
     }
     status_->setText(tr("多波段属性已提交；保存后由正式仿真装备读取"));
     changed_();
+}
+void SceneAuthoringPanel::impactCrush() {
+    auto& w=world();
+    const auto state=w.snapshot();
+    const auto id=selected();
+    const auto& target=state->objects.at(id);
+    if(target.role!="target"||target.earth)
+        throw std::runtime_error("请选择可进入动态碰撞的体素目标");
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("目标撞击压扁"));
+    auto* form=new QFormLayout(&dialog);
+    auto* enabled=new QCheckBox(tr("重碰撞后保留塑性变形"));
+    enabled->setChecked(target.body.crushRadius>0.);
+    form->addRow(enabled);
+    const auto size=target.localBounds().max-target.localBounds().min;
+    auto* radius=number(form,tr("接触影响半径（m）"),
+        target.body.crushRadius>0.?target.body.crushRadius:std::clamp(vsg::length(size)*.28,.05,50.),.05,50.,2);
+    auto* speed=number(form,tr("起始压扁速度（m/s）"),target.body.crushYieldSpeed,.1,100.,2);
+    auto* strain=number(form,tr("变形强度上限"),target.body.crushMaxStrain,.05,.85,2);
+    auto* explanation=new QLabel(tr("目标进入动态刚体阶段后生效。首次超过阈值的有效碰撞重建受压体素。"));
+    explanation->setWordWrap(true);
+    form->addRow(explanation);
+    if(!accept(dialog,form))return;
+    const json crush=enabled->isChecked()?json{{"radius_m",radius->value()},
+        {"yield_speed_mps",speed->value()},{"max_strain",strain->value()}}:json(nullptr);
+    w.edit(json::array({{{"kind","physics"},{"object",id},{"merge",true},{"physics",{{"crush",crush}}}}}),state->revision);
+    changed_();
+    status_->setText(tr("撞击变形设置已更新。"));
 }
 void SceneAuthoringPanel::import(bool terrain) {
     if (import_)

@@ -8,6 +8,8 @@ struct SceneInstance {
     vsg::ref_ptr<vsg::VertexIndexDraw> geometry; // five-array thermal vertex contract
     vsg::dmat4 transform;
     bool visible=true;
+    // Nonzero only for immutable submeshes sharing their owning object's pose.
+    uint32_t geometryPart=0;
 };
 /// GPU layout, shared with gbuffer_compute.comp. Geometry stays mesh-local.
 struct GpuSceneInstance {

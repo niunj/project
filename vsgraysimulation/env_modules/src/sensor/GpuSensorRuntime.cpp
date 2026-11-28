@@ -8,6 +8,7 @@
 #include <map>
 #include <cstdlib>
 #include <algorithm>
+#include <chrono>
 
 namespace rockyenv::sensor {
 namespace {
@@ -45,7 +46,7 @@ void view(GBufferPool& gbuffer,SensorPipeline* pipeline,const GpuSensorSpec& spe
 }
 struct GpuSensorRuntime::Impl {
     GpuContext context;
-    std::unique_ptr<SharedSceneResources> scene;
+    std::shared_ptr<SharedSceneResources> scene;
     std::shared_ptr<CloudSceneBinding> cloud;
     std::vector<RadarMaterial> materials;
     std::optional<SharedSceneResources::TexArraySpec> textures;
@@ -59,15 +60,32 @@ struct GpuSensorRuntime::Impl {
     };
     std::map<uint32_t,std::unique_ptr<Instance>> instances;
     bool initialized=false,faulted=false;
+    GpuSensorRuntime::SceneBuildStatistics sceneBuild;
     bool batching=!(std::getenv("VSGRAYSIM_GPU_SERIAL_REFERENCE")&&std::string(std::getenv("VSGRAYSIM_GPU_SERIAL_REFERENCE"))=="1");
     ~Impl() { try { context.clearGraphs(); } catch(...) {} instances.clear(); scene.reset(); }
-    void build(const std::vector<SceneInstance>& geometry,const std::vector<RadarMaterial>& material,const SharedSceneResources::TexArraySpec* textureSpec=nullptr) {
+    void build(const std::vector<SceneInstance>& geometry,const std::vector<RadarMaterial>& material,
+               const SharedSceneResources::TexArraySpec* textureSpec=nullptr,const SharedSceneResources* previous=nullptr) {
+        const auto begin=std::chrono::steady_clock::now();
+        const auto elapsed=[](const auto at){return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-at).count();};
+        sceneBuild={};sceneBuild.hardware=context.rayTracing();
         context.clearGraphs(); instances.clear(); scene.reset(); materials=material;
         textures=textureSpec?std::make_optional(*textureSpec):std::nullopt;
-        scene=std::make_unique<SharedSceneResources>();
+        scene=std::make_shared<SharedSceneResources>();
         scene->voxelCloud=cloud;
-        auto sceneResult=scene->buildInstances(*context.device(),geometry,materials,textures?&*textures:nullptr);
+        auto sceneResult=scene->buildInstances(*context.device(),geometry,materials,textures?&*textures:nullptr,previous);
         require(sceneResult.ok,sceneResult.error);
+        sceneBuild.resources=scene->stats();sceneBuild.resourcesMs=elapsed(begin);
+        if(scene->tlas) {
+            const auto start=std::chrono::steady_clock::now();
+            const auto family=context.device()->getPhysicalDevice()->getQueueFamily(VK_QUEUE_GRAPHICS_BIT);
+            // The compile submission builds the new TLAS and only BLASes
+            // without a device handle. Sensor graph compilation can reuse it.
+            auto acceleration=vsg::CommandGraph::create(vsg::ref_ptr<vsg::Device>(context.device()),family);
+            acceleration->addChild(scene->sceneUpdates);
+            context.compile(acceleration);
+            sceneBuild.accelerationSubmitMs=elapsed(start);
+        }
+        const auto graphBegin=std::chrono::steady_clock::now();
         for(const auto& spec:specifications) {
             auto instance=std::make_unique<Instance>(); instance->spec=spec;
             auto bufferResult=instance->gbuffer.build(*context.device(),scene->sceneGeometry(),&materials,scene.get(),spec.profile.width,spec.profile.height);
@@ -99,6 +117,7 @@ struct GpuSensorRuntime::Impl {
             }
             instances.emplace(spec.id,std::move(instance));
         }
+        sceneBuild.graphsMs=elapsed(graphBegin);
     }
 };
 GpuSensorRuntime::GpuSensorRuntime():impl_(std::make_unique<Impl>()) {}
@@ -144,18 +163,20 @@ GpuSensorRuntime::SceneBuilder GpuSensorRuntime::captureSceneBuilder() const {
         } catch(const vsg::Exception& error) { throw std::runtime_error(error.message); }
     };
 }
-GpuSensorRuntime::TexturedSceneBuilder GpuSensorRuntime::captureTexturedSceneBuilder()const {
+GpuSensorRuntime::TexturedSceneBuilder GpuSensorRuntime::captureTexturedSceneBuilder(bool reuse)const {
     if(!impl_->initialized||impl_->faulted)throw std::logic_error("invalid GPU voxel staging state");
-    return [device=vsg::ref_ptr<vsg::Device>(impl_->context.device()),specs=impl_->specifications,cloud=impl_->cloud]
+    return [device=vsg::ref_ptr<vsg::Device>(impl_->context.device()),specs=impl_->specifications,cloud=impl_->cloud,
+            previous=reuse?std::shared_ptr<const SharedSceneResources>(impl_->scene):nullptr]
         (GpuSensorRuntime& target,const auto& scene,const auto& materials,const SharedSceneResources::TexArraySpec* textures){
             try{auto& staged=*target.impl_;staged.context.initialize(false,device);staged.specifications=specs;staged.cloud=cloud;
-                staged.build(scene,materials,textures);staged.initialized=true;
+                staged.build(scene,materials,textures,previous.get());staged.initialized=true;
             }catch(const vsg::Exception& error){throw std::runtime_error(error.message);}
         };
 }
 void GpuSensorRuntime::replaceScene(const std::vector<SceneInstance>& scene,const std::vector<RadarMaterial>& materials,const SharedSceneResources::TexArraySpec* textures) {
     if(!impl_->initialized || impl_->faulted) throw std::logic_error("GPU runtime cannot rebuild in its current state");
-    try { impl_->build(scene,materials,textures); }
+    const auto previous=impl_->scene;
+    try { impl_->build(scene,materials,textures,previous.get()); }
     catch(const vsg::Exception& error) { impl_->faulted=true; throw std::runtime_error(error.message); }
     catch(...) { impl_->faulted=true; throw; }
 }
@@ -307,4 +328,5 @@ void GpuSensorRuntime::advanceTo(double time,const Truth& truth,const Environmen
 }
 const std::string& GpuSensorRuntime::deviceName() const { return impl_->context.deviceName(); }
 bool GpuSensorRuntime::hardwareRayTracing() const { return impl_->context.rayTracing(); }
+GpuSensorRuntime::SceneBuildStatistics GpuSensorRuntime::sceneBuildStatistics() const {return impl_->sceneBuild;}
 }

@@ -1,4 +1,7 @@
 #include "SimulationEngineWorker.h"
+#include "BrowserEarthSurface.h"
+#include <VoxelDeploymentAdapter.h>
+#include "ServiceProducts.h"
 #include <vsgraysim/broker/VoxelEquipmentSource.h>
 #include <vsgraysim/broker/BrokerNet.h>
 #include <vsgraysim/broker/SimDataBroker.h>
@@ -13,9 +16,12 @@
 #include <poll.h>
 #include <unistd.h>
 #include <algorithm>
+#include <cstdlib>
+#include <limits>
+#include <set>
 #include <QCryptographicHash>
 
-namespace vsgraysim::gui {
+namespace vsgraysim::service {
 namespace {
 using json=nlohmann::json;
 using Clock=std::chrono::steady_clock;
@@ -54,16 +60,49 @@ int runSimulationEngineWorker(int argc,char** argv) {
     if(!directory.is_absolute()||!std::filesystem::is_directory(directory))return 64;
     auto logger=spdlog::stderr_color_mt("engine-worker");spdlog::set_default_logger(logger);
     json status={{"generation",generation},{"pid",::getpid()},{"state","loading"},{"stage","project"},{"initialized",false},{"running",false},{"voxel_source",true},{"ack",0}};
+    const bool managed=std::getenv("VSGRAYSIM_MANAGED_RUN")!=nullptr;
     const auto started=Clock::now();
     auto publish=[&]{status["uptime_ms"]=millis(started);atomicJson(directory/"status.json",status);};
     try {
-        publish();auto project=VoxelSceneProject::open(argv[2]);const auto equipment=project.equipmentConfig();
-        if(argc>5){std::ifstream in(argv[5]);project.document["checkpoint"]=json::parse(in);}
+        publish();auto project=VoxelSceneProject::open(argv[2]);
+        const auto equipmentFile = directory/"deployment-equipment.json";
+        if(argc>5){
+            const std::filesystem::path old = argv[5];
+            std::ifstream in(old);
+            project.document["checkpoint"]=json::parse(in);
+            std::ifstream saved(old.parent_path()/"deployment-equipment.json");
+            if (saved) {
+                project.equipmentDocument=json::parse(saved);
+                project.document["equipment"]=project.equipmentDocument;
+                atomicJson(equipmentFile,project.equipmentDocument);
+            }
+        }
+        auto equipment=project.equipmentConfig();
         status["stage"]="terrain_geometry_and_sensor_gpu";publish();
         auto& net=BrokerNet::instance();net.startSimRole();
         net.setSimMeta(std::filesystem::path(project.path).filename().string(),0,0,false);
         auto source=std::make_shared<VoxelEquipmentSource>(std::move(project));
-        if(!source->initialize({{"archive_directory",(directory/"geometry").string()},{"measurement_worker",std::filesystem::canonical("/proc/self/exe").string()}}))throw std::runtime_error(source->diagnostics().dump());
+        json engineOptions={{"archive_directory",(directory/"geometry").string()},
+            {"measurement_worker",std::filesystem::canonical("/proc/self/exe").string()}};
+        json deployment;
+        if(argc==5&&std::filesystem::is_regular_file(directory/"layout.json")){
+            std::ifstream layout(directory/"layout.json");
+            const auto draft = json::parse(layout);
+            if (draft.contains("model_bindings")) {
+                engineOptions["initial_positions"] = draft.at("positions");
+                engineOptions["initial_model_bindings"] = draft.at("model_bindings");
+                deployment = draft.value("deployment",json(nullptr));
+            } else engineOptions["initial_positions"] = draft;
+        }
+        std::function<void(earth::VoxelScene&, VoxelSceneProject&)> prepare;
+        if (deployment.is_object()) prepare = [&](earth::VoxelScene& scene, VoxelSceneProject& loaded) {
+            earth::deployment::Adapter adapter(deployment.at("catalog").get<std::string>());
+            adapter.applyInWorker(scene,loaded.document,deployment.at("plan"),loaded.path);
+            loaded.equipmentDocument=loaded.document.at("equipment");
+            equipment=loaded.equipmentConfig();
+            atomicJson(equipmentFile,loaded.equipmentDocument);
+        };
+        if(!source->initialize(engineOptions,prepare))throw std::runtime_error(source->diagnostics().dump());
         TimingBus bus;bus.configureFixedStep(source->fixedStep(),1);bus.registerSubsystem(source,0);
         if(!bus.initialize())throw std::runtime_error("worker timing bus initialization failed");
         bus.start();bus.setPaused(true);
@@ -72,16 +111,52 @@ int runSimulationEngineWorker(int argc,char** argv) {
         auto checkpoint=[&]{auto begin=Clock::now();source->saveRecovery(recovery.string());status["checkpoint_ms"]=millis(begin);status["recovery_checkpoint"]=recovery.string();status["recovery_tick"]=source->snapshot()->tick;};
         checkpoint();status["load_ms"]=millis(started);status["initialized"]=true;status["state"]="paused";status["stage"]="ready";
         bool running=false,requested=false,quit=false;uint64_t stopAtTick=0;
-        auto demand=[&]{return net.hasTaskDemand();};uint64_t ack=0;std::string input;double tickMs=0;
+        bool managedWorld=false;
+        std::set<uint32_t> desiredProducts,previewedProducts;
+        uint64_t previewedRevision=std::numeric_limits<uint64_t>::max();
+        std::set<uint32_t> navigationIds;
+        auto navigation=json::array();
+        for(const auto& device:equipment.navigation){
+            navigation.push_back({{"id",device.id},{"name",device.name},{"platform_id",device.platformId}});
+            navigationIds.insert(device.id);
+        }
+        auto demand=[&]{return managed?managedWorld||!desiredProducts.empty():net.hasTaskDemand();};
+        uint64_t ack=0;std::string input;double tickMs=0;
+        std::optional<BrowserEarthSurface> browserEarth;
+        if (managed && std::getenv("VSGRAYSIM_WEB_EARTH_ROOT")) browserEarth.emplace(directory,generation);
         std::deque<double> timings,cycles,measurementBatches,measurementRoundtrips;
         auto update=[&]{
             const auto state=source->snapshot();net.setSimMeta(std::filesystem::path(argv[2]).filename().string(),state->timeSeconds(),tickMs>0?1000./tickMs:0,running);
+            if (browserEarth) browserEarth->submit(state);
             const auto meta=net.lastSimMeta();status["running"]=running;status["sim_time"]=state->timeSeconds();status["tick"]=state->tick;status["frames"]=state->tick-initialTick;
             status["fixed_step_seconds"]=state->fixedStep;status["content_revision"]=state->contentRevision;status["source"]=source->diagnostics();status["platforms"]=source->platforms();status["earth"]=json::parse(meta.earth_json);status["scene_session_id"]=meta.scene_session_id;
             status["equipment"]=json::array();
             for(const auto& e:EquipmentRegistry::instance().listOnline()) {
                 const auto s=SimDataBroker::instance().channelStats(e.equipment_id);
                 status["equipment"].push_back({{"id",e.equipment_id},{"name",e.name},{"frames",s.published_frames},{"subscribed",SimDataBroker::instance().isSubscribed(e.equipment_id)},{"powered",e.powered}});
+            }
+            if(managed){
+                status["state_revision"]=state->revision;
+                status["prescribed_controls"]=source->prescribedControls();
+                for(auto& row:status["equipment"]){
+                    const auto info=EquipmentRegistry::instance().findById(row.at("id").get<uint32_t>());
+                    if(!info)continue;
+                    row["platform_id"]=info->platform_id;
+                    row["kind"]=sensorTypeName(info->type);
+                    row["preview_supported"]=info->type==SensorType::VIS||info->type==SensorType::IR||info->type==SensorType::SONAR;
+                }
+                for(auto row:navigation){
+                    const auto id=row.at("id").get<uint32_t>();
+                    row.update({{"kind","navigation"},{"preview_supported",true},{"powered",true},{"frames",state->tick},
+                        {"subscribed",desiredProducts.count(id)>0}});
+                    status["equipment"].push_back(std::move(row));
+                }
+                if(previewedRevision!=state->revision||previewedProducts!=desiredProducts){
+                    refreshPreviewProducts(directory,desiredProducts,status.at("platforms"),navigation,
+                        state->tick,state->contentRevision,state->timeSeconds());
+                    previewedRevision=state->revision;
+                    previewedProducts=desiredProducts;
+                }
             }
             status["worker_tick_ms"]=tickMs;
             status["subscription_leases"]=net.subscriptionStatus();
@@ -157,17 +232,49 @@ int runSimulationEngineWorker(int argc,char** argv) {
                 auto line=input.substr(0,end);input.erase(0,end+1);
                 const auto command=json::parse(line);
                 if(command.at("generation")!=generation)continue;
+                const auto op=command.at("command").get<std::string>();
+                if(managed&&op=="subscriptions"){
+                    const auto nextProducts=command.at("devices").get<std::set<uint32_t>>();
+                    auto& broker=SimDataBroker::instance();
+                    for(const auto id:desiredProducts)
+                        if(!nextProducts.count(id)&&!navigationIds.count(id))broker.unsubscribe(id);
+                    for(const auto id:nextProducts)
+                        if(!desiredProducts.count(id)&&!navigationIds.count(id))broker.subscribe(id);
+                    desiredProducts=nextProducts;
+                    managedWorld=command.at("world").get<bool>();
+                    continue;
+                }
                 const auto seq=command.at("seq").get<uint64_t>();if(seq<=ack)continue;
-                const auto op=command.at("command").get<std::string>();status.erase("command_error");
-                if(op=="play"||op.rfind("play_to:",0)==0){stopAtTick=op=="play"?0:std::stoull(op.substr(8));if(op!="play"&&(!stopAtTick||stopAtTick<=source->snapshot()->tick||stopAtTick-source->snapshot()->tick>100000)){stopAtTick=0;status["command_error"]="target tick must be in the future and within 100000 steps";}else {if(!bus.isRunning())bus.start();requested=true;running=demand();status["state"]=running?"running":"waiting_for_leases";bus.setPaused(!running);next=Clock::now();}}
+                status.erase("command_error");
+                const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+                if(managed&&now>=command.at("valid_until_ms").get<int64_t>())
+                    status["command_error"]="control lease expired";
+                else if(managed&&op=="set_prescribed_course"){
+                    try {
+                        source->setPrescribedCourse(command.at("platform_id").get<uint32_t>(),
+                            command.at("heading_deg").get<double>(),command.at("speed_mps").get<double>());
+                    } catch(const std::invalid_argument& e) {status["command_error"]=e.what();}
+                }
+                else if(op=="play"||op.rfind("play_to:",0)==0){stopAtTick=op=="play"?0:std::stoull(op.substr(8));if(op!="play"&&(!stopAtTick||stopAtTick<=source->snapshot()->tick||stopAtTick-source->snapshot()->tick>100000)){stopAtTick=0;status["command_error"]="target tick must be in the future and within 100000 steps";}else {if(!bus.isRunning())bus.start();requested=true;running=demand();status["state"]=running?"running":"waiting_for_leases";bus.setPaused(!running);next=Clock::now();}}
                 else if(op=="pause"){stopAtTick=0;requested=false;running=false;bus.setPaused(true);checkpoint();status["state"]="paused";}
-                else if(op=="step"){requested=false;running=false;if(demand()){tick();checkpoint();status["state"]="paused";}else status["command_error"]="single step requires an active task lease";}
+                else if(op=="step"){
+                    if(managed&&(requested||source->snapshot()->tick!=command.at("expected_tick").get<uint64_t>()))
+                        status["command_error"]="single step requires the expected paused tick";
+                    else {requested=false;running=false;if(demand()){tick();checkpoint();status["state"]="paused";}else status["command_error"]="single step requires an active task lease";}
+                }
                 else if(op=="checkpoint")checkpoint();
                 else if(op=="reset_metrics"){timings.clear();cycles.clear();measurementBatches.clear();measurementRoundtrips.clear();}
                 else if(op=="stop"){requested=false;running=false;bus.stop();checkpoint();status["state"]="stopped";}
                 else if(op=="shutdown"){requested=false;running=false;quit=true;bus.stop();status["state"]="stopped";}
                 else throw std::runtime_error("unknown worker command: "+op);
-                ack=seq;update();published=Clock::now();
+                ack=seq;
+                if(managed){
+                    const auto state=source->snapshot();
+                    status["ack_stamp"]={{"tick",std::to_string(state->tick)},
+                        {"state_revision",std::to_string(state->revision)},{"content_revision",std::to_string(state->contentRevision)},
+                        {"sim_time_ns",std::to_string(std::llround(state->timeSeconds()*1e9))},{"sim_time_s",state->timeSeconds()}};
+                }
+                update();published=Clock::now();
             }
             const bool shouldRun=requested&&demand();if(shouldRun!=running){running=shouldRun;bus.setPaused(!running);next=Clock::now();status["state"]=running?"running":requested?"waiting_for_leases":"paused";}
             if(running && Clock::now()>=next){

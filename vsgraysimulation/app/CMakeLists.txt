@@ -47,6 +47,7 @@ add_executable(vsgraysim_sim_control
     sim_control/main.cpp
 )
 target_link_libraries(vsgraysim_sim_control PRIVATE
+    vsgraysim_engine_worker
     vsgraysim_gui_lib
     vsgraysim_viewport3d
     vsgraysim_algo
@@ -110,6 +111,16 @@ target_link_libraries(vsgraysim_voxel_workshop PRIVATE
     vsgraysim_gui_lib vsgraysim_viewport3d vsgraysim_core
     vsgraysim_algo vsgraysim_ipc vsgraysim_telemetry vsgraysim_common Qt6::Widgets)
 set_target_properties(vsgraysim_voxel_workshop PROPERTIES AUTOMOC ON AUTOUIC ON)
+
+if(TARGET vsgraysim_sim_service)
+    add_executable(vsgraysim_web_view web_view/main.cpp)
+    target_link_libraries(vsgraysim_web_view PRIVATE vsgraysim_gui_lib vsgraysim_viewport3d vsgraysim_deployment_adapter Qt6::Widgets)
+    set_target_properties(vsgraysim_web_view PROPERTIES BUILD_RPATH "${VSGRAYSIM_GUI_RPATH_DIRS}")
+    target_link_options(vsgraysim_web_view PRIVATE "-Wl,--disable-new-dtags")
+    target_compile_definitions(vsgraysim_web_view PRIVATE QT6_PLUGIN_PATH="${QT6_PREFIX}/plugins")
+    add_dependencies(vsgraysim_web_view vsgraysim_assets voxel_scene)
+    add_dependencies(vsgraysim_sim_service vsgraysim_web_view)
+endif()
 
 # ---- 公共 RPATH 设置 ----
 foreach(_tgt vsgraysim_launcher vsgraysim_scene_designer

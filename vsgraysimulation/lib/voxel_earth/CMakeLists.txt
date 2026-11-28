@@ -164,7 +164,7 @@ add_library(vsgraysim_voxel_earth STATIC
     ${earth_repo}/src/earth/VoxelScenePackage.cpp ${earth_repo}/src/earth/VoxelTerrainPages.cpp
     ${earth_repo}/src/earth/SceneWeather.cpp
     ${earth_repo}/src/earth/VoxelSculpt.cpp
-    ${earth_repo}/src/earth/VoxelFracture.cpp ${earth_repo}/src/earth/VoxelDynamics.cpp
+    ${earth_repo}/src/earth/VoxelFracture.cpp ${earth_repo}/src/earth/VoxelCrush.cpp ${earth_repo}/src/earth/VoxelDynamics.cpp
     ${earth_repo}/src/earth/VoxelSceneSensors.cpp ${earth_repo}/src/earth/VoxelSensorMaterials.cpp
     ${earth_repo}/src/earth/VoxelEarthPatch.cpp ${earth_repo}/src/earth/VoxelOcean.cpp ${earth_repo}/src/earth/VoxelBuoyancy.cpp ${earth_repo}/src/earth/VoxelOceanOptics.cpp
     ${earth_repo}/src/earth/SurfaceMesh.cpp

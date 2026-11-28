@@ -48,6 +48,16 @@ nlohmann::json VoxelTerrain::encodeVolume() const {
         }
         if(!a.emissive_rgba.empty())result["surface_appearance"]["emissive_runs"]=pixelRuns(a.emissive_rgba);
         if(a.detailed()){
+            if(!a.flatFaceCells.empty()){
+                auto runs=nlohmann::json::array();
+                for(size_t i=0;i<a.flatFaceCells.size();){
+                    if(!a.flatFaceCells[i]){++i;continue;}
+                    size_t end=i+1;
+                    while(end<a.flatFaceCells.size()&&a.flatFaceCells[end])++end;
+                    runs.push_back({i,end-i});i=end;
+                }
+                result["surface_appearance"]["flat_face_runs"]=std::move(runs);
+            }
             auto original=nlohmann::json::array();for(size_t i=0;i<a.originalOccupancy.size();){if(!a.originalOccupancy[i]){++i;continue;}size_t end=i+1;while(end<a.originalOccupancy.size()&&a.originalOccupancy[end])++end;original.push_back({i,end-i});i=end;}
             auto patches=nlohmann::json::array();for(const auto& p:a.patches){auto vertices=nlohmann::json::array();for(const auto& v:p.vertices)vertices.push_back({v.position.x,v.position.y,v.position.z,v.normal.x,v.normal.y,v.normal.z,v.uv.x,v.uv.y});patches.push_back({p.cell,std::move(vertices)});}
             result["surface_appearance"]["source_occupied_runs"]=std::move(original);
@@ -133,6 +143,20 @@ std::shared_ptr<VoxelTerrain> VoxelTerrain::decodeVolume(const nlohmann::json& j
             a->originalOccupancy.resize(cells,false);const auto& original=encoded.at("source_occupied_runs");size_t previous=0;bool first=true;
             if(!original.is_array()||original.size()>cells)throw std::invalid_argument("invalid original source occupancy");
             for(const auto& r:original){if(!r.is_array()||r.size()!=2||!r[0].is_number_unsigned()&&!r[0].is_number_integer()||!r[1].is_number_unsigned()&&!r[1].is_number_integer()||r[0].get<double>()<0||r[1].get<double>()<1||r[0].get<double>()>cells||r[1].get<double>()>cells)throw std::invalid_argument("invalid original source run");const size_t begin=r[0].get<size_t>(),count=r[1].get<size_t>();if(begin>cells-count||(!first&&begin<=previous))throw std::invalid_argument("overlapping original source runs");std::fill(a->originalOccupancy.begin()+begin,a->originalOccupancy.begin()+begin+count,true);previous=begin+count;first=false;}
+            if(encoded.contains("flat_face_runs")){
+                const auto& runs=encoded.at("flat_face_runs");
+                if(!runs.is_array()||runs.size()>cells)throw std::invalid_argument("invalid deformed face runs");
+                a->flatFaceCells.resize(cells,false);
+                size_t end=0;
+                for(const auto& run:runs){
+                    if(!run.is_array()||run.size()!=2||!run[0].is_number_integer()||!run[1].is_number_integer()||
+                        run[0].get<double>()<end||run[0].get<double>()>=cells||
+                        run[1].get<double>()<1||run[1].get<double>()>cells-run[0].get<double>())
+                        throw std::invalid_argument("invalid deformed face span");
+                    const auto begin=run[0].get<size_t>(),count=run[1].get<size_t>();
+                    std::fill_n(a->flatFaceCells.begin()+begin,count,true);end=begin+count;
+                }
+            }
             size_t vertices=0;uint32_t previousCell=0;for(const auto& p:patches){if(!p.is_array()||p.size()!=2||!p[0].is_number_integer()||p[0].get<double>()<0||p[0].get<double>()>=cells||!p[1].is_array()||p[1].size()<3||p[1].size()>9)throw std::invalid_argument("invalid source patch");VoxelSurfaceAppearance::SurfacePatch patch;patch.cell=p[0].get<uint32_t>();if(!a->originalOccupancy[patch.cell]||(!a->patches.empty()&&patch.cell<previousCell))throw std::invalid_argument("invalid source patch owner/order");previousCell=patch.cell;
                 const auto low=a->origin+vsg::dvec3(patch.cell%a->dimensions[0],patch.cell/a->dimensions[0]%a->dimensions[1],patch.cell/(size_t(a->dimensions[0])*a->dimensions[1]))*a->cellSize;
                 for(const auto& v:p[1]){if(!v.is_array()||v.size()!=8||++vertices>3'900'000)throw std::invalid_argument("invalid source patch vertex budget");for(const auto& x:v)if(!x.is_number()||!std::isfinite(x.get<double>()))throw std::invalid_argument("invalid source patch coordinate");VoxelSurfaceAppearance::SurfaceVertex q{{v[0].get<double>(),v[1].get<double>(),v[2].get<double>()},{v[3].get<float>(),v[4].get<float>(),v[5].get<float>()},{v[6].get<float>(),v[7].get<float>()}};for(int axis=0;axis<3;++axis)if(q.position[axis]<low[axis]-a->cellSize*1e-9||q.position[axis]>low[axis]+a->cellSize*(1+1e-9))throw std::invalid_argument("source patch escaped owning cell");if(std::abs(vsg::length(q.normal)-1)>1e-4||q.uv.x<0||q.uv.x>1||q.uv.y<0||q.uv.y>1)throw std::invalid_argument("invalid source normal/UV");patch.vertices.push_back(q);}

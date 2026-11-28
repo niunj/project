@@ -35,6 +35,8 @@
 
 #include <string>
 #include <vector>
+#include <map>
+#include <memory>
 
 namespace vsg {
 class ImageView;
@@ -79,7 +81,8 @@ public:
                  const std::vector<RadarMaterial>* materials,
                  const TexArraySpec* texSpec = nullptr);
     Result buildInstances(vsg::Device& device,const std::vector<SceneInstance>& instances,
-                          const std::vector<RadarMaterial>& materials,const TexArraySpec* textures=nullptr);
+                          const std::vector<RadarMaterial>& materials,const TexArraySpec* textures=nullptr,
+                          const SharedSceneResources* previous=nullptr);
     void setTransforms(const std::vector<vsg::dmat4>& transforms,const std::vector<bool>& visible);
     vsg::ref_ptr<vsg::VertexIndexDraw> sceneGeometry() const { return sceneGeometry_; }
     vsg::ref_ptr<vsg::Commands> sceneUpdates;
@@ -129,12 +132,24 @@ public:
         uint64_t envSetCalls = 0;      ///< setEnv 转发次数 (含去重前)
         uint64_t envDirtyCount = 0;    ///< 实际触发上传次数 (验收: ≈帧数, 非帧数×链数)
         uint32_t lutTextures = 0;      ///< LUT 纹理构建数 (按波段去重后)
+        uint32_t accelerationBuilt=0,accelerationReused=0;
+        uint64_t accelerationTrianglesBuilt=0;
+        double accelerationHostMs=0;
+        bool textureArrayReused=false;
     };
     const Stats& stats() const { return stats_; }
     void printStats() const;
 
 private:
-    void installInstances(vsg::Device&,const std::vector<SceneInstance>&);
+    Result buildResources(vsg::Device&,vsg::ref_ptr<vsg::Node>,const std::vector<RadarMaterial>*,const TexArraySpec*,
+                          const std::vector<SceneInstance>*,const SharedSceneResources*);
+    void installInstances(vsg::Device&,const std::vector<SceneInstance>&,const SharedSceneResources*);
+    struct MeshAcceleration;
+    using MeshKey=std::pair<std::string,uint32_t>;
+    std::map<MeshKey,std::shared_ptr<const MeshAcceleration>> meshAccelerations_;
+    vsg::ref_ptr<vsg::Device> resourceDevice_;
+    std::vector<vsg::vec4> textureSlots_;
+    std::vector<std::pair<size_t,size_t>> computeInstanceSpans_;
     vsg::ref_ptr<vsg::ubyteArray> instanceData_;
     vsg::ref_ptr<DynamicTlas> dynamicTlas_;
     vsg::ref_ptr<vsg::VertexIndexDraw> sceneGeometry_;

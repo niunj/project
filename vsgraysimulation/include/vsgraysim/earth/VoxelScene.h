@@ -29,6 +29,7 @@ struct VoxelBodySettings {
     double friction=.6,restitution=.1,linearDamping=.02,angularDamping=.02;
     double ballastMassKg=0; // optional explicit point mass, separate from occupied material
     vsg::dvec3 ballastPosition{};
+    double crushRadius=0., crushYieldSpeed=4., crushMaxStrain=.65;
 };
 struct VoxelRotorDrive {
     std::string carrier;
@@ -64,6 +65,7 @@ struct VoxelSceneObject {
     std::set<uint64_t> brokenBonds; // cell*3 + positive axis
     std::string parentId;
     uint64_t motionOriginTick=0;
+    uint64_t crushedAtTick=0;
     nlohmann::json material,provenance;
     std::shared_ptr<const VoxelSensorMaterials> sensorMaterials;
     vsg::dmat4 pose(uint64_t tick,double fixedStep) const;
@@ -77,6 +79,10 @@ struct VoxelContact {
     vsg::dvec3 pointA{},pointB{},normalOnB{};
     double impulseNs=0,penetrationM=0;
 };
+/// Visit changed column spans and their geometry neighbors for the same static
+/// Earth patch. Returns false if the caller must rebuild all derived data.
+bool visitVoxelEarthChangedColumns(const VoxelSceneObject& before,const VoxelSceneObject& after,
+                                  const std::function<void(const vsg::dbox&)>& visit);
 struct VoxelSceneSnapshot {
     std::shared_ptr<const VoxelOcean> ocean;
     uint64_t revision=0,contentRevision=0,tick=0;
@@ -136,13 +142,23 @@ public:
     bool paused() const;
     void setPaused(bool);
     /// Paused authoring only. Commands: add/remove/place/material/sensor_materials, target_properties, sensor_paint and terrain_brush.
-    void edit(const nlohmann::json& commands,uint64_t expectedRevision);
+    void edit(const nlohmann::json& commands,uint64_t expectedRevision,VoxelSceneSnapshotPtr prepared={});
+    // Undo a paused authoring transaction using its pre-edit snapshot.
+    void restoreAuthored(VoxelSceneSnapshotPtr,uint64_t expectedRevision);
     /// Commit immutable assets prepared off-thread into the existing paused world.
     void importPrepared(VoxelSceneSnapshotPtr,uint64_t expectedRevision);
     /// Future tick: damage, settle, fracture (face-bond plane), or impulse.
     uint64_t schedule(const nlohmann::json& event);
     void cancel(uint64_t sequence);
-    struct Advance {uint64_t steps=0,pendingSteps=0,events=0;double buoyancyMs=0,waterDragMs=0,waterMs=0;};
+    struct Advance {
+        uint64_t steps=0,pendingSteps=0,events=0,crushedBodies=0;
+        double buoyancyMs=0,waterDragMs=0,waterMs=0,crushMs=0;
+        double damageCarveMs=0, damageVolumeMs=0, topologyRefreshMs=0, collisionRefreshMs=0;
+        double terrainBvhMs=0;
+        size_t terrainBvhRebuilt=0,terrainBvhReused=0;
+        double terrainMeshMs=0,terrainMeshStitchMs=0;
+        size_t terrainMeshRebuilt=0,terrainMeshReused=0;
+    };
     Advance advanceTo(double absoluteSimulationSeconds,uint32_t stepBudget=8);
     /// May throw to reject a candidate, e.g. if a render/sensor build fails.
     /// Prepare resources only; mount them after observing snapshot().revision.

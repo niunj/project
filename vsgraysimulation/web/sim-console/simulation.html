@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0d1a25">
+  <title>VSG 仿真控制</title>
+  <script type="module" src="/src/simulation.ts"></script>
+</head>
+<body data-mode="simulation">
+  <canvas id="earth" tabindex="0" aria-label="体素三维地球。拖动旋转，Shift 拖动平移，滚轮缩放，Alt 单击拾取，双击复位"></canvas>
+  <div class="earth-veil"></div>
+  <div id="earth-message" class="glass earth-message" role="status">正在准备三维视口</div>
+
+  <header class="glass topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">V</span><div><strong>VSG 仿真控制</strong><small>运行会话与在线装备</small></div></div>
+    <nav aria-label="工作模式">
+      <a id="tab-design" href="/design">场景设计</a>
+      <a aria-current="page" href="/simulation">仿真控制</a>
+    </nav>
+    <div class="top-actions"><span id="connection">连接中</span><button id="toggle-panels" type="button" aria-pressed="false">隐藏面板</button></div>
+  </header>
+
+  <main id="simulation" class="workspace" aria-label="仿真控制">
+    <aside class="glass dock dock-left">
+      <div class="panel-section"><h2>场景工程</h2><div id="projects" class="choices"></div></div>
+      <div class="panel-section"><h2>运行会话</h2><div id="runs" class="choices"></div></div>
+    </aside>
+    <aside class="glass dock dock-right" id="detail" hidden>
+      <section class="panel-section">
+        <h2>平台状态</h2>
+        <div id="platforms" class="rows"></div>
+        <form id="course" hidden>
+          <label for="platform">操控平台</label><select id="platform"></select>
+          <div class="coord-inputs">
+            <label>航向 (°)<input id="heading" type="number" min="0" max="359.99" step="0.01" required></label>
+            <label>航速 (m/s)<input id="speed" type="number" min="0" step="0.01" required></label>
+          </div>
+          <button class="primary" type="submit">提交航向与航速</button>
+        </form>
+      </section>
+      <section class="panel-section">
+        <h2>装备数据</h2>
+        <label class="sr-only" for="equipment">在线装备</label><select id="equipment"><option value="">选择在线装备</option></select>
+        <div id="readings" class="rows" role="status"></div>
+        <canvas id="product" aria-label="传感器图像预览" hidden></canvas>
+      </section>
+    </aside>
+    <section class="glass scene-title run-title" aria-label="当前运行会话">
+      <div><h1 id="run-title">选择场景后启动仿真</h1><p id="run-status">等待运行会话</p></div>
+      <div id="playback" class="clock-controls">
+        <button data-clock="play" type="button" class="primary" disabled><span aria-hidden="true">▶</span> 运行</button>
+        <button data-clock="pause" type="button" disabled>暂停</button>
+        <button data-clock="step" type="button" disabled>单步</button>
+        <button data-clock="stop" type="button" disabled>停止</button>
+        <button data-clock="recover" type="button" hidden>恢复检查点</button>
+        <button id="close-run" type="button" hidden>关闭会话</button>
+      </div>
+      <p id="feedback" class="subline" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <div id="view-tools" class="glass view-tools" aria-label="地球相机">
+    <button type="button" data-preset="globe" aria-pressed="true" title="地球 (Home)">地球</button>
+    <button type="button" data-preset="tb" aria-pressed="false" title="局部地形 (End)">局部地形 TB</button>
+    <span class="tool-divider"></span>
+    <button type="button" data-zoom="out" aria-label="缩小">−</button>
+    <button type="button" data-zoom="in" aria-label="放大">＋</button>
+    <input id="view-zoom" type="range" min="-2" max="2" step=".02" value="0" aria-label="视距">
+    <button type="button" id="reset-camera" aria-label="重置相机" title="重置相机">↺</button>
+    <button type="button" id="toggle-earth-renderer" title="切换 WebGPU 与 VSG 地球视图">VSG 视图</button>
+  </div>
+
+  <footer class="glass statusbar">
+    <span id="data-source">台北 · Sentinel-2B 10 m · GLO-30 DSM</span>
+    <span id="render-status" aria-live="off">等待 Vulkan 帧</span>
+    <span>拖动旋转 · Shift 拖动平移 · 滚轮缩放</span>
+  </footer>
+</body>
+</html>

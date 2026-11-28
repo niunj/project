@@ -1,0 +1,55 @@
+{
+  "format": "voxel-deployment-catalog-v1",
+  "models": {
+    "survey-vessel": {
+      "label": "近岸测量船",
+      "kind": "ship",
+      "platform_model": "surface-vessel",
+      "source": {"type":"mesh","path":"models/OceanDemo/test-vessel.vsgb","max_dimension":128,"up_axis":"y","fill_interior":true},
+      "material": {"density_kg_m3":400,"temperature_k":294,"color_rgba":[1,1,1,1]}
+    },
+    "skywalker-x8": {
+      "label": "Skywalker X8 固定翼测绘无人机",
+      "kind": "uav",
+      "source": {"type":"mesh","path":"models/RealPlatforms/SkywalkerX8/x8_body.dae","voxel_size_m":0.021,"up_axis":"y","surface_detail":"source_clipped","fill_interior":false},
+      "mounts": {"deployment-sensor":{"position_m":[0,-0.18,0.18],"forward":[0,0,1],"up":[0,1,0]}}
+    },
+    "3dr-iris": {
+      "label": "3DR Iris 四旋翼无人机",
+      "kind": "uav",
+      "source": {"type":"mesh","path":"models/RealPlatforms/3DR-Iris/iris.stl","voxel_size_m":0.009,"up_axis":"z","surface_detail":"source_clipped","fill_interior":false},
+      "mounts": {"deployment-sensor":{"position_m":[0,-0.18,0.06],"forward":[0,0,1],"up":[0,1,0]}}
+    }
+  },
+  "sensors": {
+    "survey-tv": {
+      "label": "可见光测绘相机",
+      "settings": {"model_id":"optical-camera","band":"TV","width":320,"height":240,"fov_deg":46,"period_seconds":0.2,"output":"P4","aperture":{"position_m":[0,0,0],"look_at_m":[0,-1,0.25],"up":[0,1,0]}}
+    },
+    "survey-lwir": {
+      "label": "长波红外相机",
+      "settings": {"model_id":"infrared-lwir","band":"LWIR","width":320,"height":240,"fov_deg":35,"period_seconds":0.2,"output":"P4","aperture":{"position_m":[0,0,0],"look_at_m":[0,-1,0.25],"up":[0,1,0]}}
+    },
+    "survey-mwir": {
+      "label": "中波红外相机",
+      "settings": {"model_id":"infrared-mwir","band":"MWIR","width":320,"height":240,"fov_deg":32,"period_seconds":0.2,"output":"P4","aperture":{"position_m":[0,0,0],"look_at_m":[0,-1,0.25],"up":[0,1,0]}}
+    },
+    "survey-pulse": {
+      "label": "场景回波脉冲雷达",
+      "settings": {"model_id":"radar","band":"RADAR","width":128,"height":96,"fov_deg":32,"period_seconds":0.08,"output":"P0",
+        "aperture":{"position_m":[0,0,0],"look_at_m":[0,-1,0.32],"up":[0,1,0]},
+        "radar":{"lambda_m":0.03,"prf_hz":100,"cpi_pulses":8,"bandwidth_hz":15000000,"range_max_m":1800,"n_fast":256,"beam_width_rad":0.3,"terrain_layer":true}}
+    }
+  },
+  "materials": {
+    "dry-concrete": {
+      "label": "干混凝土（场景估计）",
+      "parameters":{"rho_tv":0.33,"rho_swir":0.29,"eps_mwir":0.86,"eps_lwir":0.93,"radar":{"dielectric_real":5.3,"dielectric_imag":0.25,"sigma0_db":-17,"surface_rough":0.6}}
+    },
+    "wet-asphalt": {
+      "label": "湿沥青（场景估计）",
+      "parameters":{"rho_tv":0.11,"rho_swir":0.08,"eps_mwir":0.91,"eps_lwir":0.96,"radar":{"dielectric_real":8,"dielectric_imag":0.6,"sigma0_db":-22,"surface_rough":0.25}}
+    }
+  },
+  "weather": ["clear","fair_clouds","cloudy","twilight_clouds","overcast","storm_clouds","light_rain","moderate_rain","heavy_rain","light_snow","moderate_snow","heavy_snow","fog"]
+}

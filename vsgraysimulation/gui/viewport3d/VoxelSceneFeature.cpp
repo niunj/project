@@ -34,6 +34,8 @@ struct TerrainLightingBindings : vsg::Inherit<vsg::Object,TerrainLightingBinding
         const void* clouds = nullptr;
         std::shared_ptr<earth::TerrainCloudShadow> pass;
         std::shared_ptr<TerrainDisplayPages> pages;
+        earth::EarthSurfaceSnapshotPtr surface;
+        bool atlasReused=false;
     };
     std::map<std::string,Entry> cached;
 };
@@ -169,7 +171,7 @@ void VoxelSceneFeature::bindSnapshot(earth::VoxelSceneSnapshotPtr next,nlohmann:
     presentation_=std::move(presentation);
     setEquipmentVisuals(std::move(equipmentVisuals));
     external_=std::move(next);synchronize();
-    if(first&&config_.contains("camera_local")&&context_->camera())if(auto look=context_->camera()->viewMatrix.cast<vsg::LookAt>()) {
+    if(first&&!config_.value("workspace_navigation",false)&&config_.contains("camera_local")&&context_->camera())if(auto look=context_->camera()->viewMatrix.cast<vsg::LookAt>()) {
         const auto& camera=config_.at("camera_local");const auto& e=camera.at("eye_m");const auto& t=camera.at("target_m");
         look->eye=chart_->matrix*vsg::dvec3(e[0].get<double>(),e[1].get<double>(),e[2].get<double>());
         look->center=chart_->matrix*vsg::dvec3(t[0].get<double>(),t[1].get<double>(),t[2].get<double>());
@@ -319,16 +321,23 @@ void VoxelSceneFeature::decorateContext(earth::VoxelSceneDisplay& display,earth:
         auto group=placement->children.front().cast<vsg::StateGroup>();if(!group||group->children.empty())continue;
         auto draw=group->children.front().cast<vsg::VertexIndexDraw>();if(!draw)continue;
         TerrainLightingBindings::Entry entry;
+        const TerrainLightingBindings::Entry* previous=nullptr;
         if (previousLights) {
             const auto found = previousLights->cached.find(id);
-            if (found != previousLights->cached.end() && found->second.source == draw.get() &&
-                found->second.clouds == map->cloudResources().get() && bool(found->second.pages) == pageTerrain)
-                entry = found->second;
+            if(found!=previousLights->cached.end()&&found->second.clouds==map->cloudResources().get()) {
+                previous=&found->second;
+                if(previous->source==draw.get()&&bool(previous->pages)==pageTerrain)entry=*previous;
+            }
         }
         if (!entry.pass) {
             entry.source = draw.get();
             entry.clouds = map->cloudResources().get();
-            entry.pass = std::make_shared<earth::TerrainCloudShadow>(o.surface(), draw, map->cloudResources());
+            entry.surface=o.geometry;
+            entry.atlasReused=!std::getenv("VSGRAYSIM_REFERENCE_TERRAIN_MESH")&&previous&&previous->pass&&previous->surface&&
+                earth::sameVoxelEarthAtlas(*previous->surface,o.surface());
+            if(entry.atlasReused)
+                entry.pass=std::make_shared<earth::TerrainCloudShadow>(*previous->pass,draw);
+            else entry.pass=std::make_shared<earth::TerrainCloudShadow>(o.surface(),draw,map->cloudResources());
             if (pageTerrain) {
                 const auto [x, z] = o.earth->pageSplitXZ();
                 entry.pages = std::make_shared<TerrainDisplayPages>(draw, x, z, o.earth->cellSize() * 4);
@@ -369,6 +378,13 @@ void VoxelSceneFeature::decorateContext(earth::VoxelSceneDisplay& display,earth:
     }
     display.contextDrawable=display.node->children.size();
     display.node->addChild(contextNode_);
+}
+nlohmann::json VoxelSceneFeature::terrainAtlasReuseStats() const {
+    auto result=nlohmann::json::object();
+    const auto* lights=display_.node?display_.node->getObject<TerrainLightingBindings>("voxel-earth-lighting"):nullptr;
+    if(lights)for(const auto& [id,entry]:lights->cached)if(entry.surface)
+        result[id]=entry.atlasReused;
+    return result;
 }
 nlohmann::json VoxelSceneFeature::terrainDisplayPageStats() const {
     auto result = nlohmann::json::object();

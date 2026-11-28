@@ -47,6 +47,7 @@ endif()
 # The engine family is always compiled from repository-owned source trees.
 # External SDK roots are configured above and recorded in dependency-report.json.
 option(VSGRAYSIM_BUILD_GUI "Build Qt software front-ends" ON)
+option(VSGRAYSIM_BUILD_SERVICE "Build the independent simulation service" ON)
 include(cmake/Dependencies.cmake)
 
 option(VSGRAYSIM_ENABLE_USD "Build OpenUSD from source and enable scene USD export" ON)
@@ -57,6 +58,7 @@ endif()
 add_subdirectory(lib/objloader)
 add_subdirectory(lib/simcore)
 add_subdirectory(lib/usd_bridge)
+add_subdirectory(lib/scene_authoring)
 
 # -----------------------------------------------------------------------------
 # vsgraysim_product_dispatch — B5 分发时序桥接 (ProductFrame → 传输帧映射 +
@@ -93,10 +95,10 @@ target_link_libraries(vsgraysim_common INTERFACE
     CUDA::cuda_driver
     Threads::Threads
     vsgImGui::vsgImGui
-    ${BULLET_LIBRARIES}
     vsgbDynamics
     vsgbCollision
     ${VSGRAYSIM_BULLET_EXTRA_LIBRARIES}
+    ${BULLET_LIBRARIES}
     ZLIB::ZLIB
 )
 
@@ -143,6 +145,9 @@ target_link_libraries(vsgraysim_core PUBLIC "${SIM_GDAL_LIBRARY}")
 target_link_libraries(vsgraysim_core PUBLIC vsgraysim_voxel_earth vsgraysim_common vsgraysim_cuda vsgraysim_ipc
                                             vsgraysim_objloader vsgraysim_rocky_env "${VSGRAYSIM_BASE_ROOT}/lib/libzip.so")
 target_link_libraries(vsgraysim_core PRIVATE vsgraysim_usd_bridge)
+add_library(vsgraysim_deployment_adapter STATIC lib/scene_authoring/VoxelDeploymentAdapter.cpp)
+target_link_libraries(vsgraysim_deployment_adapter PUBLIC scene_deployment vsgraysim_core)
+
 
 add_executable(voxel_target_sim EXCLUDE_FROM_ALL tools/voxel_target_sim.cpp)
 target_include_directories(voxel_target_sim PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -279,7 +284,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Qt6 GUI front-end
 # -----------------------------------------------------------------------------
-if(VSGRAYSIM_BUILD_GUI)
+if(VSGRAYSIM_BUILD_GUI OR VSGRAYSIM_BUILD_SERVICE)
     # Qt6 查找 (在 root 中调用, 确保子目录均可见 Qt6::Widgets 等目标)
     # 跳过 Qt 插件自动包含: 官方 Qt 二进制的 Gui 插件依赖 Qt6WaylandClient,
     # 而本机未安装 Wayland 开发库, 插件链会导致 find_package(Qt6 Gui) 失败。
@@ -289,7 +294,11 @@ if(VSGRAYSIM_BUILD_GUI)
     if(NOT Qt6_DIR AND EXISTS "${QT6_PREFIX}/lib/cmake/Qt6/Qt6Config.cmake")
         set(Qt6_DIR "${QT6_PREFIX}/lib/cmake/Qt6" CACHE PATH "Qt6 CMake package directory")
     endif()
-    find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets OPTIONAL_COMPONENTS Multimedia)
+    if(VSGRAYSIM_BUILD_GUI)
+        find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets Network OPTIONAL_COMPONENTS Multimedia)
+    else()
+        find_package(Qt6 6.12 REQUIRED COMPONENTS Core Network)
+    endif()
 
     # Qt6 RPATH (供 gui/ 和 app/ 共用)
     set(VSGRAYSIM_GUI_RPATH_DIRS
@@ -307,8 +316,11 @@ if(VSGRAYSIM_BUILD_GUI)
     endif()
     list(REMOVE_DUPLICATES VSGRAYSIM_GUI_RPATH_DIRS)
 
-    add_subdirectory(gui)
-    add_subdirectory(app)
+    add_subdirectory(service)
+    if(VSGRAYSIM_BUILD_GUI)
+        add_subdirectory(gui)
+        add_subdirectory(app)
+    endif()
 endif()
 
 vsgraysim_write_dependency_report()

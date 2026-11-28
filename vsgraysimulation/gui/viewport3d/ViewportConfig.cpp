@@ -163,6 +163,29 @@ ViewportConfig ViewportConfig::fromTopicFile(const std::string& path,const std::
     return cfg;
 }
 
+void ViewportConfig::useWorkspaceGlobe()
+{
+    for (const auto* feature : {"voxel_scene","rocky_cloud","rocky_ocean","sensor_fov","engagement_visual","trail","scene_audio"})
+        remove(feature);
+    nlohmann::json world = nlohmann::json::object(), sky = nlohmann::json::object();
+    for (const auto& entry : entries()) {
+        if (entry.id == "rocky_map") world = entry.params;
+        if (entry.id == "rocky_sky") sky = entry.params;
+    }
+    sky["show_atmosphere"] = false;
+    world.update({{"map_json","config/earth/global-voxel.map.json"},{"scene_context",true},{"background_loading",true},
+                  {"weather_presentation",false},{"orbital_preview",true},{"workspace_navigation",true}});
+    add("rocky_map",world);
+    add("rocky_sky",sky);
+}
+
+void ViewportConfig::useWorkspaceTerrain()
+{
+    add("rocky_map",{{"workspace_navigation",true}});
+    if (std::any_of(entries().begin(), entries().end(), [](const auto& f) { return f.id == "voxel_scene"; }))
+        add("voxel_scene",{{"workspace_navigation",true},{"frame_scene",false}});
+}
+
 ViewportConfig ViewportConfig::fromJson(const nlohmann::json& j)
 {
     ViewportConfig cfg;

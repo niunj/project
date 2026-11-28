@@ -4,6 +4,7 @@
 /// @brief Simulation control implementation (8 个分类 Dock).
 #include "SimulationControlWindow.h"
 #include "SimulationWorkerClient.h"
+#include "SimulationServicePanel.h"
 #include "vsgraysim/core/ScenarioClockConfig.h"
 
 #include "AssetBrowserWidget.h"
@@ -53,6 +54,8 @@
 #include <QHeaderView>
 #include <QLineEdit>
 #include <QMenu>
+#include <QInputDialog>
+#include <QRegularExpression>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPropertyAnimation>
@@ -162,14 +165,15 @@ SimulationControlWindow::SimulationControlWindow(QWidget* parent)
     });
     sim_facade_ = new viewport3d::SimulationDisplayFacade(preview_viewport_, this);
 
-    // 视口承载容器: 视口满布 + 顶部半透明播放控制浮层 (分层叠加)
+    // 仿真操作位于三维视口下方，装备展示继续由各自的面板负责。
     playback_host_ = new QWidget(this);
     auto* host_lay = new QGridLayout(playback_host_);
     host_lay->setContentsMargins(0, 0, 0, 0);
     host_lay->setSpacing(0);
     host_lay->addWidget(preview_viewport_, 0, 0);
-    buildPlaybackOverlay();                  // 创建浮层 (播放/单步/连续/暂停/结束 + 动画)
-    host_lay->addWidget(playback_bar_, 0, 0, Qt::AlignTop | Qt::AlignHCenter);
+    host_lay->setRowStretch(0,1);
+    buildPlaybackOverlay();
+    host_lay->addWidget(playback_bar_, 1, 0, Qt::AlignHCenter);
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(playback_host_);
@@ -223,6 +227,21 @@ SimulationControlWindow::SimulationControlWindow(QWidget* parent)
     setFlowStage(0);
     startSimWorker();                      // 仿真工作线程 (重计算与 UI/渲染分离)
     menuBar()->addAction(tr("重启后台并恢复检查点"),this,&SimulationControlWindow::onRestartWorker);
+    menuBar()->addAction(tr("连接仿真服务…"), this, [this] {
+        if (engine_worker_ || sim_inited_) {
+            statusBar()->showMessage(tr("请从新的仿真主控窗口连接服务"), 5000);
+            return;
+        }
+        bool accepted = false;
+        const auto run = QInputDialog::getText(this, tr("连接本机仿真服务"),
+            tr("运行会话 ID"), QLineEdit::Normal, QStringLiteral("r1"), &accepted).trimmed();
+        if (!accepted) return;
+        if (!QRegularExpression("^r[1-9][0-9]*$").match(run).hasMatch()) {
+            statusBar()->showMessage(tr("请输入运行会话 ID，例如 r1"), 5000);
+            return;
+        }
+        connectSimulationService(QUrl("http://127.0.0.1:8765"), run);
+    });
     if (log_panel_) log_panel_->info(tr("仿真控制软件启动"));
     spdlog::info("SimulationControlWindow: built ({}x{})", width(), height());
 }
@@ -257,6 +276,24 @@ void SimulationControlWindow::startVoxelWorker(const QString& path) {
     engine_worker_->changed=[this](const nlohmann::json& s){acceptWorkerStatus(s);};
     engine_worker_->start(path);statusBar()->showMessage(tr("后台加载台北地形、体素与传感器；界面可继续操作"));
 }
+void SimulationControlWindow::connectSimulationService(const QUrl& endpoint, const QString& run) {
+    if (engine_worker_) return;
+    auto* dock = new QDockWidget(tr("在线平台与装备"), this);
+    service_dock_ = dock;
+    dock->setObjectName("simulation_service_console");
+    engine_worker_ = std::make_unique<SimulationWorkerClient>(this);
+    engine_worker_->setObjectName("simulation_engine_supervisor");
+    auto* devices = new SimulationServicePanel(*engine_worker_, dock);
+    dock->setWidget(devices);
+    addDockWidget(Qt::LeftDockWidgetArea, dock);
+    engine_worker_->changed = [this, devices](const auto& status) {
+        acceptWorkerStatus(status);
+        devices->updateStatus(status);
+    };
+    setPlaybackEnabled(false);
+    engine_worker_->connectService(endpoint, run);
+}
+
 void SimulationControlWindow::acceptWorkerStatus(const nlohmann::json& s) {
     if(s.contains("scene_session_id")&&s.at("scene_session_id").is_string())
         preview_viewport_->widget()->setProperty("sceneAudioEpoch",
@@ -301,7 +338,7 @@ void SimulationControlWindow::onRestartWorker(){if(engine_worker_)engine_worker_
 // ---------------------------------------------------------------------------
 // Dock 1: 场景装载
 // ---------------------------------------------------------------------------
-// 3D 视口顶部半透明播放控制浮层 (播放/单步方正/连续仿真/暂停/结束 + 淡入动画)
+// 三维视口下方的仿真时序操作
 // ---------------------------------------------------------------------------
 void SimulationControlWindow::buildPlaybackOverlay()
 {
@@ -351,9 +388,11 @@ void SimulationControlWindow::buildPlaybackOverlay()
     connect(btn_play_,  &QPushButton::clicked, this, &SimulationControlWindow::onPlayPause);
     connect(btn_step_,  &QPushButton::clicked, this, &SimulationControlWindow::onStepOnce);
     connect(btn_pause_, &QPushButton::clicked, this, [this]() {
+        if (engine_worker_ && sim_inited_) { engine_worker_->command("pause"); return; }
         if (playing_) onPlayPause();       // 暂停
     });
     connect(btn_cont_,  &QPushButton::clicked, this, [this]() {
+        if (engine_worker_ && sim_inited_) { engine_worker_->command("play"); return; }
         if (!playing_) onPlayPause();      // 连续仿真
     });
     connect(btn_stop_,  &QPushButton::clicked, this, &SimulationControlWindow::onStop);
@@ -1474,6 +1513,8 @@ void SimulationControlWindow::onInitSimulation() try
 void SimulationControlWindow::loadScenarioFile(const QString& path)
 {
     if((path.endsWith(".vtopic.json",Qt::CaseInsensitive)||path.endsWith(".vsimscene",Qt::CaseInsensitive))&&!std::getenv("VSGRAYSIM_INPROCESS_REFERENCE")) {
+        delete service_dock_;
+        service_dock_ = nullptr;
         engine_worker_.reset();worker_view_generation_.clear();
         scenario_path_=QFileInfo(path).absoluteFilePath();scenario_data_={{"format","earth-scene-topic-v1"}};setWindowFilePath(scenario_path_);
         startVoxelWorker(scenario_path_);return;
@@ -1504,6 +1545,8 @@ void SimulationControlWindow::loadScenarioFile(const QString& path)
             setFlowStage(0);onInitSimulation();return;
         }catch(const std::exception& error){statusBar()->showMessage(tr("体素场景装载失败：%1").arg(QString::fromUtf8(error.what())));if(log_panel_)log_panel_->error(QString::fromUtf8(error.what()));return;}
     }
+    delete service_dock_;
+    service_dock_ = nullptr;
     engine_worker_.reset();preview_viewport_->applyConfig(viewport3d::ViewportConfig::fromPreset("simulation_display"));
     scenario_path_ = QFileInfo(path).absoluteFilePath();
     setWindowFilePath(scenario_path_);

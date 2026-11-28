@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0d1a25">
+  <title>VSG 场景设计</title>
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body data-mode="gallery">
+  <canvas id="earth" tabindex="0" aria-label="体素三维地球。拖动旋转，Shift 拖动平移，滚轮缩放，Alt 单击拾取，双击复位" hidden></canvas>
+  <div class="earth-veil"></div>
+  <div id="earth-message" class="glass earth-message" role="status" hidden>正在准备三维视口</div>
+
+  <header class="glass topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">V</span><div><strong>VSG 场景设计</strong></div></div>
+    <nav aria-label="工作模式">
+      <a id="tab-design" aria-current="page" href="/design">场景设计</a>
+      <a id="tab-simulation" href="/simulation">仿真控制</a>
+    </nav>
+    <div class="top-actions"><span id="connection">连接中</span><button id="toggle-panels" type="button" aria-pressed="false">隐藏面板</button></div>
+  </header>
+
+  <main id="gallery" class="gallery" aria-label="场景工程">
+    <header><h1>场景工程</h1><p>选择一个工程，在同一座三维地球上编辑地形、环境和目标。</p></header>
+    <div id="project-cards" class="project-cards"></div>
+    <p id="gallery-status" class="subline" role="status">正在读取场景目录</p>
+  </main>
+
+  <main id="design" class="workspace" aria-label="场景设计" hidden>
+    <aside class="glass dock design-dock" aria-label="场景编辑工具">
+      <div class="panel-section design-project">
+        <div class="section-title"><h2 id="workspace-name">场景工程</h2><span id="layout-version"></span></div>
+        <p id="edit-author" class="subline"></p>
+        <div class="design-view-actions">
+          <a id="back-to-gallery" href="/design">场景列表</a>
+          <a id="open-models" href="/models">模型工作台 <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+      <div class="panel-section object-section">
+        <div class="section-title"><h2>场景树</h2><span id="object-count"></span></div>
+        <div id="design-objects" class="choices"></div>
+      </div>
+      <div class="panel-section">
+        <h3 id="design-object-name">选择场景对象</h3>
+        <p id="design-object-id" class="subline"></p>
+        <dl id="object-position" class="object-position" hidden></dl>
+        <button id="focus-object" type="button" hidden>定位对象</button>
+        <div id="sensor-binding" class="sensor-binding" hidden>
+          <p id="binding-note" class="subline"></p>
+          <button id="apply-model-profile" type="button">采用最新模型档案</button>
+          <button id="clear-model-profile" type="button" hidden>恢复场景材质</button>
+        </div>
+        <p id="design-note" class="subline"></p>
+      </div>
+      <div class="panel-section project-actions">
+        <button id="run-layout" type="button" disabled>启动场景仿真 <span aria-hidden="true">↗</span></button>
+        <p id="design-feedback" class="subline" role="status" aria-live="polite"></p>
+      </div>
+    </aside>
+    <section class="glass deployment-bar" aria-label="智能部署">
+      <form id="smart-layout">
+        <label for="smart-instruction" id="deployment-label">智能部署</label>
+        <div class="deployment-row">
+          <textarea id="smart-instruction" rows="1" required maxlength="4096" placeholder="添加 skywalker-x8 到 (20, 250, 50) 米"></textarea>
+          <button type="submit" class="primary">预检</button>
+        </div>
+        <div id="smart-preview" class="smart-preview" hidden></div>
+        <button id="smart-apply" type="button" hidden>提交到共享工程</button>
+        <p id="deployment-feedback" class="subline" role="status"></p>
+      </form>
+    </section>
+    <section class="scene-title design-title" aria-label="当前设计场景">
+      <h1 id="design-title">台北场景</h1><p id="design-anchor">地球场景预览</p>
+    </section>
+  </main>
+
+  <main id="models" class="workspace model-workspace" aria-label="模型工作台" hidden>
+    <aside class="glass dock dock-left model-dock">
+      <div class="panel-section">
+        <a class="workbench-back" id="back-to-design" href="/design">← 返回场景设计</a>
+        <div class="section-title"><h2>模型库</h2><span id="model-count"></span></div>
+        <label for="model-search" class="sr-only">搜索模型</label>
+        <input id="model-search" type="search" placeholder="搜索型号或类别">
+        <button id="model-import" type="button">＋ 导入 GLB</button>
+        <input id="model-file" type="file" accept=".glb,model/gltf-binary" hidden>
+        <div id="model-list" class="model-list" aria-label="模型列表"></div>
+      </div>
+    </aside>
+    <aside class="glass dock dock-right">
+      <div class="panel-section">
+        <h2>模型档案</h2>
+        <h3 id="model-name">请选择模型</h3>
+        <p id="model-description" class="subline"></p>
+        <div class="model-modes" id="model-modes" hidden>
+          <button type="button" data-representation="original" aria-pressed="true">原模型</button>
+          <button type="button" data-representation="voxel" aria-pressed="false">体素表面</button>
+        </div>
+      </div>
+      <form id="model-profile" class="panel-section" hidden>
+        <label>显示名称<input id="model-label" maxlength="64" required></label>
+        <fieldset><legend>档案姿态 (°)</legend>
+          <div class="coord-inputs">
+            <label>俯仰<input type="number" min="-180" max="180" step="any" required id="model-pitch"></label>
+            <label>航向<input type="number" min="-180" max="180" step="any" required id="model-yaw"></label>
+            <label>横滚<input type="number" min="-180" max="180" step="any" required id="model-roll"></label>
+          </div>
+        </fieldset>
+        <fieldset class="sensor-fields"><legend>传感材质</legend>
+          <div class="sensor-inputs">
+            <label>参考温度 (K)<input type="number" min="1" max="5000" step="any" placeholder="沿用材质" id="model-temperature"></label>
+            <label>可见光反射率<input type="number" min="0" max="1" step="any" placeholder="沿用材质" id="model-visible"></label>
+            <label>中波红外发射率<input type="number" min="0" max="1" step="any" placeholder="沿用材质" id="model-mwir"></label>
+            <label>长波红外发射率<input type="number" min="0" max="1" step="any" placeholder="沿用材质" id="model-lwir"></label>
+            <label>RCS 功率倍率<input type="number" min="0" max="100000000" step="any" placeholder="沿用材质" id="model-rcs"></label>
+          </div>
+          <p class="subline">保存后，可在场景对象上采用此档案。</p>
+        </fieldset>
+        <button class="primary" type="submit">保存模型档案</button>
+      </form>
+      <div class="panel-section" id="model-feedback" role="status" aria-live="polite" hidden></div>
+    </aside>
+    <section class="glass scene-title"><h1 id="studio-title">独立模型预览</h1><p id="studio-subtitle">拖动检查表面 · 滚轮缩放</p></section>
+  </main>
+
+  <div id="view-tools" class="glass view-tools" aria-label="地球相机">
+    <button type="button" data-preset="globe" title="全地球 (Home)">全地球</button>
+    <button type="button" data-preset="tb" title="定位工程 (End)">定位工程</button>
+    <span class="tool-divider"></span>
+    <button type="button" data-zoom="out" aria-label="缩小">−</button>
+    <button type="button" data-zoom="in" aria-label="放大">＋</button>
+    <input id="view-zoom" type="range" min="-2" max="2" step=".02" value="0" aria-label="视距">
+    <button type="button" id="reset-camera" aria-label="重置相机" title="重置相机">↺</button>
+    <button type="button" id="toggle-earth-renderer" title="切换 WebGPU 与 VSG 地球视图">VSG 视图</button>
+  </div>
+
+  <footer class="glass statusbar">
+    <span id="data-source">台北 · Sentinel-2B 10 m · GLO-30 DSM</span>
+    <span id="render-status" aria-live="off">等待 Vulkan 帧</span>
+    <span>拖动旋转 · Shift 拖动平移 · 滚轮缩放</span>
+  </footer>
+</body>
+</html>

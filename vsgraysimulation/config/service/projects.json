@@ -1,0 +1,23 @@
+{
+  "format": "vsgraysim-service-projects-v1",
+  "projects": [
+    {
+      "project_id": "taipei-coast",
+      "name": "台北近海 · 固定翼巡查与船载测深",
+      "description": "在台北东北海岸布设船舶与固定翼飞机，使用同一片海面、海岸地形和天空。海底为演示数据。",
+      "thumbnail": "/assets/projects/taipei-coast.jpg",
+      "area": "台北东北海岸",
+      "published_revision_id": "initial",
+      "topic": "config/topics/taipei-service-coast.vtopic.json"
+    },
+    {
+      "project_id": "taipei-land",
+      "name": "台北陆地 · 多谱段观测",
+      "description": "围绕台北山地开展可见光、红外和雷达观测。工程包含地形、飞机和多谱段观测站。",
+      "thumbnail": "/assets/projects/taipei-land.jpg",
+      "area": "台北周边山地",
+      "published_revision_id": "initial",
+      "topic": "config/topics/taipei-equipment.vtopic.json"
+    }
+  ]
+}

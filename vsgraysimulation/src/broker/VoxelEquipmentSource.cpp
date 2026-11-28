@@ -6,6 +6,7 @@
 #include <vsgraysim/earth/VoxelScenePackage.h>
 #include <vsgraysim/earth/ScenePresentation.h>
 #include <vsgraysim/earth/SceneAcoustics.h>
+#include <simcore/Orientation.h>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -88,6 +89,37 @@ nlohmann::json VoxelSceneProject::saved(const json& checkpoint) const {
     if(!equipmentDocument.is_null())out["equipment"]=equipmentDocument;return out;
 }
 
+void applyVoxelInitialPositions(earth::VoxelScene& scene, const json& positions) {
+    if (positions.empty()) return;
+    const auto state = scene.snapshot();
+    auto edits = json::array();
+    for (const auto& [id, coordinates] : positions.items()) {
+        const auto found = state->objects.find(id);
+        if (found == state->objects.end()) throw std::invalid_argument("unknown layout object: " + id);
+        const auto& object = found->second;
+        if (object.role != "target" || object.poseTrack || object.rotor || !object.parentId.empty())
+            throw std::invalid_argument("object does not accept a layout position: " + id);
+        auto pose = object.pose(state->tick, state->fixedStep);
+        for (size_t axis = 0; axis < 3; ++axis) pose[3][axis] = coordinates.at(axis).get<double>();
+        edits.push_back({{"kind","place"},{"object",id},{"pose",matrixJson(pose)},
+                         {"velocity_mps",{object.velocity.x,object.velocity.y,object.velocity.z}}});
+    }
+    scene.edit(edits, state->revision);
+}
+
+void applyVoxelModelMaterials(earth::VoxelScene& scene, const json& bindings) {
+    if (bindings.empty()) return;
+    const auto state = scene.snapshot();
+    auto edits = json::array();
+    for (const auto& [id, binding] : bindings.items()) {
+        const auto found = state->objects.find(id);
+        if (found == state->objects.end() || found->second.role != "target")
+            throw std::invalid_argument("invalid model material target: " + id);
+        edits.push_back({{"kind","sensor_paint"},{"object",id},{"region",nullptr},{"material",binding.at("material")}});
+    }
+    scene.edit(edits, state->revision);
+}
+
 struct VoxelEquipmentSource::AcousticPublication {
     earth::SceneAcoustics model;
     json readings=json::array();
@@ -105,13 +137,27 @@ void VoxelEquipmentSource::onOwner(std::function<void()> action) {
 }
 VoxelEquipmentSource::~VoxelEquipmentSource(){shutdown();{std::lock_guard lock(taskMutex_);stopping_=true;}taskWake_.notify_one();if(owner_.joinable())owner_.join();std::error_code error;if(!archiveDirectory_.empty())fs::remove_all(archiveDirectory_,error);}
 bool VoxelEquipmentSource::initialize(const json& options) {
+    return initialize(options,{});
+}
+bool VoxelEquipmentSource::initialize(const json& options,
+    const std::function<void(earth::VoxelScene&, VoxelSceneProject&)>& prepare) {
     bool initialized=false;onOwner([&]{
     if(scene_){initialized=true;return;}
     try {
+        scene_=project_.createScene();
+        if (prepare) {
+            scene_->setPaused(true);
+            prepare(*scene_,project_);
+        }
         const auto config=project_.equipmentConfig();equipment_config_=config;
         if(!config.visualOnly&&!config.equipment.empty()&&project_.document.value("clouds",json::object()).value("cover",.5)!=0)throw std::invalid_argument("GPU voxel equipment currently supports explicit clear-sky land topics only");
         if(project_.document.value("sky",json::object()).value("time_scale",1.)!=1)throw std::invalid_argument("equipment and sky must use the same simulation UTC");
-        scene_=project_.createScene();scene_->setPaused(false);fixedStep_=scene_->snapshot()->fixedStep;initialTime_=scene_->snapshot()->timeSeconds();
+        if(options.contains("initial_positions") || options.contains("initial_model_bindings")){
+            scene_->setPaused(true);
+            applyVoxelInitialPositions(*scene_,options.value("initial_positions",json::object()));
+            applyVoxelModelMaterials(*scene_,options.value("initial_model_bindings",json::object()));
+        }
+        scene_->setPaused(false);fixedStep_=scene_->snapshot()->fixedStep;initialTime_=scene_->snapshot()->timeSeconds();
         for(const auto& platform:config.platforms)
             if(!scene_->snapshot()->objects.count(platform.object))throw std::invalid_argument("platform scene object is missing: "+platform.object);
         for(const auto& sounder:config.sounders){
@@ -177,6 +223,64 @@ bool VoxelEquipmentSource::hasPresentationControls() const {
     for(const auto& platform:equipment_config_.platforms)if(!platform.displayRig.empty())return true;
     return false;
 }
+namespace {
+double courseSpeedLimit(const earth::VoxelEquipmentPlatform& platform,const earth::VoxelSceneSnapshot& state) {
+    const auto found=state.objects.find(platform.object);
+    if(found==state.objects.end())return 0;
+    const auto& object=found->second;
+    if(object.body.motion!="prescribed"||object.poseTrack||object.rotor||object.body.fracture||!object.parentId.empty())return 0;
+    if(platform.modelId=="skywalker-x8")return 35;
+    if(platform.modelId=="surface-vessel")return 12;
+    return 0;
+}
+}
+json VoxelEquipmentSource::prescribedControls() const {
+    const auto state=snapshot();
+    auto controls=json::object();
+    if(state)for(const auto& platform:equipment_config_.platforms)
+        if(const auto limit=courseSpeedLimit(platform,*state);limit>0)
+            controls[std::to_string(platform.id)] = {{"max_speed_mps", limit}};
+    return controls;
+}
+
+void VoxelEquipmentSource::setPrescribedCourse(uint32_t platformId,double heading,double speed) {
+    onOwner([&]{
+        if(!scene_)throw std::logic_error("world is not ready");
+        const auto state=scene_->snapshot();
+        const auto platform=std::find_if(equipment_config_.platforms.begin(),equipment_config_.platforms.end(),
+            [platformId](const auto& candidate){return candidate.id==platformId;});
+        const double limit=platform==equipment_config_.platforms.end()?0:courseSpeedLimit(*platform,*state);
+        if(limit<=0)throw std::invalid_argument("platform does not support prescribed course control");
+        if(!std::isfinite(heading)||heading<0||heading>=360||!std::isfinite(speed)||speed<0||speed>limit)
+            throw std::invalid_argument("course heading or speed out of range");
+        const auto& object=state->objects.at(platform->object);
+        const auto actual=object.pose(state->tick,state->fixedStep);
+        vsg::dvec3 position,scale;
+        vsg::dquat rotation;
+        vsg::decompose(actual,position,rotation,scale);
+        const auto angles=simcore::headingAngles(rotation);
+        const double localHeading=heading-state->anchor.heading_deg;
+        const auto course=simcore::headingRotation(localHeading-platform->modelHeadingDeg,angles.y,angles.z);
+        const double radians=simcore::geo::deg2rad(localHeading);
+        const json command={{"kind","place"},{"object",platform->object},
+            {"pose",matrixJson(vsg::translate(position)*vsg::rotate(course))},
+            {"velocity_mps",{speed*std::sin(radians),object.velocity.y,-speed*std::cos(radians)}},
+            {"angular_velocity_rad_s",{0,0,0}}};
+        // The world owner already runs this command between fixed steps.
+        // Reuse the same pose transaction and collision representation as authoring.
+        const bool originallyPaused=scene_->paused();
+        scene_->setPaused(true);
+        try {
+            scene_->edit(json::array({command}),state->revision);
+        } catch(...) {
+            scene_->setPaused(originallyPaused);
+            throw;
+        }
+        scene_->setPaused(originallyPaused);
+        publishState();
+    });
+}
+
 void VoxelEquipmentSource::onStart(){
     onOwner([this]{
         if(scene_){
@@ -221,10 +325,11 @@ void VoxelEquipmentSource::onTick(const TimeTick& tick) {
         const auto begin=std::chrono::steady_clock::now();
         if(measurement_process_)measurement_process_->ensureStarted(archivePath_);
         const auto physicsBegin=std::chrono::steady_clock::now();
-        scene_->advanceTo(initialTime_+tick.sim_time,1);
+        const auto advance=scene_->advanceTo(initialTime_+tick.sim_time,1);
         const auto advanced=std::chrono::steady_clock::now();
         // Publish geometry before any product tagged with the new version.
         publishState();
+        const auto published=std::chrono::steady_clock::now();
         if(!registeredSounders_.empty())advanceSounders(*scene_->snapshot());
         if(measurement_process_)measurement_process_->advanceMeasurements(archivePath_);
         else if(runtime_)runtime_->advanceMeasurements();
@@ -235,7 +340,14 @@ void VoxelEquipmentSource::onTick(const TimeTick& tick) {
             const auto stats=runtime_->statistics();
             sensors={{"sensor_ms",stats.sensorMs},{"published",stats.published},{"rejected_windows",stats.rejectedWindows}};
         }
-        std::lock_guard lock(publicationMutex_);diagnostics_={{"scene_ms",ms(physicsBegin,advanced)},{"source_tick_ms",ms(begin,finished)},{"sensor_ms",sensors.at("sensor_ms")},{"published",sensors.at("published")},{"rejected_windows",sensors.at("rejected_windows")},{"visual_only",equipment_config_.visualOnly}};if(measurement_process_)diagnostics_["gpu_pool"]=sensors;
+        std::lock_guard lock(publicationMutex_);diagnostics_={{"scene_ms",ms(physicsBegin,advanced)},{"scene_publication_ms",ms(advanced,published)},{"source_tick_ms",ms(begin,finished)},{"sensor_ms",sensors.at("sensor_ms")},{"published",sensors.at("published")},{"rejected_windows",sensors.at("rejected_windows")},{"visual_only",equipment_config_.visualOnly}};if(measurement_process_)diagnostics_["gpu_pool"]=sensors;
+        if(advance.events||advance.crushedBodies)
+            diagnostics_["topology_timings_ms"]={{"carve",advance.damageCarveMs},{"volume",advance.damageVolumeMs},
+                {"surface",advance.topologyRefreshMs},{"collision",advance.collisionRefreshMs},
+                {"terrain_mesh",advance.terrainMeshMs},{"terrain_mesh_stitch",advance.terrainMeshStitchMs},
+                {"terrain_mesh_rebuilt",advance.terrainMeshRebuilt},{"terrain_mesh_reused",advance.terrainMeshReused},
+                {"terrain_bvh",advance.terrainBvhMs},{"terrain_bvh_rebuilt",advance.terrainBvhRebuilt},
+                {"terrain_bvh_reused",advance.terrainBvhReused}};
     } catch(const std::exception& error){std::lock_guard lock(publicationMutex_);error_=error.what();}
     });
 }
@@ -287,9 +399,19 @@ void VoxelEquipmentSource::publishState() {
     if(archivedContent_!=state->contentRevision) {
         const auto path=fs::path(archiveDirectory_)/("geometry_"+std::to_string(state->contentRevision)+".json");
         const auto pending=path.string()+".pending";
-        {std::ofstream output(pending,std::ios::binary);if(!output)throw std::runtime_error("cannot create scene publication");output<<scene_->checkpoint();output.close();if(!output)throw std::runtime_error("cannot complete scene publication");}
-        const auto bytes=fs::file_size(pending);if(bytes>256ULL*1024*1024){fs::remove(pending);throw std::runtime_error("published geometry exceeds 256 MiB");}
-        fs::rename(pending,path);archivePath_=path.string();archivedContent_=state->contentRevision;
+        try {
+            std::ofstream output(pending,std::ios::binary);
+            if(!output)throw std::runtime_error("cannot create scene publication");
+            output<<scene_->checkpoint()<<'\n';output.close();
+            if(!output)throw std::runtime_error("cannot complete scene publication");
+            if(fs::file_size(pending)>256ULL*1024*1024)throw std::runtime_error("published geometry exceeds 256 MiB");
+            fs::rename(pending,path);
+        } catch(...) {
+            std::error_code error;fs::remove(pending,error);throw;
+        }
+        const auto bytes=fs::file_size(path);
+        archivePath_=path.string();archivedContent_=state->contentRevision;
+        archivedState_=state;archivedPaused_=scene_->paused();
         archives_.push_back({archivePath_,bytes});archiveBytes_+=bytes;
         // Bounded local geometry cache. A lagging reader whose old archive was
         // reclaimed must use the newest descriptor rather than mismatched data.
@@ -405,7 +527,25 @@ nlohmann::json VoxelEquipmentSource::presentationState(const earth::VoxelSceneSn
     return presentationState_;
 }
 void VoxelEquipmentSource::saveRecovery(const std::string& path) {
-    onOwner([&]{if(!scene_||!isHealthy())throw std::runtime_error("cannot checkpoint an unhealthy source");scene_->saveCheckpoint(path);});
+    onOwner([&]{
+        if(!scene_||!isHealthy())throw std::runtime_error("cannot checkpoint an unhealthy source");
+        // This source owns event scheduling. Once a revision is published,
+        // another owner operation that changes the checkpoint swaps the scene snapshot.
+        if(archivedState_.lock()==scene_->snapshot()&&archivedPaused_==scene_->paused()) {
+            const auto destination=fs::absolute(path);
+            const auto temporary=destination.string()+".link-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+            std::error_code error;
+            if(fs::equivalent(archivePath_,destination,error))return;
+            error.clear();
+            fs::create_hard_link(archivePath_,temporary,error);
+            if(!error) {
+                fs::rename(temporary,destination,error);
+                if(!error)return;
+                fs::remove(temporary,error);
+            }
+        }
+        scene_->saveCheckpoint(path);
+    });
 }
 
 AsyncVoxelSceneReadView::AsyncVoxelSceneReadView():worker_([this]{

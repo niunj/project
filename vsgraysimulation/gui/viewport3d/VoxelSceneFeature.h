@@ -36,6 +36,7 @@ public:
     void setCockpitOwnship(const std::string& objectId);
     bool cockpitOwnshipHidden() const {return hiddenSwitches_.count(ownshipId_)!=0;}
     nlohmann::json terrainDisplayPageStats() const;
+    nlohmann::json terrainAtlasReuseStats() const;
     const std::string& lastError() const {return lastError_;}
 private:
     void load(const nlohmann::json&,const nlohmann::json* prepared=nullptr);

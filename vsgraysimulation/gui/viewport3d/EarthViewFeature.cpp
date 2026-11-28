@@ -308,7 +308,8 @@ void EarthViewFeature::publishView(bool frameTerrain,bool compiled) {
     // Weather is independent of terrain storage. Raster DEM scenes must use
     // the same physical voxel cloud as native voxel terrain, not the legacy
     // local cloud sheet/sprite fallback.
-    if (bool(planet_) != bool(surface_)) {
+    const bool weatherPresentation = surface_ && params_.value("weather_presentation", true);
+    if (bool(planet_) != weatherPresentation) {
         if(auto* pre=ctx_->preRenderRoot()) {
             auto& children=pre->children;
             for(const auto& command:{gpuCloudInitialize_,gpuCloudStep_,gpuCloudTemporal_})
@@ -319,7 +320,7 @@ void EarthViewFeature::publishView(bool frameTerrain,bool compiled) {
             environmentRoot(layer)->children.clear();
         planet_.reset();
         weatherSurface_.reset();
-        if (surface_) {
+        if (weatherPresentation) {
             auto device=ctx_->window() ? ctx_->window()->getOrCreateDevice() : vsg::ref_ptr<vsg::Device>{};
             planet_=std::make_unique<earth::PlanetWeather>(device.get(),cloudResources_);
             if(orbital_)environmentRoot(EnvironmentLayer::GlobalSea)->addChild(planet_->node->children.at(0));
@@ -363,6 +364,8 @@ void EarthViewFeature::publishView(bool frameTerrain,bool compiled) {
     }
     terrain_root_->addChild(active_visibility_);
     if(auto* widget=ctx_->widget()) widget->setOrbitalNavigation(bool(orbital_));
+    if (auto* widget=ctx_->widget(); widget && params_.value("workspace_navigation",false))
+        widget->setWorkspaceEarth(anchor_,params_.value("orbital_preview",false));
     if(!scene_query_)installCameraOverride(*ctx_);
     if (frameTerrain) ctx_->resetCamera();
     if(!compiled) ctx_->requestCompile();
@@ -415,8 +418,10 @@ void EarthViewFeature::onAttach(ViewportContext& ctx) {
         return;
     }
     nlohmann::json initial = nlohmann::json::object();
-    if (auto source = params_.value("map_json",std::string()); !source.empty())
+    if (auto source = params_.value("map_json",std::string()); !source.empty()) {
         initial["earth"] = {{"map",std::filesystem::absolute(source).string()}};
+        if (params_.value("orbital_preview", false)) initial["earth"]["orbital_preview"] = true;
+    }
     std::string error;
     if (!loadEarthScenario(initial, {}, error)) {
         spdlog::warn("Earth reference surface unavailable: {}", error);
@@ -733,7 +738,9 @@ void EarthViewFeature::onDetach(ViewportContext& ctx) {
             children.erase(std::remove(children.begin(),children.end(),command),children.end());
     }
     gpuCloudInitialize_=nullptr;gpuCloudStep_=nullptr;gpuCloudTemporal_=nullptr;gpuCloudInitializeFrames_=0;
-    if (auto* widget = ctx.widget()) {widget->setCameraOverride(nullptr);widget->setOrbitalNavigation(false);}
+    if (auto* widget = ctx.widget()) {
+        widget->setCameraOverride(nullptr);widget->setOrbitalNavigation(false);widget->clearWorkspaceEarth();
+    }
     ctx.setGeoQuery(nullptr);
     ctx.removeFromWorld(terrain_visibility_);terrain_visibility_=nullptr;scene_query_.reset();sceneOcean_.reset();
     ctx.removeFromWorld(enu_root_);

@@ -56,6 +56,8 @@
 #include <vsg/app/View.h>
 #include <vsg/nodes/Group.h>
 #include <vsg/maths/vec3.h>
+#include <simcore/GeoNavigation.h>
+#include <optional>
 
 namespace vsg { class Node; class Options; }
 namespace rockyenv { struct SwapchainReadback; }
@@ -109,6 +111,8 @@ public:
     /// Reset the camera to a default observer pose.
     void resetCamera();
     void setOrbitalNavigation(bool enabled) { orbital_navigation_=enabled; }
+    void setWorkspaceEarth(const simcore::geo::GeoAnchor& anchor, bool globe);
+    void clearWorkspaceEarth() { workspace_anchor_.reset(); }
 
     /// 相机姿态覆盖回调 (由 rocky_map 等地球特性安装)。
     /// resetCamera() 开头调用; 返回 true 表示已自定义相机(跳过自动包围盒适配),
@@ -184,6 +188,10 @@ protected:
 
 private:
     bool initVsg();
+    bool applyWorkspaceCamera();
+    std::optional<simcore::geo::GeoAnchor> workspace_anchor_;
+    simcore::geo::EarthNavigation workspace_camera_;
+    bool workspace_globe_ = false;
     bool orbital_navigation_ = false;
     vsg::ref_ptr<rockyenv::SwapchainReadback> readback_;
     bool capture_requested_ = false;

@@ -14,6 +14,8 @@
 
 namespace vsgraysim {
 class VoxelEquipmentProcess;
+void applyVoxelInitialPositions(earth::VoxelScene&, const nlohmann::json&);
+void applyVoxelModelMaterials(earth::VoxelScene&, const nlohmann::json& bindings);
 nlohmann::json voxelSceneDescriptor(earth::VoxelSceneSnapshotPtr,const std::string& archive);
 // The existing Earth topic is the handoff document. References are normalized
 // before a Save As; an optional checkpoint preserves authored voxel state.
@@ -34,6 +36,7 @@ public:
     ~VoxelEquipmentSource() override;
     std::string name() const override { return "VoxelEquipmentSource"; }
     bool initialize(const nlohmann::json&) override;
+    bool initialize(const nlohmann::json&, const std::function<void(earth::VoxelScene&, VoxelSceneProject&)>& prepare);
     void shutdown() override;
     void onPreTick(const TimeTick&) override {}
     void onTick(const TimeTick&) override;
@@ -54,6 +57,8 @@ public:
     void idleMeasurements();
     void servicePresentationCommands();
     bool hasPresentationControls() const;
+    nlohmann::json prescribedControls() const;
+    void setPrescribedCourse(uint32_t platformId,double headingDeg,double speedMps);
     // Serialized on the physics owner; existing atomic checkpoint format,
     // including pending events and solver state, is retained without resampling.
     void saveRecovery(const std::string& path);
@@ -84,6 +89,8 @@ private:
     std::map<uint32_t,uint64_t> soundingTicks_;
     std::string archiveDirectory_, archivePath_;
     uint64_t archivedContent_=0;
+    std::weak_ptr<const earth::VoxelSceneSnapshot> archivedState_;
+    bool archivedPaused_=true;
     std::deque<std::pair<std::string,uint64_t>> archives_;
     uint64_t archiveBytes_=0;
     double initialTime_=0, fixedStep_=.02;

@@ -11,6 +11,7 @@
 #include <vsg/raytracing/TopLevelAccelerationStructure.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -34,9 +35,17 @@ SharedSceneResources::Result SharedSceneResources::build(
         vsg::ref_ptr<vsg::Node> scene,
         const std::vector<RadarMaterial>* materials,
         const TexArraySpec* texSpec) {
+    return buildResources(deviceArg,scene,materials,texSpec,nullptr,nullptr);
+}
+
+SharedSceneResources::Result SharedSceneResources::buildResources(
+        vsg::Device& deviceArg,vsg::ref_ptr<vsg::Node> scene,const std::vector<RadarMaterial>* materials,
+        const TexArraySpec* texSpec,const std::vector<SceneInstance>* instances,const SharedSceneResources* previous) {
     Result result;
     stats_.geometryBuilds++;
     auto device = vsg::ref_ptr<vsg::Device>(&deviceArg);
+    if(previous==this||(previous&&previous->resourceDevice_!=device))previous=nullptr;
+    resourceDevice_=device;
 
     // ---- 场景抽取: 单 VertexIndexDraw 契约 (binding0 pos / 1 props / 2 mat_idx) ----
     auto vid = scene ? scene->cast<vsg::VertexIndexDraw>() : nullptr;
@@ -173,7 +182,27 @@ SharedSceneResources::Result SharedSceneResources::build(
     // ---- TV 彩色: 槽表 (Kd.rgb, hasTex) SSBO + map_Kd 贴图 texture2DArray ----
     // 层 i ↔ 槽 i+1 (槽 0 = 无贴图缺省, hasTex=0 → shader 走 Kd 纯色分支);
     // 失败槽由工具侧填 Kd 色占位层, 保证 层=槽-1 恒成立。
+    texSlotDataInfo={};texArrayView={};texLayerCount=0;textureSlots_.clear();stats_.textureArrayReused=false;
     if (texSpec && !texSpec->slotData.empty()) {
+        textureSlots_=texSpec->slotData;
+        const auto reuseTexture=[&] {
+            if(!previous||!previous->texArrayView||textureSlots_!=previous->textureSlots_||
+               texSpec->layers.size()!=previous->texLayerCount)return false;
+            const auto& image=*previous->texArrayView->image;
+            if(!image.data)return false;
+            const auto* bytes=static_cast<const uint8_t*>(image.data->dataPointer());
+            const size_t size=size_t(image.extent.width)*image.extent.height*4;
+            for(size_t i=0;i<texSpec->layers.size();++i) {
+                const auto& layer=texSpec->layers[i];
+                if(!layer||layer->width()!=image.extent.width||layer->height()!=image.extent.height||layer->dataSize()!=size||
+                   std::memcmp(bytes+i*size,layer->dataPointer(),size)!=0)return false;
+            }
+            return true;
+        };
+        if(reuseTexture()) {
+            texSlotDataInfo=previous->texSlotDataInfo;texArrayView=previous->texArrayView;
+            texLayerCount=previous->texLayerCount;stats_.textureArrayReused=true;
+        } else {
         auto slotData = vsg::floatArray::create(texSpec->slotData.size() * 4);
         for (uint32_t s = 0; s < texSpec->slotData.size(); ++s) {
             float* d = slotData->data(s * 4);
@@ -185,12 +214,15 @@ SharedSceneResources::Result SharedSceneResources::build(
         texSlotDataInfo = vsg::BufferInfo::create(slotData);
         if (!texSpec->layers.empty()) {
             const uint32_t nL = uint32_t(texSpec->layers.size());
+            if(!texSpec->layers.front())throw std::invalid_argument("missing sensor texture layer");
             const uint32_t tw = texSpec->layers.front()->width();
             const uint32_t th = texSpec->layers.front()->height();
             auto arr = vsg::ubvec4Array3D::create(tw, th, nL);   // 每元素 RGBA8 4B
             arr->properties.format = VK_FORMAT_R8G8B8A8_UNORM;
             for (uint32_t l = 0; l < nL; ++l) {
                 const auto& ld = texSpec->layers[l];
+                if(!ld||ld->width()!=tw||ld->height()!=th||ld->dataSize()!=size_t(tw)*th*4)
+                    throw std::invalid_argument("inconsistent sensor texture layer extent");
                 std::memcpy(reinterpret_cast<unsigned char*>(arr->dataPointer()) + size_t(l) * tw * th * 4,
                             ld->dataPointer(), size_t(tw) * th * 4);
             }
@@ -211,13 +243,13 @@ SharedSceneResources::Result SharedSceneResources::build(
             std::printf("[SharedScene] 贴图数组: %u 层 (%ux%u RGBA8, %.1f MB)\n",
                         nL, tw, th, double(nL) * tw * th * 4.0 / (1024.0 * 1024.0));
         }
+        }
     }
 
     // ---- 单 BLAS + 单实例 TLAS (恒等变换; 视角由 rgen push 下发) ----
     sceneGeometry_=vid;
-    SceneInstance single;
-    single.id="scene"; single.geometry=vid;
-    installInstances(*device,std::vector<SceneInstance>{single});
+    if(instances)installInstances(*device,*instances,previous);
+    else installInstances(*device,{{"scene",vsg::ref_ptr<vsg::VertexIndexDraw>(vid),vsg::dmat4(),true}},previous);
 
     // ---- P0.2 sampler 共享 (clamp + linear, 与 BandRT/SensorPipeline 同配置) ----
     sampler = vsg::Sampler::create();
@@ -242,9 +274,8 @@ SharedSceneResources::Result SharedSceneResources::build(
 
     ready_ = true;
     std::printf("[SharedScene] 资源池就绪: %u 顶点/%u 三角/%u 材质 | "
-                "几何 SSBO×5 + 单 BLAS/TLAS + sampler/LUT 缓存 + 共享 env UBO "
-                "(全场景一份, O(N)→O(1))\n",
-                vertexCount, triangleCount, materialCount);
+                "加速块新建 %u / 复用 %u\n",vertexCount,triangleCount,materialCount,
+                stats_.accelerationBuilt,stats_.accelerationReused);
     result.ok = true;
     return result;
 }
@@ -260,6 +291,7 @@ std::vector<uint32_t> meshIndices(vsg::VertexIndexDraw& mesh) {
     const auto size=u32 ? u32->size() : u16 ? u16->size() : 0;
     if(!size || mesh.firstIndex+uint64_t(mesh.indexCount)>size || mesh.indexCount%3)
         throw std::invalid_argument("invalid thermal mesh index range");
+    indices.reserve(mesh.indexCount);
     for(uint64_t i=mesh.firstIndex;i<uint64_t(mesh.firstIndex)+mesh.indexCount;++i) {
         const int64_t index=int64_t(u32 ? (*u32)[i] : (*u16)[i])+mesh.vertexOffset;
         const auto* positions=mesh.arrays[0]->data->cast<vsg::vec3Array>();
@@ -281,7 +313,8 @@ private: vsg::ref_ptr<DynamicTlas> tlas_;
 };
 }
 SharedSceneResources::Result SharedSceneResources::buildInstances(vsg::Device& device,
-        const std::vector<SceneInstance>& instances,const std::vector<RadarMaterial>& materials,const TexArraySpec* textures) {
+        const std::vector<SceneInstance>& instances,const std::vector<RadarMaterial>& materials,const TexArraySpec* textures,
+        const SharedSceneResources* previous) {
     if(instances.empty()) {
         // Vulkan descriptors and acceleration structures still need valid
         // storage after every target has been destroyed. A masked, zero-area
@@ -292,7 +325,7 @@ SharedSceneResources::Result SharedSceneResources::buildInstances(vsg::Device& d
             vsg::vec2Array::create(3,vsg::vec2(0,0)),vsg::uintArray::create(3,0u)});
         draw->assignIndices(vsg::uintArray::create({0,1,2}));draw->indexCount=3;draw->instanceCount=1;
         const auto fallback=materials.empty()?std::vector<RadarMaterial>(1):materials;
-        auto result=buildInstances(device,{{"",draw,vsg::dmat4(),false}},fallback,textures);
+        auto result=buildInstances(device,{{"",draw,vsg::dmat4(),false}},fallback,textures,previous);
         if(result.ok){instanceCount=0;triangleCount=0;sceneGeometry_->indexCount=0;}
         return result;
     }
@@ -339,80 +372,172 @@ SharedSceneResources::Result SharedSceneResources::buildInstances(vsg::Device& d
         draw->assignArrays({pos,prop,mat,uv,slot,shading});
     } else draw->assignArrays({pos,prop,mat,uv,slot});
     draw->assignIndices(index); draw->indexCount=uint32_t(index->size()); draw->instanceCount=1;
-    auto result=build(device,draw,&materials,textures);
-    if(result.ok) installInstances(device,instances);
-    return result;
+    return buildResources(device,draw,&materials,textures,&instances,previous);
 }
-void SharedSceneResources::installInstances(vsg::Device& device,const std::vector<SceneInstance>& instances) {
+struct SharedSceneResources::MeshAcceleration {
+    vsg::ref_ptr<vsg::vec3Array> vertices;
+    std::vector<uint32_t> indices;
     std::vector<GpuBvhNode> nodes;
     std::vector<uint32_t> primitives;
+    vsg::ref_ptr<vsg::BottomLevelAccelerationStructure> blas;
+
+    void build(vsg::Device& device,bool hardware) {
+        if(hardware) {
+            auto localIndices=vsg::uintArray::create(indices.size());
+            std::copy(indices.begin(),indices.end(),localIndices->begin());
+            auto geometry=vsg::AccelerationGeometry::create();
+            geometry->assignVertices(vertices);geometry->assignIndices(localIndices);
+            blas=vsg::BottomLevelAccelerationStructure::create(&device);
+            blas->geometries.push_back(geometry);
+            return;
+        }
+        const auto triangles=indices.size()/3;
+        std::vector<uint32_t> order(triangles);
+        std::iota(order.begin(),order.end(),0);
+        primitives.reserve(triangles);
+        const auto vertex=[&](uint32_t triangle,int corner){return (*vertices)[indices[3*triangle+corner]];};
+        const auto centroid=[&](uint32_t triangle){return (vertex(triangle,0)+vertex(triangle,1)+vertex(triangle,2))/3.f;};
+        const auto subdivide=[&](const auto& self,size_t begin,size_t end)->uint32_t {
+            const auto index=uint32_t(nodes.size());nodes.emplace_back();
+            vsg::vec3 lo(1e30f,1e30f,1e30f),hi(-1e30f,-1e30f,-1e30f);
+            for(auto i=begin;i<end;++i)for(int corner=0;corner<3;++corner) {
+                const auto p=vertex(order[i],corner);
+                for(int axis=0;axis<3;++axis){lo[axis]=std::min(lo[axis],p[axis]);hi[axis]=std::max(hi[axis],p[axis]);}
+            }
+            nodes[index].lo=vsg::vec4(lo,0);nodes[index].hi=vsg::vec4(hi,0);
+            if(end-begin<=8) {
+                const auto first=uint32_t(primitives.size());
+                primitives.insert(primitives.end(),order.begin()+begin,order.begin()+end);
+                nodes[index].links=vsg::uivec4(0,0,first,uint32_t(end-begin));
+            } else {
+                const auto extent=hi-lo;int axis=extent.y>extent.x?1:0;if(extent.z>extent[axis])axis=2;
+                const auto middle=begin+(end-begin)/2;
+                std::nth_element(order.begin()+begin,order.begin()+middle,order.begin()+end,
+                    [&](uint32_t a,uint32_t b){return centroid(a)[axis]<centroid(b)[axis];});
+                const auto left=self(self,begin,middle),right=self(self,middle,end);
+                nodes[index].links=vsg::uivec4(left,right,0,0);
+            }
+            return index;
+        };
+        subdivide(subdivide,0,triangles);
+    }
+};
+
+void SharedSceneResources::installInstances(vsg::Device& device,const std::vector<SceneInstance>& instances,
+                                            const SharedSceneResources* previous) {
+    const auto begin=std::chrono::steady_clock::now();
+    meshAccelerations_.clear();computeInstanceSpans_.clear();
+    stats_.accelerationBuilt=stats_.accelerationReused=0;stats_.accelerationTrianglesBuilt=0;
+    std::vector<GpuBvhNode> nodes;
+    std::vector<uint32_t> primitives,roots;
     std::vector<GpuSceneInstance> packed;
-    dynamicTlas_={}; tlas={};
-    const bool rt=device.supportsDeviceExtension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-    if(rt) dynamicTlas_=DynamicTlas::create(&device);
+    dynamicTlas_={};tlas={};bvhInfo={};primitiveInfo={};instanceInfo={};instanceData_={};
+    const bool hardware=device.supportsDeviceExtension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)&&
+        device.supportsDeviceExtension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    if(hardware)dynamicTlas_=DynamicTlas::create(&device);
     uint32_t triangleBase=0;
     for(const auto& instance:instances) {
         auto& mesh=*instance.geometry;
         const auto* vertices=mesh.arrays[0]->data->cast<vsg::vec3Array>();
-        const auto indices=meshIndices(mesh);
-        const uint32_t triangles=uint32_t(indices.size()/3);
-        std::vector<uint32_t> order(triangles); std::iota(order.begin(),order.end(),0);
-        auto centroid=[&](uint32_t triangle) { return ((*vertices)[indices[3*triangle]]+(*vertices)[indices[3*triangle+1]]+(*vertices)[indices[3*triangle+2]])/3.f; };
-        std::function<uint32_t(std::size_t,std::size_t)> build=[&](std::size_t begin,std::size_t end) {
-            const auto nodeIndex=uint32_t(nodes.size()); nodes.emplace_back();
-            vsg::vec3 lo(1e30f,1e30f,1e30f),hi(-1e30f,-1e30f,-1e30f);
-            for(auto i=begin;i<end;++i) for(int corner=0;corner<3;++corner) {
-                const auto vertex=(*vertices)[indices[3*order[i]+corner]];
-                for(int axis=0;axis<3;++axis) { lo[axis]=std::min(lo[axis],vertex[axis]); hi[axis]=std::max(hi[axis],vertex[axis]); }
+        auto indices=meshIndices(mesh);
+        const auto triangles=uint32_t(indices.size()/3);
+        if(!triangles)throw std::invalid_argument("empty GPU instance geometry");
+        const MeshKey key{instance.id,instance.geometryPart};
+        std::shared_ptr<const MeshAcceleration> acceleration;
+        if(previous) {
+            const auto saved=previous->meshAccelerations_.find(key);
+            if(saved!=previous->meshAccelerations_.end()) {
+                const auto& old=*saved->second;
+                if(old.indices==indices&&old.vertices->size()==vertices->size()&&
+                   std::equal(old.vertices->begin(),old.vertices->end(),vertices->begin())) acceleration=saved->second;
             }
-            nodes[nodeIndex].lo=vsg::vec4(lo,0); nodes[nodeIndex].hi=vsg::vec4(hi,0);
-            if(end-begin<=8) {
-                const auto first=uint32_t(primitives.size());
-                for(auto i=begin;i<end;++i) primitives.push_back(triangleBase+order[i]);
-                nodes[nodeIndex].links=vsg::uivec4(0,0,first,uint32_t(end-begin));
-            } else {
-                const auto extent=hi-lo; int axis=extent.y>extent.x ? 1 : 0; if(extent.z>extent[axis]) axis=2;
-                const auto middle=begin+(end-begin)/2;
-                std::nth_element(order.begin()+begin,order.begin()+middle,order.begin()+end,[&](uint32_t a,uint32_t b) { return centroid(a)[axis]<centroid(b)[axis]; });
-                const auto left=build(begin,middle),right=build(middle,end);
-                nodes[nodeIndex].links=vsg::uivec4(left,right,0,0);
-            }
-            return nodeIndex;
-        };
-        if(!triangles) throw std::invalid_argument("empty GPU instance geometry");
-        const auto root=build(0,triangles);
-        packed.push_back({vsg::mat4(instance.transform),vsg::mat4(vsg::inverse(instance.transform)),{root,instance.visible?1u:0u,triangleBase,0}});
-        if(rt) {
-            if(triangleBase>0xffffffu) throw std::invalid_argument("TLAS triangle base exceeds 24-bit instance index");
-            auto localIndices=vsg::uintArray::create(indices.size()); std::copy(indices.begin(),indices.end(),localIndices->begin());
-            auto geometry=vsg::AccelerationGeometry::create(); geometry->assignVertices(mesh.arrays[0]->data); geometry->assignIndices(localIndices);
-            auto blas=vsg::BottomLevelAccelerationStructure::create(&device); blas->geometries.push_back(geometry);
-            auto entry=vsg::GeometryInstance::create(); entry->id=triangleBase; entry->mask=instance.visible ? 255 : 0;
-            entry->flags=VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR; entry->shaderOffset=0;
-            entry->transform=vsg::mat4(instance.transform); entry->accelerationStructure=blas;
+        }
+        if(acceleration)++stats_.accelerationReused;
+        else {
+            auto built=std::make_shared<MeshAcceleration>();
+            built->indices=std::move(indices);built->vertices=vsg::vec3Array::create(vertices->size());
+            std::copy(vertices->begin(),vertices->end(),built->vertices->begin());
+            built->build(device,hardware);acceleration=std::move(built);
+            ++stats_.accelerationBuilt;stats_.accelerationTrianglesBuilt+=triangles;
+        }
+        meshAccelerations_[key]=acceleration;
+        if(hardware) {
+            // The SBT's instance index is the current packed triangle offset.
+            // A shared BLAS never carries indices from a prior revision's buffers.
+            if(triangleBase>0xffffffu||triangles>0x1000000u-triangleBase)
+                throw std::invalid_argument("TLAS triangle range exceeds 24-bit instance index");
+            auto entry=vsg::GeometryInstance::create();entry->id=triangleBase;entry->mask=instance.visible?255:0;
+            entry->flags=VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;entry->shaderOffset=0;
+            entry->transform=vsg::mat4(instance.transform);entry->accelerationStructure=acceleration->blas;
             dynamicTlas_->geometryInstances.push_back(entry);
+        } else {
+            const auto base=uint32_t(nodes.size()),leafBase=uint32_t(primitives.size());
+            roots.push_back(base);
+            for(auto node:acceleration->nodes) {
+                if(node.links.w)node.links.z+=leafBase;
+                else {node.links.x+=base;node.links.y+=base;}
+                nodes.push_back(node);
+            }
+            for(const auto primitive:acceleration->primitives)primitives.push_back(triangleBase+primitive);
         }
         triangleBase+=triangles;
     }
-    auto nodeData=vsg::ubyteArray::create(nodes.size()*sizeof(GpuBvhNode)); std::memcpy(nodeData->data(),nodes.data(),nodeData->size());
-    auto primitiveData=vsg::uintArray::create(primitives.size()); std::copy(primitives.begin(),primitives.end(),primitiveData->begin());
-    instanceData_=vsg::ubyteArray::create(packed.size()*sizeof(GpuSceneInstance));
-    std::memcpy(instanceData_->data(),packed.data(),instanceData_->size()); instanceData_->properties.dataVariance=vsg::DYNAMIC_DATA;
-    bvhInfo=vsg::BufferInfo::create(nodeData); primitiveInfo=vsg::BufferInfo::create(primitiveData); instanceInfo=vsg::BufferInfo::create(instanceData_);
-    instanceCount=uint32_t(packed.size());
-    sceneUpdates=vsg::Commands::create();
-    if(rt) { tlas=dynamicTlas_; sceneUpdates->addChild(Refit::create(dynamicTlas_)); }
+    sceneUpdates=vsg::Commands::create();instanceCount=uint32_t(instances.size());
+    if(hardware){tlas=dynamicTlas_;sceneUpdates->addChild(Refit::create(dynamicTlas_));}
+    else {
+        // A small hierarchy of block roots keeps compute traversal at one
+        // matrix pair per logical object, even for terrain split into 64 blocks.
+        const auto join=[&](const auto& self,size_t first,size_t last)->uint32_t {
+            if(last-first==1)return roots[first];
+            vsg::vec4 lo=nodes[roots[first]].lo,hi=nodes[roots[first]].hi;
+            for(size_t i=first+1;i<last;++i)for(int axis=0;axis<3;++axis) {
+                lo[axis]=std::min(lo[axis],nodes[roots[i]].lo[axis]);
+                hi[axis]=std::max(hi[axis],nodes[roots[i]].hi[axis]);
+            }
+            const auto extent=hi-lo;int axis=extent.y>extent.x?1:0;if(extent.z>extent[axis])axis=2;
+            const auto middle=first+(last-first)/2;
+            std::nth_element(roots.begin()+first,roots.begin()+middle,roots.begin()+last,[&](uint32_t a,uint32_t b) {
+                return nodes[a].lo[axis]+nodes[a].hi[axis]<nodes[b].lo[axis]+nodes[b].hi[axis];
+            });
+            const auto left=self(self,first,middle),right=self(self,middle,last);
+            nodes.push_back({lo,hi,{left,right,0,0}});return uint32_t(nodes.size()-1);
+        };
+        for(size_t first=0;first<instances.size();) {
+            const auto& owner=instances[first];size_t end=first+1;
+            if(owner.geometryPart)while(end<instances.size()&&instances[end].geometryPart&&instances[end].id==owner.id) {
+                if(instances[end].transform!=owner.transform||instances[end].visible!=owner.visible)
+                    throw std::invalid_argument("GPU geometry parts must share one object pose and mask");
+                ++end;
+            }
+            packed.push_back({vsg::mat4(owner.transform),vsg::mat4(vsg::inverse(owner.transform)),
+                              {join(join,first,end),owner.visible?1u:0u,0,0}});
+            computeInstanceSpans_.emplace_back(first,end);first=end;
+        }
+        auto nodeData=vsg::ubyteArray::create(nodes.size()*sizeof(GpuBvhNode));
+        std::memcpy(nodeData->data(),nodes.data(),nodeData->size());
+        auto primitiveData=vsg::uintArray::create(primitives.size());
+        std::copy(primitives.begin(),primitives.end(),primitiveData->begin());
+        instanceData_=vsg::ubyteArray::create(packed.size()*sizeof(GpuSceneInstance));
+        std::memcpy(instanceData_->data(),packed.data(),instanceData_->size());
+        instanceData_->properties.dataVariance=vsg::DYNAMIC_DATA;
+        bvhInfo=vsg::BufferInfo::create(nodeData);primitiveInfo=vsg::BufferInfo::create(primitiveData);
+        instanceInfo=vsg::BufferInfo::create(instanceData_);
+    }
+    stats_.accelerationHostMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();
 }
 void SharedSceneResources::setTransforms(const std::vector<vsg::dmat4>& transforms,const std::vector<bool>& visible) {
-    if(transforms.size()!=instanceCount || visible.size()!=instanceCount) throw std::invalid_argument("GPU instance topology mismatch");
+    if(transforms.size()!=instanceCount||visible.size()!=instanceCount)throw std::invalid_argument("GPU instance topology mismatch");
     if(!instanceCount)return; // keep the internal empty-scene primitive masked
+    if(dynamicTlas_){dynamicTlas_->update(transforms,visible);return;}
     auto* instances=reinterpret_cast<GpuSceneInstance*>(instanceData_->data());
-    for(std::size_t i=0;i<transforms.size();++i) {
-        instances[i].objectToWorld=vsg::mat4(transforms[i]); instances[i].worldToObject=vsg::mat4(vsg::inverse(transforms[i]));
-        instances[i].meta.y=visible[i] ? 1 : 0;
+    for(size_t i=0;i<computeInstanceSpans_.size();++i) {
+        const auto [first,last]=computeInstanceSpans_[i];
+        for(size_t part=first+1;part<last;++part)if(transforms[first]!=transforms[part]||visible[first]!=visible[part])
+            throw std::invalid_argument("GPU geometry parts must retain one object pose and mask");
+        instances[i].objectToWorld=vsg::mat4(transforms[first]);instances[i].worldToObject=vsg::mat4(vsg::inverse(transforms[first]));
+        instances[i].meta.y=visible[first]?1u:0u;
     }
     instanceData_->dirty();
-    if(dynamicTlas_) dynamicTlas_->update(transforms,visible);
 }
 
 vsg::ref_ptr<vsg::ImageView> SharedSceneResources::lutView(const BandRadianceLut& lut) {

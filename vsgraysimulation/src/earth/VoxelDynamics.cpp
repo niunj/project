@@ -9,6 +9,7 @@
 #include <BulletCollision/NarrowPhaseCollision/btRaycastCallback.h>
 #include <simcore/Orientation.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 #include <tuple>
@@ -29,6 +30,121 @@ btTransform bt(const vsg::dmat4& m) {
 vsg::dmat4 matrix(const btTransform& t) {
     const auto q=t.getRotation();return vsg::translate(vec(t.getOrigin()))*vsg::rotate(simcore::normalized(vsg::dquat(q.x(),q.y(),q.z(),q.w())));
 }
+struct TerrainMeshBlock {
+    std::vector<btVector3> vertices;
+    std::vector<int> indices;
+    btVector3 low,high;
+    std::unique_ptr<btTriangleIndexVertexArray> mesh;
+    std::unique_ptr<btBvhTriangleMeshShape> tree;
+
+    void build(bool reference=false) {
+        low=high=vertices.front();
+        for(const auto& vertex:vertices){low.setMin(vertex);high.setMax(vertex);}
+        mesh=std::make_unique<btTriangleIndexVertexArray>(int(indices.size()/3),indices.data(),3*sizeof(int),
+            int(vertices.size()),&vertices.front()[0],sizeof(btVector3));
+        if(reference)tree=std::make_unique<btBvhTriangleMeshShape>(mesh.get(),true);
+        else {
+            mesh->setPremadeAabb(low,high);
+            tree=std::make_unique<btBvhTriangleMeshShape>(mesh.get(),true,low,high);
+        }
+        tree->setMargin(0);
+    }
+};
+
+// All blocks belong to one concave collision object and one contact manifold
+// per convex child. Block boundaries never become collision faces.
+class TerrainBlocks final : public btConcaveShape {
+    static constexpr int divisions=8;
+    static constexpr int triangleBudget=4'000'000;
+    using Blocks=std::array<std::shared_ptr<const TerrainMeshBlock>,divisions*divisions>;
+    Blocks blocks_;
+    btVector3 low_{0,0,0},high_{0,0,0};
+    const btVector3 scaling_{1,1,1};
+
+    struct ForwardTriangles final : btTriangleCallback {
+        btTriangleCallback& target;
+        int offset;
+        ForwardTriangles(btTriangleCallback& callback,int block):target(callback),offset(block*triangleBudget){}
+        void processTriangle(btVector3* triangle,int,int index) override {
+            target.processTriangle(triangle,0,offset+index);
+        }
+    };
+public:
+    TerrainBlocks(const VoxelSceneObject& object,const VoxelSceneObject* previous,const TerrainBlocks* old,
+                  size_t& rebuilt,size_t& reused) {
+        m_shapeType=FAST_CONCAVE_MESH_PROXYTYPE;
+        setMargin(0);
+        const auto& surface=object.surface();
+        const auto origin=object.volume->gridOrigin();
+        const auto bin=[](double value,double low,double high) {
+            return high>low?std::clamp(int((value-low)/(high-low)*divisions),0,divisions-1):0;
+        };
+        const auto xBin=[&](double x){return bin(x,surface.min_x,surface.max_x);};
+        const auto zBin=[&](double z){return bin(z,surface.min_z,surface.max_z);};
+        std::array<bool,divisions*divisions> dirty{};
+        if(old&&previous&&visitVoxelEarthChangedColumns(*previous,object,[&](const vsg::dbox& bounds) {
+            for(int z=zBin(bounds.min.z);z<=zBin(bounds.max.z);++z)
+                for(int x=xBin(bounds.min.x);x<=xBin(bounds.max.x);++x)dirty[z*divisions+x]=true;
+        })) {
+            blocks_=old->blocks_;
+        } else dirty.fill(true);
+
+        // Each original triangle has one owner. Reuse immutable BVHs only
+        // outside the dirty region and the shared-vertex/face neighbor halo.
+        for(size_t i=0;i<dirty.size();++i)if(dirty[i])blocks_[i].reset();
+        std::array<std::vector<uint32_t>,divisions*divisions> triangles;
+        const auto& vertices=surface.vertices();
+        const auto& indices=surface.indices();
+        for(size_t i=0;i<indices.size();i+=3) {
+            const auto center=(vertices[indices[i]]+vertices[indices[i+1]]+vertices[indices[i+2]])/3.;
+            const auto block=zBin(center.z)*divisions+xBin(center.x);
+            if(dirty[block])triangles[block].insert(triangles[block].end(),indices.begin()+i,indices.begin()+i+3);
+        }
+        std::vector<int> remap(vertices.size(),-1);
+        std::vector<uint32_t> touched;
+        bool first=true;
+        for(size_t i=0;i<blocks_.size();++i) {
+            if(!triangles[i].empty()) {
+                auto block=std::make_shared<TerrainMeshBlock>();
+                block->indices.reserve(triangles[i].size());
+                touched.clear();
+                for(uint32_t index:triangles[i]) {
+                    if(remap[index]<0) {
+                        remap[index]=int(block->vertices.size());
+                        block->vertices.push_back(bt(vertices[index]-origin));
+                        touched.push_back(index);
+                    }
+                    block->indices.push_back(remap[index]);
+                }
+                for(uint32_t index:touched)remap[index]=-1;
+                block->build();
+                blocks_[i]=std::move(block);
+                ++rebuilt;
+            } else if(blocks_[i]) ++reused;
+            if(const auto& block=blocks_[i]) {
+                if(first){low_=block->low;high_=block->high;first=false;}
+                else {low_.setMin(block->low);high_.setMax(block->high);}
+            }
+        }
+    }
+    void processAllTriangles(btTriangleCallback* callback,const btVector3& low,const btVector3& high) const override {
+        for(size_t i=0;i<blocks_.size();++i)if(const auto& block=blocks_[i];
+            block&&TestAabbAgainstAabb2(low,high,block->low,block->high)) {
+            ForwardTriangles forward(*callback,int(i));
+            block->tree->processAllTriangles(&forward,low,high);
+        }
+    }
+    void getAabb(const btTransform& transform,btVector3& low,btVector3& high) const override {
+        btTransformAabb(low_,high_,getMargin(),transform,low,high);
+    }
+    void setLocalScaling(const btVector3& scaling) override {
+        if(scaling!=scaling_)throw std::invalid_argument("Earth collision blocks require identity scaling");
+    }
+    const btVector3& getLocalScaling() const override {return scaling_;}
+    void calculateLocalInertia(btScalar,btVector3& inertia) const override {inertia={0,0,0};}
+    const char* getName() const override {return "Voxel Earth collision blocks";}
+};
+
 struct Shape {
     std::shared_ptr<const std::vector<HydroBox>> hydro;
     std::shared_ptr<const std::vector<HydroNode>> hydroTree;
@@ -42,23 +158,19 @@ struct Shape {
     btTransform gridToBody;
     std::unique_ptr<btCompoundShape> compound;
     std::unique_ptr<btTriangleMesh> triangles;
-    std::unique_ptr<btBvhTriangleMeshShape> terrain;
+    std::unique_ptr<TerrainMeshBlock> terrainReference;
+    std::unique_ptr<TerrainBlocks> terrainBlocks;
     std::unique_ptr<btGImpactMeshShape> contactMesh;
     btTransform bodyToModel; // principal axes at the actual occupied-volume COM
     btVector3 inertiaPerDensity;
-    btCollisionShape* collision()const{return contactMesh?static_cast<btCollisionShape*>(contactMesh.get()):terrain?static_cast<btCollisionShape*>(terrain.get()):compound.get();}
+    bool isTerrain()const{return terrainBlocks||terrainReference;}
+    btCollisionShape* collision()const {
+        if(terrainBlocks)return terrainBlocks.get();
+        if(terrainReference)return terrainReference->tree.get();
+        if(contactMesh)return contactMesh.get();
+        return compound.get();
+    }
 };
-std::shared_ptr<Shape> makeTerrainShape(const VoxelSceneObject& object) {
-    auto result=std::make_shared<Shape>();result->source=object.geometry;
-    result->triangles=std::make_unique<btTriangleMesh>();
-    const auto& mesh=object.surface();const auto origin=object.volume->gridOrigin();
-    const auto& v=mesh.vertices();const auto& indices=mesh.indices();
-    if(indices.empty())throw std::invalid_argument("empty HD Earth collider");
-    for(size_t i=0;i<indices.size();i+=3)
-        result->triangles->addTriangle(bt(v[indices[i]]-origin),bt(v[indices[i+1]]-origin),bt(v[indices[i+2]]-origin),false);
-    result->terrain=std::make_unique<btBvhTriangleMeshShape>(result->triangles.get(),true);result->terrain->setMargin(0);
-    result->bodyToModel.setIdentity();result->bodyToModel.setOrigin(bt(origin));result->inertiaPerDensity={0,0,0};return result;
-}
 // Recenter the same collision geometry around the combined material/ballast
 // mass tensor. No shape, margin, occupied cell or contact precision changes.
 void addBallast(vsg::dvec3& centre,double tensor[3][3],const VoxelTerrain& volume,double equivalentVolume,const vsg::dvec3& position){
@@ -253,18 +365,33 @@ public:
         if(trace)solverMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-solve).count();
     }
 };
+class ImpactSolver final : public btSequentialImpulseConstraintSolver {
+public:
+    bool recordImpulses=false;
+protected:
+    btScalar solveGroupCacheFriendlyFinish(btCollisionObject** bodies,int count,const btContactSolverInfo& info) override {
+        // Bullet normally publishes impulses only for warm-starting. Here
+        // they are observations for the impact model; warm-start remains off.
+        if(recordImpulses&&!(info.m_solverMode&SOLVER_USE_WARMSTARTING))
+            writeBackContacts(0,m_tmpSolverContactConstraintPool.size(),info);
+        return btSequentialImpulseConstraintSolver::solveGroupCacheFriendlyFinish(bodies,count,info);
+    }
+};
 struct World {
     btDefaultCollisionConfiguration configuration;
     detail::TerrainCompoundAlgorithm::Create terrainCompound{false},swappedTerrainCompound{true};
     btCollisionDispatcher dispatcher{&configuration};
     btDbvtBroadphase broadphase;
-    btSequentialImpulseConstraintSolver solver;
+    ImpactSolver solver;
     ContactWorld world{&dispatcher,&broadphase,&solver,&configuration};
     std::vector<Body> bodies;
     vsg::dvec3 origin{};
     explicit World(bool indexedTerrain){
         btGImpactCollisionAlgorithm::registerAlgorithm(&dispatcher);
-        if(indexedTerrain){dispatcher.registerCollisionCreateFunc(COMPOUND_SHAPE_PROXYTYPE,TRIANGLE_MESH_SHAPE_PROXYTYPE,&terrainCompound);dispatcher.registerCollisionCreateFunc(TRIANGLE_MESH_SHAPE_PROXYTYPE,COMPOUND_SHAPE_PROXYTYPE,&swappedTerrainCompound);}
+        if(indexedTerrain)for(int type:{TRIANGLE_MESH_SHAPE_PROXYTYPE,FAST_CONCAVE_MESH_PROXYTYPE}) {
+            dispatcher.registerCollisionCreateFunc(COMPOUND_SHAPE_PROXYTYPE,type,&terrainCompound);
+            dispatcher.registerCollisionCreateFunc(type,COMPOUND_SHAPE_PROXYTYPE,&swappedTerrainCompound);
+        }
         world.getSolverInfo().m_numIterations=20;world.getSolverInfo().m_solverMode&=~SOLVER_USE_WARMSTARTING;world.getSolverInfo().m_splitImpulse=true;world.getSolverInfo().m_splitImpulsePenetrationThreshold=0;
     }
     ~World(){for(auto& b:bodies)world.removeRigidBody(b.rigid.get());}
@@ -286,21 +413,81 @@ struct World {
             }
         }
     }
+    void impactContacts(const VoxelSceneSnapshot& before,std::map<std::string,VoxelImpact>& impacts) {
+        for(int i=0;i<dispatcher.getNumManifolds();++i){
+            const auto* manifold=dispatcher.getManifoldByIndexInternal(i);
+            const auto* a=static_cast<const Body*>(manifold->getBody0()->getUserPointer());
+            const auto* b=static_cast<const Body*>(manifold->getBody1()->getUserPointer());
+            if(!a||!b||(!impacts.count(a->id)&&!impacts.count(b->id)))continue;
+            const auto& priorA=before.objects.at(a->id);
+            const auto& priorB=before.objects.at(b->id);
+            const auto velocityAt=[&](const auto& object,const vsg::dvec3& point){
+                return object.velocity+vsg::cross(object.angularVelocity,point-object.pose(before.tick,before.fixedStep)*vsg::dvec3{});
+            };
+            for(int p=0;p<manifold->getNumContacts();++p){
+                const auto& c=manifold->getContactPoint(p);
+                const double impulse=c.getAppliedImpulse();
+                if(c.getDistance()>.001||impulse<=0.)continue;
+                const auto pa=vec(c.getPositionWorldOnA())+origin,pb=vec(c.getPositionWorldOnB())+origin;
+                const auto direction=vec(c.m_normalWorldOnB);
+                const double closing=vsg::dot(velocityAt(priorB,pb)-velocityAt(priorA,pa),direction);
+                const auto record=[&](const auto& object,const vsg::dvec3& point,const vsg::dvec3& normal){
+                    auto out=impacts.find(object.id);
+                    if(out!=impacts.end()&&closing>object.body.crushYieldSpeed&&impulse>out->second.impulse)
+                        out->second={point,normal,closing,impulse};
+                };
+                record(priorA,pa,direction);record(priorB,pb,-direction);
+            }
+        }
+    }
 };
 }
 struct VoxelDynamics::Impl {
     bool indexedTerrain=true;
+    const bool monolithicTerrain=std::getenv("VSGRAYSIM_REFERENCE_TERRAIN_BVH")!=nullptr;
+    TerrainCollisionUpdate terrainUpdate;
     using ShapeKey=std::tuple<const EarthSurfaceSnapshot*,double,double,double,double>;
     std::map<ShapeKey,std::shared_ptr<Shape>> shapes;
-    std::shared_ptr<Shape> shape(const VoxelSceneObject& o) {
+
+    std::shared_ptr<Shape> terrainShape(const VoxelSceneObject& object,const VoxelSceneObject* previous) {
+        const auto begin=std::chrono::steady_clock::now();
+        auto result=std::make_shared<Shape>();
+        const auto origin=object.volume->gridOrigin();
+        result->source=object.geometry;
+        result->bodyToModel.setIdentity();result->bodyToModel.setOrigin(bt(origin));
+        result->inertiaPerDensity={0,0,0};
+        if(monolithicTerrain) {
+            auto mesh=std::make_unique<TerrainMeshBlock>();
+            const auto& surface=object.surface();
+            mesh->vertices.reserve(surface.vertices().size());
+            for(const auto& vertex:surface.vertices())mesh->vertices.push_back(bt(vertex-origin));
+            mesh->indices.assign(surface.indices().begin(),surface.indices().end());
+            mesh->build(true);
+            result->terrainReference=std::move(mesh);
+            ++terrainUpdate.rebuilt;
+        } else {
+            const TerrainBlocks* old=nullptr;
+            if(previous&&previous->geometry) {
+                const auto found=shapes.find({previous->geometry.get(),0,0,0,0});
+                if(found!=shapes.end()&&found->second->source.lock()==previous->geometry)
+                    old=found->second->terrainBlocks.get();
+            }
+            result->terrainBlocks=std::make_unique<TerrainBlocks>(object,previous,old,terrainUpdate.rebuilt,terrainUpdate.reused);
+        }
+        terrainUpdate.ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();
+        return result;
+    }
+
+    std::shared_ptr<Shape> shape(const VoxelSceneObject& o,const VoxelSceneObject* previous=nullptr) {
         const bool hd=o.earth&&o.body.motion=="static";
         const std::shared_ptr<const EarthSurfaceSnapshot> source=hd?o.geometry:o.volume;
-        const double ballast=o.body.ballastMassKg/o.material.at("density_kg_m3").get<double>();const auto p=o.body.ballastPosition;const ShapeKey key{source.get(),ballast,p.x,p.y,p.z};
+        const double ballast=hd?0:o.body.ballastMassKg/o.material.at("density_kg_m3").get<double>();
+        const auto p=hd?vsg::dvec3{}:o.body.ballastPosition;const ShapeKey key{source.get(),ballast,p.x,p.y,p.z};
         auto found=shapes.find(key);if(found!=shapes.end()&&found->second->source.lock()==source)return found->second;
         for(auto it=shapes.begin();it!=shapes.end();)if(it->second->source.expired())it=shapes.erase(it);else ++it;
-        auto result=hd?makeTerrainShape(o):makeShape(o.volume,ballast,p);shapes[key]=result;return result;
+        auto result=hd?terrainShape(o,previous):makeShape(o.volume,ballast,p);shapes[key]=result;return result;
     }
-    std::unique_ptr<World> build(const VoxelSceneSnapshot& state) {
+    std::unique_ptr<World> build(const VoxelSceneSnapshot& state,const VoxelSceneSnapshot* previous=nullptr) {
         auto result=std::make_unique<World>(indexedTerrain);result->world.setGravity(bt(state.gravity));
         for(const auto& [id,o]:state.objects)if(o.body.motion=="dynamic"&&o.volume->occupiedCount()) {
             const auto p=o.pose(state.tick,state.fixedStep)*o.localCentreOfMass();
@@ -309,7 +496,12 @@ struct VoxelDynamics::Impl {
         result->bodies.reserve(state.objects.size());size_t boxes=0;
         for(const auto& [id,o]:state.objects) {
             if(!o.volume->occupiedCount()||o.surface().indices().empty())continue;
-            Body body;body.id=id;body.ordinal=uint32_t(result->bodies.size());body.shape=shape(o);boxes+=body.shape->boxes.size()+body.shape->hulls.size();
+            const VoxelSceneObject* previousObject=nullptr;
+            if(previous&&o.earth&&o.body.motion=="static") {
+                const auto found=previous->objects.find(id);
+                if(found!=previous->objects.end())previousObject=&found->second;
+            }
+            Body body;body.id=id;body.ordinal=uint32_t(result->bodies.size());body.shape=shape(o,previousObject);boxes+=body.shape->boxes.size()+body.shape->hulls.size();
             if(boxes>131072)throw std::runtime_error("voxel scene exceeds 131072 exact collision cuboids");
             const auto placement=result->placement(o,state.tick,state.fixedStep);
             if(vsg::length(vec(placement.getOrigin()))>1e6)throw std::runtime_error("voxel collision world exceeds local precision range; partition the scene");
@@ -334,12 +526,18 @@ VoxelDynamics::VoxelDynamics(bool indexedTerrain):impl_(std::make_unique<Impl>()
 VoxelDynamics::~VoxelDynamics()=default;
 void VoxelDynamics::step(const VoxelSceneSnapshot& previous,VoxelSceneSnapshot& next) {
     buoyancyMs=waterDragMs=waterMs=0;
+    impl_->terrainUpdate={};
+    impacts.clear();
+    for(const auto& [id,o]:previous.objects)
+        if(o.body.motion=="dynamic"&&o.body.crushRadius>0.&&!o.crushedAtTick&&o.volume->occupiedCount())
+            impacts.emplace(id,VoxelImpact{});
     for(auto& [id,o]:next.objects)if(o.body.motion=="dynamic"&&!o.volume->occupiedCount()) {
         o.basePose=previous.objects.at(id).pose(previous.tick,previous.fixedStep);o.motionOriginTick=next.tick;o.velocity=vsg::dvec3{};o.angularVelocity=vsg::dvec3{};
     }
     const bool dynamic=std::any_of(previous.objects.begin(),previous.objects.end(),[](const auto& entry){return entry.second.body.motion=="dynamic"&&entry.second.volume->occupiedCount();});
     if(!dynamic){next.contacts.clear();VoxelOcean::advanceWakes(next,&previous);return;}
     auto staged=impl_->build(previous);
+    staged->solver.recordImpulses=!impacts.empty();
     staged->world.trace=std::getenv("VSGRAYSIM_VOXEL_CONTACT_TRACE")!=nullptr;
     double minimumCell=1e30,speed=0;
     for(const auto& body:staged->bodies) {
@@ -374,6 +572,7 @@ void VoxelDynamics::step(const VoxelSceneSnapshot& previous,VoxelSceneSnapshot& 
             body.motion->setWorldTransform(transform);body.rigid->setWorldTransform(transform);
         }
         staged->world.stepSimulation(btScalar(dt),0,btScalar(dt));
+        if(!impacts.empty())staged->impactContacts(previous,impacts);
     }
     for(const auto& body:staged->bodies) {
         auto& o=next.objects.at(body.id);if(o.body.motion!="dynamic")continue;
@@ -392,8 +591,19 @@ void VoxelDynamics::step(const VoxelSceneSnapshot& previous,VoxelSceneSnapshot& 
         std::fprintf(stderr,"CONTACT end tick=%llu collision_ms=%.4f reduction_ms=%.4f solver_ms=%.4f manifolds=%zu raw=%zu kept=%zu linear=%.8g angular=%.8g energy=%.8g depth=%.8g\n",(unsigned long long)next.tick,staged->world.collisionMs,staged->world.reductionMs,staged->world.solverMs,staged->world.maxManifolds,staged->world.rawContacts,staged->world.keptContacts,linear,angular,energy,depth);
     }
 }
-void VoxelDynamics::detect(VoxelSceneSnapshot& next,double maximumContactDistance) {
-    auto staged=impl_->build(next);staged->world.performDiscreteCollisionDetection();staged->contacts(next,maximumContactDistance);
+TerrainCollisionUpdate VoxelDynamics::detect(VoxelSceneSnapshot& next,double maximumContactDistance,const VoxelSceneSnapshot* previous) {
+    impl_->terrainUpdate={};
+    if(next.objects.size()==1) {
+        const auto& ground=next.objects.begin()->second;
+        if(ground.earth&&ground.body.motion=="static") {
+            // There is no contact pair. A rigid ray query or a later body still
+            // builds the exact BVH through the normal shape cache on demand.
+            next.contacts.clear();
+            return {};
+        }
+    }
+    auto staged=impl_->build(next,previous);staged->world.performDiscreteCollisionDetection();staged->contacts(next,maximumContactDistance);
+    return impl_->terrainUpdate;
 }
 void VoxelDynamics::impulse(VoxelSceneObject& object,uint64_t tick,double step,const vsg::dvec3& point,const vsg::dvec3& impulse) {
     if(object.body.motion!="dynamic")throw std::invalid_argument("impulse requires a dynamic voxel body");
@@ -412,6 +622,7 @@ void VoxelDynamics::impulse(VoxelSceneObject& object,uint64_t tick,double step,c
     object.angularVelocity=vec(body.getAngularVelocity());object.velocity=vec(body.getLinearVelocity())-vsg::cross(object.angularVelocity,offset);
 }
 std::optional<VoxelSceneHit> VoxelDynamics::raycast(const VoxelSceneSnapshot& snapshot,const vsg::dvec3& origin,const vsg::dvec3& direction,double distance) {
+    impl_->terrainUpdate={};
     auto staged=impl_->build(snapshot);const auto from=bt(origin-staged->origin),to=bt(origin+direction*distance-staged->origin);
     struct TerrainRay : btCollisionWorld::ClosestRayResultCallback {
         using ClosestRayResultCallback::ClosestRayResultCallback;
@@ -419,7 +630,7 @@ std::optional<VoxelSceneHit> VoxelDynamics::raycast(const VoxelSceneSnapshot& sn
             if(!ClosestRayResultCallback::needsCollision(proxy))return false;
             const auto* object=static_cast<const btCollisionObject*>(proxy->m_clientObject);
             const auto* body=static_cast<const Body*>(object->getUserPointer());
-            return body && body->shape->terrain;
+            return body && body->shape->isTerrain();
         }
     } ray(from,to);
     ray.m_flags=btTriangleRaycastCallback::kF_UseGjkConvexCastRaytest|btTriangleRaycastCallback::kF_KeepUnflippedNormal;

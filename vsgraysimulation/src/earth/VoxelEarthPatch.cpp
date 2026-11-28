@@ -2,10 +2,10 @@
 #include <vsgraysim/earth/EarthDataService.h>
 #include <vsgraysim/earth/VoxelScene.h>
 #include "VoxelTerrain.h"
-#include <vsgraysim/earth/SurfaceMesh.h>
-#include <vsg/core/Array.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 #include <unordered_map>
@@ -13,6 +13,22 @@
 namespace vsgraysim::earth {
 namespace {
 using json=nlohmann::json;
+// Clipping a triangle by two parallel cell planes produces at most five points.
+struct Polygon {
+    std::array<vsg::dvec3,6> points;
+    size_t count=0;
+    Polygon()=default;
+    Polygon(std::initializer_list<vsg::dvec3> vertices) {
+        for(const auto& vertex:vertices) push(vertex);
+    }
+    void push(const vsg::dvec3& point) {
+        if(count==points.size())throw std::logic_error("Earth cell clip exceeded polygon capacity");
+        points[count++]=point;
+    }
+    const vsg::dvec3* begin()const{return points.data();}
+    const vsg::dvec3* end()const{return begin()+count;}
+    const vsg::dvec3& operator[](size_t i)const{return points[i];}
+};
 int integer(const json& value,int low,int high,const char* name) {
     if(!value.is_number_integer()||value.get<double>()<low||value.get<double>()>high)
         throw std::invalid_argument(std::string("invalid Earth patch ")+name);
@@ -24,10 +40,21 @@ double number(const json& value,double low,double high,const char* name) {
     return v;
 }
 struct PatchMesh final : EarthSurfaceSnapshot {
+    struct Tile {
+        std::vector<vsg::dvec3> vertices;
+        std::vector<uint32_t> indices,owners,rowEnds;
+        std::vector<uint8_t> roles,seam,stitchNormal;
+        std::vector<vsg::vec3> normals;
+    };
     std::shared_ptr<const VoxelTerrain> occupancy;
     const VoxelEarthPatch* patch=nullptr;
     std::string mode;bool rigid=false;uint32_t ownerCell=0;
-    std::vector<uint8_t> terrainSkin;
+    std::vector<uint8_t> vertexRoles;
+    std::vector<uint8_t> stitchNormal;
+    std::vector<std::shared_ptr<const Tile>> tiles;
+    VoxelEarthTriangleBlocks triangleBlocks;
+    bool fullAtlas=false;
+    VoxelEarthMeshStats stats;
     struct VertexKey {
         std::array<int64_t,3> p; int face;
         bool operator==(const VertexKey& other)const{return p==other.p&&face==other.face;}
@@ -37,6 +64,9 @@ struct PatchMesh final : EarthSurfaceSnapshot {
             size_t h=unsigned(k.face);for(auto v:k.p)h^=std::hash<int64_t>{}(v)+0x9e3779b9+(h<<6)+(h>>2);return h;
         }
     };
+    static VertexKey vertexKey(const vsg::dvec3& p,int face) {
+        return {{std::llround(p.x*1e7),std::llround(p.y*1e7),std::llround(p.z*1e7)},face};
+    }
     std::unordered_map<VertexKey,uint32_t,VertexHash> sharedVertices;
     EarthBackend backend()const override{return mode=="voxel"?EarthBackend::Voxel:EarthBackend::Rocky;}
     void triangle(vsg::dvec3 a,vsg::dvec3 b,vsg::dvec3 c,const vsg::dvec3& outward,bool smooth=false) {
@@ -48,25 +78,109 @@ struct PatchMesh final : EarthSurfaceSnapshot {
         // share normals with an excavation wall or its newly exposed floor.
         const int face=smooth?0:outward.y>.5?1:outward.y<-.5?2:outward.x>.5?3:outward.x<-.5?4:outward.z>.5?5:6;
         for(const auto& p:{a,b,c}) {
-            const VertexKey key{{std::llround(p.x*1e7),std::llround(p.y*1e7),std::llround(p.z*1e7)},face};
+            const auto key=vertexKey(p,face);
             auto [it,inserted]=sharedVertices.emplace(key,uint32_t(vertices_.size()));
             if(inserted) {
                 if(vertices_.size()>=2'000'000)throw std::runtime_error("Earth patch exceeds 2M canonical surface vertices; reduce working set or HD subdivisions");
-                vertices_.push_back(p);terrainSkin.push_back(smooth?1:0);
+                vertices_.push_back(p);vertexRoles.push_back(uint8_t(face));
             }
             indices_.push_back(it->second);
         }
         triangle_cells_.push_back(ownerCell);
     }
-    void polygon(const std::vector<vsg::dvec3>& polygon,const vsg::dvec3& outward,double flat=std::numeric_limits<double>::quiet_NaN()) {
+    uint32_t indexCount()const {return uint32_t(indices_.size());}
+    template<typename Smooth>
+    std::shared_ptr<const Tile> sealTile(std::vector<uint32_t> rows,double x0,double x1,double z0,double z1,double cell,const Smooth& smooth) {
+        auto tile=std::make_shared<Tile>();
+        tile->vertices=std::move(vertices_);tile->indices=std::move(indices_);
+        tile->owners=std::move(triangle_cells_);tile->roles=std::move(vertexRoles);tile->rowEnds=std::move(rows);
+        tile->seam.reserve(tile->vertices.size());
+        tile->stitchNormal.reserve(tile->vertices.size());
+        tile->normals.resize(tile->vertices.size(),vsg::vec3(0,0,0));
+        constexpr double margin=2e-7; // include the original 1e-7 weld tolerance
+        for(const auto& p:tile->vertices) {
+            const auto onEdge=[&](double tolerance){return p.x<=x0+tolerance||p.x>=x1-tolerance||p.z<=z0+tolerance||p.z>=z1-tolerance;};
+            tile->seam.push_back(onEdge(margin));
+            // A welded edge can also move a contributing triangle's other
+            // vertex by the existing weld tolerance. Refinish its full one-cell band.
+            tile->stitchNormal.push_back(onEdge(cell+margin));
+        }
+        for(size_t i=0;i<tile->indices.size();i+=3) {
+            const auto a=tile->indices[i],b=tile->indices[i+1],c=tile->indices[i+2];
+            if(tile->stitchNormal[a]&&tile->stitchNormal[b]&&tile->stitchNormal[c])continue;
+            const auto area=vsg::cross(tile->vertices[b]-tile->vertices[a],tile->vertices[c]-tile->vertices[a]);
+            if(vsg::dot(area,area)<1e-24)continue;
+            for(auto index:{a,b,c})if(!tile->stitchNormal[index])tile->normals[index]+=vsg::vec3(area);
+        }
+        for(size_t i=0;i<tile->vertices.size();++i)if(!tile->stitchNormal[i])
+            smooth(tile->vertices[i],tile->roles[i],tile->normals[i]);
+        return tile;
+    }
+    void stitchTiles(int columns,int rows) {
+        size_t vertices=0,indices=0;
+        std::vector<std::vector<uint32_t>> remap;
+        remap.reserve(tiles.size());
+        constexpr auto unseen=std::numeric_limits<uint32_t>::max();
+        for(const auto& tile:tiles) {
+            vertices+=tile->vertices.size();indices+=tile->indices.size();
+            remap.emplace_back(tile->vertices.size(),unseen);
+        }
+        if(indices>12'000'000)throw std::runtime_error("Earth patch exceeds 4M canonical triangles; reduce working set or HD subdivisions");
+        vertices_.reserve(std::min(vertices,size_t(2'000'000)));vertexRoles.reserve(vertices_.capacity());
+        surface_normals.reserve(vertices_.capacity());stitchNormal.reserve(vertices_.capacity());
+        indices_.reserve(indices);triangle_cells_.reserve(indices/3);
+        triangleBlocks.resize(tiles.size());
+        // Keep the original global Z/X/Y visitation order. Only vertices on
+        // tile seams need the global weld, including the original first owner.
+        for(int tz=0;tz<rows;++tz)for(size_t row=1;row<tiles[tz*columns]->rowEnds.size();++row)
+            for(int tx=0;tx<columns;++tx) {
+                const auto id=tz*columns+tx;
+                const auto& tile=*tiles[id];auto& mapped=remap[id];
+                const auto begin=tile.rowEnds[row-1],end=tile.rowEnds[row];
+                if(end!=begin)triangleBlocks[id].push_back({uint32_t(indices_.size()/3),(end-begin)/3});
+                for(auto i=begin;i<end;++i) {
+                    const auto index=tile.indices[i];auto& final=mapped[index];
+                    if(final==unseen) {
+                        final=uint32_t(vertices_.size());
+                        const auto& p=tile.vertices[index];const auto role=tile.roles[index];
+                        if(tile.seam[index])final=sharedVertices.try_emplace(vertexKey(p,role),final).first->second;
+                        if(final==vertices_.size()) {
+                            if(final>=2'000'000)throw std::runtime_error("Earth patch exceeds 2M canonical surface vertices; reduce working set or HD subdivisions");
+                            vertices_.push_back(p);vertexRoles.push_back(role);
+                            surface_normals.push_back(tile.normals[index]);stitchNormal.push_back(tile.stitchNormal[index]);
+                        }
+                    }
+                    indices_.push_back(final);
+                }
+                triangle_cells_.insert(triangle_cells_.end(),tile.owners.begin()+begin/3,tile.owners.begin()+end/3);
+            }
+    }
+    template<typename Smooth>
+    void finishNormals(const Smooth& smooth) {
+        if(vertexRoles.empty())return;
+        const bool stitched=!stitchNormal.empty();
+        if(!stitched)surface_normals.resize(vertices_.size(),vsg::vec3(0,0,0));
+        const auto needsNormal=[&](uint32_t i){return !stitched||stitchNormal[i];};
+        for(size_t i=0;i<indices_.size();i+=3) {
+            const auto a=indices_[i],b=indices_[i+1],c=indices_[i+2];
+            if(!needsNormal(a)&&!needsNormal(b)&&!needsNormal(c))continue;
+            const auto area=vsg::cross(vertices_[b]-vertices_[a],vertices_[c]-vertices_[a]);
+            if(vsg::dot(area,area)<1e-24)continue;
+            for(auto index:{a,b,c})if(needsNormal(index))surface_normals[index]+=vsg::vec3(area);
+        }
+        for(uint32_t i=0;i<vertices_.size();++i)if(needsNormal(i))smooth(vertices_[i],vertexRoles[i],surface_normals[i]);
+        stitchNormal.clear();stitchNormal.shrink_to_fit();
+    }
+    void polygon(const Polygon& polygon,const vsg::dvec3& outward,double flat=std::numeric_limits<double>::quiet_NaN()) {
         auto point=[&](vsg::dvec3 p){if(std::isfinite(flat))p.y=flat;return p;};
-        for(size_t i=1;i+1<polygon.size();++i)triangle(point(polygon[0]),point(polygon[i]),point(polygon[i+1]),outward,!std::isfinite(flat)&&outward.y>.5);
+        for(size_t i=1;i+1<polygon.count;++i)triangle(point(polygon[0]),point(polygon[i]),point(polygon[i+1]),outward,!std::isfinite(flat)&&outward.y>.5);
     }
     void copy(const VoxelTerrain& v){vertices_=v.vertices();indices_=v.indices();triangle_cells_=v.triangleCells();}
     void finish(double x,double z,double spanX,double spanZ) {
         sharedVertices.clear();sharedVertices.rehash(0);
         min_x=x;min_z=z;max_x=x+spanX;max_z=z+spanZ;
         min_height=std::numeric_limits<double>::infinity();max_height=-min_height;
+        imagery_uv.reserve(vertices_.size());
         for(const auto& p:vertices_){min_height=std::min(min_height,p.y);max_height=std::max(max_height,p.y);imagery_uv.emplace_back(float((p.x-x)/spanX),float((p.z-z)/spanZ));}
         if(vertices_.empty())min_height=max_height=occupancy->gridOrigin().y;
         auto hash=[&](const void* data,size_t length){const auto* bytes=static_cast<const uint8_t*>(data);for(size_t i=0;i<length;++i){revision^=bytes[i];revision*=1099511628211ULL;}};
@@ -82,14 +196,34 @@ struct PatchMesh final : EarthSurfaceSnapshot {
         return result;
     }
 };
-std::vector<vsg::dvec3> clip(const std::vector<vsg::dvec3>& input,double height,bool keepAbove) {
-    std::vector<vsg::dvec3> result;if(input.empty())return result;
+bool visitChangedVoxelColumns(const VoxelTerrain& a,const VoxelTerrain& b,const std::function<void(const vsg::dbox&)>& visit) {
+    const auto dims=b.dimensions();const auto origin=b.gridOrigin();const auto step=b.resolution_m;
+    if(a.dimensions()!=dims||a.gridOrigin()!=origin||a.resolution_m!=step||a.appearance()!=b.appearance())return false;
+    if(&a==&b)return true;
+    const auto& old=a.occupancy();const auto& next=b.occupancy();
+    std::vector<bool> changed(size_t(dims[0])*dims[2],false);
+    for(size_t i=0;i<next.size();++i)if(old[i]!=next[i]) {
+        const auto row=i/dims[0]/dims[1];
+        changed[row*dims[0]+i%dims[0]]=true;
+    }
+    for(int z=0;z<dims[2];++z)for(int x=0;x<dims[0];) {
+        const auto row=size_t(z)*dims[0];
+        if(!changed[row+x]){++x;continue;}
+        const int first=x++;
+        while(x<dims[0]&&changed[row+x])++x;
+        // Revisit exposed neighbor faces and their shared-vertex owners.
+        visit({origin+vsg::dvec3(first-2,0,z-2)*step,origin+vsg::dvec3(x+2,0,z+3)*step});
+    }
+    return true;
+}
+Polygon clip(const Polygon& input,double height,bool keepAbove) {
+    Polygon result;if(!input.count)return result;
     auto inside=[&](const vsg::dvec3& p){return keepAbove?p.y>=height:p.y<=height;};
-    auto previous=input.back();bool prev=inside(previous);
+    auto previous=input[input.count-1];bool prev=inside(previous);
     for(const auto& p:input) {
         const bool next=inside(p);
-        if(next!=prev)result.push_back(previous+(p-previous)*((height-previous.y)/(p.y-previous.y)));
-        if(next)result.push_back(p);previous=p;prev=next;
+        if(next!=prev)result.push(previous+(p-previous)*((height-previous.y)/(p.y-previous.y)));
+        if(next)result.push(p);previous=p;prev=next;
     }
     return result;
 }
@@ -244,7 +378,7 @@ json VoxelEarthPatch::inferredThermalMaterials(const VoxelTerrain& volume, doubl
     }
     return {{"palette",std::move(palette)},{"cell_runs",std::move(runs)}};
 }
-EarthSurfaceSnapshotPtr VoxelEarthPatch::makeSurface(std::shared_ptr<const VoxelTerrain> volume,const std::string& mode,bool rigidFragment)const {
+EarthSurfaceSnapshotPtr VoxelEarthPatch::makeSurface(std::shared_ptr<const VoxelTerrain> volume,const std::string& mode,bool rigidFragment,EarthSurfaceSnapshotPtr previous)const {
     if(mode!="hd"&&mode!="voxel")throw std::invalid_argument("Earth terrain mode must be hd or voxel");
     const auto n=volume->dimensions();const auto origin=volume->gridOrigin();
     std::array<int,3> offset{};const double bases[3]={x_,bottom_,z_};const int dims[3]={nx_,ny_,nz_};
@@ -262,35 +396,55 @@ EarthSurfaceSnapshotPtr VoxelEarthPatch::makeSurface(std::shared_ptr<const Voxel
     mesh->dem_spacing_m=provenance_.value("dem_spacing_m",0.);mesh->imagery_spacing_m=provenance_.value("imagery_spacing_m",0.);
     mesh->resolution_m=(mode=="hd"||(smoothVoxel_&&!rigidFragment))?cell_/sub_:cell_;mesh->provenance_assumed=provenance_.value("provenance_assumed",false)||provenance_.value("source_coarse",false);
     mesh->imagery_width=width_;mesh->imagery_height=height_;mesh->material_config=materials_;mesh->declaration=provenance_;
+    const int pitch=nx_*sub_+1,gradientRows=nz_*sub_+1;
+    const double stride=cell_/sub_;
+    const auto height=[&](int x,int z){return heights_[size_t(std::clamp(z,0,gradientRows-1))*pitch+std::clamp(x,0,pitch-1)];};
+    const auto gradient=[&](int x,int z) {
+        const int a=std::max(0,x-1),b=std::min(pitch-1,x+1),c=std::max(0,z-1),d=std::min(gradientRows-1,z+1);
+        return vsg::dvec3((height(b,z)-height(a,z))/((b-a)*stride),0,(height(x,d)-height(x,c))/((d-c)*stride));
+    };
+    const auto smooth=[&](const vsg::dvec3& p,uint8_t role,vsg::vec3& geometric) {
+        if(vsg::dot(geometric,geometric)>0)geometric=vsg::normalize(geometric);
+        // Only intact DEM caps can use the gradient. Cut walls and floors
+        // retain the geometric normal, including at a block boundary.
+        if(role!=0)return;
+        const double x=std::clamp((p.x-x_)/stride,0.,double(pitch-1)),z=std::clamp((p.z-z_)/stride,0.,double(gradientRows-1));
+        const int ix=std::min(pitch-2,int(x)),iz=std::min(gradientRows-2,int(z));
+        const double u=x-ix,v=z-iz;
+        const auto g=gradient(ix,iz)*((1-u)*(1-v))+gradient(ix+1,iz)*(u*(1-v))+gradient(ix,iz+1)*((1-u)*v)+gradient(ix+1,iz+1)*(u*v);
+        const auto normal=vsg::vec3(vsg::normalize(vsg::dvec3(-g.x,1,-g.z)));
+        if(vsg::dot(normal,geometric)>.7071067f)geometric=normal;
+    };
+    const auto begin=std::chrono::steady_clock::now();
     if(mode=="voxel"&&(!smoothVoxel_||rigidFragment))mesh->copy(*mesh->occupancy);
     else {
-        const auto& occupied=mesh->occupancy->occupancy();const int pitch=nx_*sub_+1;
+        const auto& occupied=mesh->occupancy->occupancy();
         auto solid=[&](int x,int y,int z){return x>=0&&x<n[0]&&y>=0&&y<n[1]&&z>=0&&z<n[2]&&occupied[(size_t(z)*n[1]+y)*n[0]+x];};
         auto point=[&](int x,int z){return vsg::dvec3(x_+x*cell_/sub_,heights_[size_t(z)*pitch+x],z_+z*cell_/sub_);};
-        for(int z=0;z<n[2];++z)for(int x=0;x<n[0];++x) {
+        const auto appendColumn=[&](PatchMesh& output,int x,int z) {
           const int gx=(x+offset[0])*sub_,gz=(z+offset[2])*sub_;
           double minimum=std::numeric_limits<double>::infinity();
           for(int j=0;j<=sub_;++j)for(int i=0;i<=sub_;++i)minimum=std::min(minimum,point(gx+i,gz+j).y);
           for(int y=0;y<n[1];++y)if(solid(x,y,z)) {
-            mesh->ownerCell=uint32_t((size_t(z)*n[1]+y)*n[0]+x);
+            output.ownerCell=uint32_t((size_t(z)*n[1]+y)*n[0]+x);
             const double low=origin.y+y*cell_,high=low+cell_;const int gx=(x+offset[0])*sub_,gz=(z+offset[2])*sub_;
             const bool above=solid(x,y+1,z),below=solid(x,y-1,z);
             // Entirely below the DEM, the cell's exposed cap is exactly flat.
             // Interior layers need no cap; keep side/hole generation below.
             if(high<=minimum) {
                 const auto a=point(gx,gz),b=point(gx+sub_,gz),c=point(gx,gz+sub_),d=point(gx+sub_,gz+sub_);
-                if(!below)mesh->polygon({a,c,d,b},{0,-1,0},low);
-                if(!above)mesh->polygon({a,c,d,b},{0,1,0},high);
+                if(!below)output.polygon({a,c,d,b},{0,-1,0},low);
+                if(!above)output.polygon({a,c,d,b},{0,1,0},high);
             } else for(int j=0;j<sub_;++j)for(int i=0;i<sub_;++i) {
                 const auto a=point(gx+i,gz+j),b=point(gx+i+1,gz+j),c=point(gx+i,gz+j+1),d=point(gx+i+1,gz+j+1);
-                for(const auto& tri:std::array<std::vector<vsg::dvec3>,2>{{{a,c,b},{b,c,d}}}) {
+                for(const auto& tri:std::array<Polygon,2>{{{a,c,b},{b,c,d}}}) {
                     const double maxH=std::max({tri[0].y,tri[1].y,tri[2].y});if(maxH<=low+1e-10)continue;
                     auto polygon=clip(tri,low,true);
-                    if(!below)mesh->polygon(polygon,{0,-1,0},low);
-                    if(maxH<=high+1e-10)mesh->polygon(polygon,{0,1,0});
+                    if(!below)output.polygon(polygon,{0,-1,0},low);
+                    if(maxH<=high+1e-10)output.polygon(polygon,{0,1,0});
                     else {
-                        mesh->polygon(clip(polygon,high,false),{0,1,0});
-                        if(!above)mesh->polygon(clip(polygon,high,true),{0,1,0},high);
+                        output.polygon(clip(polygon,high,false),{0,1,0});
+                        if(!above)output.polygon(clip(polygon,high,true),{0,1,0},high);
                     }
                 }
             }
@@ -298,14 +452,14 @@ EarthSurfaceSnapshotPtr VoxelEarthPatch::makeSurface(std::shared_ptr<const Voxel
                 for(int i=0;i<sub_;++i) {
                     const auto a=point(gx+ax*sub_+(bx-ax)*i,gz+az*sub_+(bz-az)*i);
                     const auto b=point(gx+ax*sub_+(bx-ax)*(i+1),gz+az*sub_+(bz-az)*(i+1));
-                    std::vector<double> cuts{0,1};
-                    if(a.y!=b.y)for(double h:{low,high}) {const double t=(h-a.y)/(b.y-a.y);if(t>0&&t<1)cuts.push_back(t);}
-                    std::sort(cuts.begin(),cuts.end());
-                    for(size_t k=1;k<cuts.size();++k) {
+                    std::array<double,4> cuts{0,1};size_t cutCount=2;
+                    if(a.y!=b.y)for(double h:{low,high}) {const double t=(h-a.y)/(b.y-a.y);if(t>0&&t<1)cuts[cutCount++]=t;}
+                    std::sort(cuts.begin(),cuts.begin()+cutCount);
+                    for(size_t k=1;k<cutCount;++k) {
                         auto p=a+(b-a)*cuts[k-1],q=a+(b-a)*cuts[k];if(std::max(p.y,q.y)<=low+1e-10)continue;
                         p.y=std::clamp(p.y,low,high);q.y=std::clamp(q.y,low,high);
                         const vsg::dvec3 p0(p.x,low,p.z),q0(q.x,low,q.z);
-                        mesh->triangle(p0,q0,q,outward);mesh->triangle(p0,q,p,outward);
+                        output.triangle(p0,q0,q,outward);output.triangle(p0,q,p,outward);
                     }
                 }
             };
@@ -314,25 +468,50 @@ EarthSurfaceSnapshotPtr VoxelEarthPatch::makeSurface(std::shared_ptr<const Voxel
             if(!solid(x,y,z-1))side(0,0,1,0,{0,0,-1});
             if(!solid(x,y,z+1))side(0,1,1,1,{0,0,1});
           }
+        };
+        if(rigidFragment||std::getenv("VSGRAYSIM_REFERENCE_TERRAIN_MESH")) {
+            for(int z=0;z<n[2];++z)for(int x=0;x<n[0];++x)appendColumn(*mesh,x,z);
+        } else {
+            const int columns=std::min(n[0],8),rows=std::min(n[2],8);
+            const auto xAt=[&](int tile){return tile*n[0]/columns;};
+            const auto zAt=[&](int tile){return tile*n[2]/rows;};
+            const auto xPosition=[&](int x){return x_+(x+offset[0])*cell_;};
+            const auto zPosition=[&](int z){return z_+(z+offset[2])*cell_;};
+            std::vector<bool> dirty(size_t(columns)*rows,false);
+            const auto* old=dynamic_cast<const PatchMesh*>(previous.get());
+            // The smooth voxel and HD paths share the same caps and walls.
+            if(old&&old->patch==this&&(old->mode==mode||smoothVoxel_)&&!old->rigid&&old->tiles.size()==dirty.size()&&
+               visitChangedVoxelColumns(*old->occupancy,*mesh->occupancy,[&](const vsg::dbox& changed){
+                   for(int tz=0;tz<rows;++tz)if(zPosition(zAt(tz))<=changed.max.z&&zPosition(zAt(tz+1))>=changed.min.z)
+                       for(int tx=0;tx<columns;++tx)if(xPosition(xAt(tx))<=changed.max.x&&xPosition(xAt(tx+1))>=changed.min.x)
+                           dirty[tz*columns+tx]=true;
+               })) mesh->tiles=old->tiles;
+            else {
+                mesh->tiles.resize(dirty.size());
+                std::fill(dirty.begin(),dirty.end(),true);
+            }
+            for(int tz=0;tz<rows;++tz)for(int tx=0;tx<columns;++tx) {
+                const auto id=tz*columns+tx;
+                if(!dirty[id]){++mesh->stats.reused;continue;}
+                PatchMesh local;
+                std::vector<uint32_t> rowEnds{0};
+                const int x0=xAt(tx),x1=xAt(tx+1),z0=zAt(tz),z1=zAt(tz+1);
+                for(int z=z0;z<z1;++z) {
+                    for(int x=x0;x<x1;++x)appendColumn(local,x,z);
+                    rowEnds.push_back(local.indexCount());
+                }
+                mesh->tiles[id]=local.sealTile(std::move(rowEnds),xPosition(x0),xPosition(x1),zPosition(z0),zPosition(z1),cell_,smooth);
+                ++mesh->stats.rebuilt;
+            }
+            const auto stitchBegin=std::chrono::steady_clock::now();
+            mesh->stitchTiles(columns,rows);
+            mesh->stats.stitchMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-stitchBegin).count();
         }
     }
-    // Smooth only intact DEM caps. Excavation floors, cave ceilings and cut
-    // walls keep their geometric normals and therefore remain visibly sharp.
-    if(!mesh->terrainSkin.empty()) {
-        const int pitch=nx_*sub_+1,rows=nz_*sub_+1;const double step=cell_/sub_;
-        auto h=[&](int x,int z){return heights_[size_t(std::clamp(z,0,rows-1))*pitch+std::clamp(x,0,pitch-1)];};
-        auto gradient=[&](int x,int z) {const int a=std::max(0,x-1),b=std::min(pitch-1,x+1),c=std::max(0,z-1),d=std::min(rows-1,z+1);return vsg::dvec3((h(b,z)-h(a,z))/((b-a)*step),0,(h(x,d)-h(x,c))/((d-c)*step));};
-        auto draw=makeSurfaceDraw(*mesh,true);auto geometric=draw->arrays[1]->data.cast<vsg::vec3Array>();mesh->surface_normals.assign(geometric->begin(),geometric->end());
-        for(size_t i=0;i<mesh->vertices().size();++i)if(mesh->terrainSkin[i]) {
-            const auto& p=mesh->vertices()[i];const double x=std::clamp((p.x-x_)/step,0.,double(pitch-1)),z=std::clamp((p.z-z_)/step,0.,double(rows-1));
-            const int ix=std::min(pitch-2,int(x)),iz=std::min(rows-2,int(z));const double u=x-ix,v=z-iz;
-            const auto g=gradient(ix,iz)*((1-u)*(1-v))+gradient(ix+1,iz)*(u*(1-v))+gradient(ix,iz+1)*((1-u)*v)+gradient(ix+1,iz+1)*(u*v);
-            const auto normal=vsg::vec3(vsg::normalize(vsg::dvec3(-g.x,1,-g.z)));
-            if(vsg::dot(normal,mesh->surface_normals[i])>.7071067f)mesh->surface_normals[i]=normal;
-        }
-    }
+    mesh->finishNormals(smooth);
     mesh->finish(x_,z_,nx_*cell_,nz_*cell_);
-    if((rigidFragment||n[0]!=nx_||n[2]!=nz_)&&!rgba_.empty()&&!mesh->imagery_uv.empty()){
+    mesh->fullAtlas=!rigidFragment&&n[0]==nx_&&n[2]==nz_;
+    if(!mesh->fullAtlas&&!rgba_.empty()&&!mesh->imagery_uv.empty()){
         // Keep the original pixel grid and linear sampling, including a
         // filtering gutter. Detached pieces must not each copy a 16MiB map.
         vsg::vec2 minimum(1,1),maximum(0,0);for(const auto& uv:mesh->imagery_uv)for(int a=0;a<2;++a){minimum[a]=std::min(minimum[a],uv[a]);maximum[a]=std::max(maximum[a],uv[a]);}
@@ -346,7 +525,7 @@ EarthSurfaceSnapshotPtr VoxelEarthPatch::makeSurface(std::shared_ptr<const Voxel
     // colour. Reserve a texel strip in the shared display/optical atlas so
     // road markings remain on the intact skin when a cell is removed.
     const auto declaration=provenance_.find("earth");
-    if(declaration!=provenance_.end()&&declaration->contains("excavation_albedo_srgb")&&!mesh->terrainSkin.empty()&&
+    if(declaration!=provenance_.end()&&declaration->contains("excavation_albedo_srgb")&&!mesh->vertexRoles.empty()&&
        mesh->imagery_width&&mesh->imagery_height<4094) {
         const auto rgb=declaration->at("excavation_albedo_srgb").get<std::array<int,3>>();
         for(auto c:rgb)if(c<0||c>255)throw std::invalid_argument("invalid excavation albedo byte");
@@ -359,11 +538,26 @@ EarthSurfaceSnapshotPtr VoxelEarthPatch::makeSurface(std::shared_ptr<const Voxel
         }
         for(size_t i=0;i<mesh->imagery_uv.size();++i) {
             auto& uv=mesh->imagery_uv[i];
-            if(mesh->terrainSkin[i])uv.y=float(std::clamp(double(uv.y)*height,.5,double(height)-.5)/mesh->imagery_height);
+            if(mesh->vertexRoles[i]==0)uv.y=float(std::clamp(double(uv.y)*height,.5,double(height)-.5)/mesh->imagery_height);
             else uv.y=float((height+1.)/mesh->imagery_height);
         }
     }
+    mesh->stats.ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();
     return mesh;
+}
+VoxelEarthMeshStats voxelEarthMeshStats(const EarthSurfaceSnapshot& surface) {
+    const auto* mesh=dynamic_cast<const PatchMesh*>(&surface);
+    return mesh?mesh->stats:VoxelEarthMeshStats{};
+}
+bool sameVoxelEarthAtlas(const EarthSurfaceSnapshot& a,const EarthSurfaceSnapshot& b) {
+    const auto* first=dynamic_cast<const PatchMesh*>(&a);
+    const auto* second=dynamic_cast<const PatchMesh*>(&b);
+    return first&&second&&first->patch==second->patch&&first->fullAtlas&&second->fullAtlas&&
+        a.imagery_width==b.imagery_width&&a.imagery_height==b.imagery_height&&a.imagery_rgba.size()==b.imagery_rgba.size();
+}
+const VoxelEarthTriangleBlocks* voxelEarthTriangleBlocks(const EarthSurfaceSnapshot& surface) {
+    const auto* mesh=dynamic_cast<const PatchMesh*>(&surface);
+    return mesh&&!mesh->triangleBlocks.empty()?&mesh->triangleBlocks:nullptr;
 }
 void refreshVoxelEarthObject(VoxelSceneObject& object) {
     if(!object.earth){object.geometry.reset();return;}
@@ -371,7 +565,14 @@ void refreshVoxelEarthObject(VoxelSceneObject& object) {
     if(object.terrainMode=="hd"&&object.body.motion!="static")throw std::invalid_argument("HD Earth terrain requires static motion; use voxel mode for moving fragments");
     auto current=std::dynamic_pointer_cast<const PatchMesh>(object.geometry);
     if(!current||current->occupancy!=object.volume||current->patch!=object.earth.get()||current->mode!=object.terrainMode||current->rigid!=(object.body.motion!="static"))
-        object.geometry=object.earth->makeSurface(object.volume,object.terrainMode,object.body.motion!="static");
+        object.geometry=object.earth->makeSurface(object.volume,object.terrainMode,object.body.motion!="static",object.geometry);
+}
+bool visitVoxelEarthChangedColumns(const VoxelSceneObject& before,const VoxelSceneObject& after,
+                                  const std::function<void(const vsg::dbox&)>& visit) {
+    if(before.id!=after.id||!before.earth||before.earth!=after.earth||before.terrainMode!=after.terrainMode||
+       before.body.motion!="static"||after.body.motion!="static"||!before.volume||!after.volume)
+        return false;
+    return visitChangedVoxelColumns(*before.volume,*after.volume,visit);
 }
 void validateVoxelEarthView(const VoxelSceneSnapshot& scene,const vsg::dvec3& position,const vsg::dvec3& forward,
     const vsg::dvec3& up,double fov,double aspect,double range) {

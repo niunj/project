@@ -653,6 +653,7 @@ int main(int argc,char** argv){
         if(arguments.size()==3&&arguments[1]=="--aviation-fx-capture"){NativeDeadline deadline;runEarthAviationCapture(arguments[2]);return 0;}
         if(arguments.size()==3&&arguments[1]=="--aviation-video-frames"){NativeDeadline deadline(180);runEarthAviationCapture(arguments[2],true);return 0;}
         if(arguments.size()==3&&arguments[1]=="--aircraft-debris-capture"){NativeDeadline deadline;runEarthAircraftDebrisCapture(arguments[2]);return 0;}
+        if(arguments.size()==3&&arguments[1]=="--aircraft-impact-capture"){NativeDeadline deadline(180);runEarthAircraftDebrisCapture(arguments[2],true);return 0;}
         if(arguments.size()==4&&arguments[1]=="--ah64-rotor-capture"){
             NativeDeadline deadline(180);runEarthAh64RotorCapture(arguments[2],arguments[3]);return 0;
         }
@@ -809,6 +810,11 @@ int main(int argc,char** argv){
         if (arguments.size()==4 && arguments[1]=="--scene-terrain-page-traverse") {
             NativeDeadline deadline;
             runEarthTopicStillCapture(arguments[2], arguments[3], EarthTopicCapture::TerrainTraverse);
+            return 0;
+        }
+        if (arguments.size()==4 && arguments[1]=="--scene-terrain-collision-capture") {
+            NativeDeadline deadline(180);
+            runEarthTopicStillCapture(arguments[2],arguments[3],EarthTopicCapture::TerrainCollision);
             return 0;
         }
         if (arguments.size()==4 && arguments[1]=="--scene-thermal-capture") {

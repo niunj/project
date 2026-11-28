@@ -292,6 +292,34 @@ std::shared_ptr<const VolumeTile> volumeTile(const RasterTile& file,const Key& k
     return tile;
 }
 
+#if VSGRAYSIM_EARTH_RASTER
+// Use the two level-zero roots of the same catalog for an orbital presentation.
+// These samples are independent of the regional physics tile window.
+std::shared_ptr<const OrbitalSurface> readRasterGlobe(const Source& dem, const Source& rgb) {
+    constexpr int side = 32, tex = 256;
+    size_t reused = 0;
+    auto result = std::make_shared<OrbitalSurface>();
+    result->side = side;
+    result->texture_side = tex;
+    result->heights.resize(2 * side * side);
+    result->rgba.resize(8 * tex * tex);
+    json provenance = json::array();
+    for (int x = 0; x < 2; ++x) {
+        const auto root = block(dem, rgb, {0,x,0}, side, tex, reused);
+        if (!root->dem.stable() || !root->image.stable())
+            throw std::runtime_error("orbital raster roots changed while loading");
+        provenance.push_back({root->dem.path, root->image.path,
+                              root->dem.versions[0].key(), root->image.versions[0].key()});
+        for (int row = 0; row < side; ++row)
+            std::copy_n(root->heights.begin() + row * side, side, result->heights.begin() + (2 * row + x) * side);
+        for (int row = 0; row < tex; ++row)
+            std::copy_n(root->rgba.begin() + 4 * row * tex, 4 * tex, result->rgba.begin() + 4 * (2 * row + x) * tex);
+    }
+    result->dataset = digest(provenance.dump());
+    return result;
+}
+#endif
+
 std::shared_ptr<const OrbitalSurface> readOrbital(const Source& tiles,const json& catalog,uint64_t dataset,double quantum) {
     static std::mutex mutex;
     static std::weak_ptr<const OrbitalSurface> cached;
@@ -327,7 +355,7 @@ void EarthDataService::bakeVolume(const std::string& input,const std::string& ou
 #if !VSGRAYSIM_EARTH_RASTER
     throw std::logic_error("baking raster data requires the GDAL adapter");
 #else
-    if(minLevel<5 || maxLevel>20 || minLevel>maxLevel || radius<1 || radius>8 || !std::isfinite(bottomMetres))
+    if(minLevel<5 || maxLevel>20 || minLevel>maxLevel || radius<1 || radius>10 || !std::isfinite(bottomMetres))
         throw std::invalid_argument("invalid voxel bake range");
     const auto source=fs::absolute(input);
     const auto mapVersion=FileVersion::read(source.string());
@@ -502,6 +530,9 @@ std::shared_ptr<TiledVoxelTerrain> TiledVoxelTerrain::load(const json& map,json&
         result->cells_per_tile_=n;result->quantum_=dz;
     } else {
         dem.emplace(map.at("dem"),path);image.emplace(map.at("imagery"),path);
+#if VSGRAYSIM_EARTH_RASTER
+        if (settings.value("orbital_preview", false)) result->orbital = readRasterGlobe(*dem, *image);
+#endif
     }
     std::vector<double> heights(cols*rows);
     auto stride=[&](int i,int j) {

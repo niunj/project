@@ -90,6 +90,8 @@ public:
     /// 把相机视点聚焦到世界坐标 target (保持当前视距/视角, 视距过小时取默认)。
     void focusViewOn(const vsg::dvec3& target);
     QImage grabFrame();
+    /// Advance viewport features and capture the resulting Vulkan frame in one submission.
+    QImage renderAndGrabFrame();
     bool mouseRay(const QPoint& pos, vsg::dvec3& origin,
                   vsg::dvec3& dir) const;
 
@@ -113,6 +115,7 @@ private:
     void onVsgReady();
     void onTimerTick();
     void attachFeature(IViewportFeature* f);
+    QImage renderFrameImpl(bool capture);
 
     gui::VsgQtWidget* widget_ = nullptr;
     QTimer            frame_timer_;

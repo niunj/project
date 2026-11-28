@@ -6,12 +6,25 @@
 #include <vsg/core/Array2D.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <stdexcept>
 namespace vsgraysim::earth {
 namespace {
 constexpr size_t sensorImageBudget = 128ULL*1024*1024;
 using TextureKey = std::pair<const void*, std::string>;
+
+const std::array<double,256>& linearAlbedo() {
+    static const auto linear=[] {
+        std::array<double,256> result{};
+        for(size_t i=0;i<result.size();++i) {
+            const double c=i/255.;
+            result[i]=c<=.04045?c/12.92:std::pow((c+.055)/1.055,2.4);
+        }
+        return result;
+    }();
+    return linear;
+}
 
 TextureKey textureKey(const VoxelSceneObject& object) {
     const auto* appearance = object.volume->appearance().get();
@@ -71,11 +84,7 @@ void packSensorTextures(std::map<TextureKey,PackedTexture>& textures, uint32_t w
         output.layers.push_back(page);
         output.slotData.emplace_back(1,1,1,1);
     }
-    std::array<double,256> linear{};
-    for(size_t i=0;i<linear.size();++i) {
-        const double c=i/255.;
-        linear[i]=c<=.04045?c/12.92:std::pow((c+.055)/1.055,2.4);
-    }
+    const auto& linear=linearAlbedo();
     for(const auto& [key,region]:textures) {
         const auto& source=*region.surface;
         auto& image=*images[region.page];
@@ -89,9 +98,48 @@ void packSensorTextures(std::map<TextureKey,PackedTexture>& textures, uint32_t w
         }
     }
 }
+
+template<class Array>
+vsg::ref_ptr<Array> gatherVertices(const vsg::BufferInfo& source,const std::vector<uint32_t>& order) {
+    const auto& input=*source.data->cast<Array>();
+    auto output=Array::create(order.size());
+    for(size_t i=0;i<order.size();++i)(*output)[i]=input[order[i]];
+    return output;
 }
 
-VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr snapshot) {
+void appendTerrainBlocks(const VoxelEarthTriangleBlocks& blocks,const rockyenv::sensor::SceneInstance& object,
+                         std::vector<rockyenv::sensor::SceneInstance>& instances) {
+    const auto& source=*object.geometry;
+    const auto& indices=*source.indices->data->cast<vsg::uintArray>();
+    constexpr auto unseen=std::numeric_limits<uint32_t>::max();
+    std::vector<uint32_t> remap(source.arrays[0]->data->valueCount(),unseen),order;
+    for(size_t part=0;part<blocks.size();++part) {
+        if(blocks[part].empty())continue;
+        size_t count=0;
+        for(const auto& range:blocks[part])count+=range.count;
+        const auto local=vsg::uintArray::create(count*3);
+        order.clear();
+        size_t write=0;
+        for(const auto& range:blocks[part])for(size_t i=size_t(range.first)*3;i<(size_t(range.first)+range.count)*3;++i) {
+            const auto original=indices[i];
+            if(remap[original]==unseen){remap[original]=uint32_t(order.size());order.push_back(original);}
+            (*local)[write++]=remap[original];
+        }
+        const auto& arrays=source.arrays;
+        vsg::DataList attributes{gatherVertices<vsg::vec3Array>(*arrays[0],order),gatherVertices<vsg::vec2Array>(*arrays[1],order),
+            gatherVertices<vsg::uintArray>(*arrays[2],order),gatherVertices<vsg::vec2Array>(*arrays[3],order),
+            gatherVertices<vsg::uintArray>(*arrays[4],order)};
+        if(arrays.size()>5)attributes.push_back(gatherVertices<vsg::vec4Array>(*arrays[5],order));
+        auto draw=vsg::VertexIndexDraw::create();
+        draw->assignArrays(attributes);draw->assignIndices(local);
+        draw->indexCount=uint32_t(local->size());draw->instanceCount=1;
+        instances.push_back({object.id,draw,object.transform,object.visible,uint32_t(part+1)});
+        for(auto original:order)remap[original]=unseen;
+    }
+}
+}
+
+VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr snapshot,bool splitTerrain) {
     if(!snapshot)throw std::invalid_argument("missing voxel scene snapshot");
     VoxelSceneSensorData result;result.snapshot=std::move(snapshot);
     result.textures.slotData.emplace_back(1,1,1,0);
@@ -186,23 +234,37 @@ VoxelSceneSensorData makeVoxelSceneSensorData(VoxelSceneSnapshotPtr snapshot) {
             std::copy(heatNormals.begin(),heatNormals.end(),shadingNormals->begin());
             draw->assignArrays({vertices,properties,ids,uv,slots,shadingNormals});
         } else draw->assignArrays({vertices,properties,ids,uv,slots});
-        result.instances.push_back({id,draw,o.pose(result.snapshot->tick,result.snapshot->fixedStep),true});
+        rockyenv::sensor::SceneInstance instance{id,draw,o.pose(result.snapshot->tick,result.snapshot->fixedStep),true};
+        const auto* blocks=splitTerrain&&o.body.motion=="static"?voxelEarthTriangleBlocks(surface):nullptr;
+        if(blocks)appendTerrainBlocks(*blocks,instance,result.instances);
+        else result.instances.push_back(std::move(instance));
     }
     // The sensor texture pool consumes linear UNORM albedo. Display consumes
     // the same source bytes through an sRGB image. Decode BEFORE filtering;
     // treating sRGB bytes as reflectance would brighten measurement results.
     if(width&&height&&!usePacking) {
-        auto linear=[](double n){n/=255.;return n<=.04045?n/12.92:std::pow((n+.055)/1.055,2.4);};
+        const auto& linear=linearAlbedo();
         for(const auto& texture:textures) {
             auto layer=vsg::ubvec4Array2D::create(width,height,vsg::ubvec4(255,255,255,255));layer->properties.format=VK_FORMAT_R8G8B8A8_UNORM;
-            if(const auto* s=texture.surface)for(uint32_t y=0;y<height;++y)for(uint32_t x=0;x<width;++x) {
+            const auto* s=texture.surface;
+            if(s&&s->imagery_width==width&&s->imagery_height==height) {
+                // Matching charts sample their texel centers exactly. Reuse
+                // the same sRGB-to-linear quantization without resampling.
+                std::array<std::array<uint8_t,256>,3> lookup{};
+                for(int c=0;c<3;++c)for(size_t i=0;i<linear.size();++i)
+                    lookup[c][i]=uint8_t(std::clamp(std::lround(linear[i]*texture.tint[c]*255),0L,255L));
+                for(size_t i=0;i<size_t(width)*height;++i) {
+                    const auto* pixel=s->imagery_rgba.data()+4*i;
+                    (*layer)[i]=vsg::ubvec4(lookup[0][pixel[0]],lookup[1][pixel[1]],lookup[2][pixel[2]],255);
+                }
+            } else if(s)for(uint32_t y=0;y<height;++y)for(uint32_t x=0;x<width;++x) {
                 const double px=(x+.5)*s->imagery_width/width-.5,py=(y+.5)*s->imagery_height/height-.5;
                 const int ix=int(std::floor(px)),iy=int(std::floor(py));const double u=px-ix,v=py-iy;vsg::ubvec4 pixel(0,0,0,255);
                 for(int c=0;c<3;++c) {
                     double value=0;
                     for(int j=0;j<2;++j)for(int i=0;i<2;++i) {
                         const auto a=std::clamp(ix+i,0,int(s->imagery_width)-1),b=std::clamp(iy+j,0,int(s->imagery_height)-1);
-                        value+=linear(s->imagery_rgba[4*(size_t(b)*s->imagery_width+a)+c])*(i?u:1-u)*(j?v:1-v);
+                        value+=linear[s->imagery_rgba[4*(size_t(b)*s->imagery_width+a)+c]]*(i?u:1-u)*(j?v:1-v);
                     }
                     pixel[c]=uint8_t(std::clamp(std::lround(value*texture.tint[c]*255),0L,255L));
                 }

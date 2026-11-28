@@ -33,7 +33,7 @@ bool containsBallast(const VoxelSceneObject& o){if(o.body.ballastMassKg<=0)retur
 void validateVoxelBody(VoxelSceneObject& object,const json& source,bool checkpoint) {
     const auto value=source.value("physics",json::object());
     if(!value.is_object())throw std::invalid_argument("physics must be an object");
-    const std::set<std::string> allowed{"motion","fracture","support","fracture_energy_j_m2","friction","restitution","linear_damping","angular_damping","ballast"};
+    const std::set<std::string> allowed{"motion","fracture","support","fracture_energy_j_m2","friction","restitution","linear_damping","angular_damping","ballast","crush"};
     for(auto it=value.begin();it!=value.end();++it)if(!allowed.count(it.key()))throw std::invalid_argument("unknown physics field: "+it.key());
     auto& b=object.body;b.motion=value.value("motion",std::string("prescribed"));
     if(b.motion!="prescribed"&&b.motion!="static"&&b.motion!="dynamic")throw std::invalid_argument("invalid voxel motion mode");
@@ -41,6 +41,18 @@ void validateVoxelBody(VoxelSceneObject& object,const json& source,bool checkpoi
     b.fractureEnergyPerArea=field(value,"fracture_energy_j_m2",1000,1e-6,1e12);
     b.friction=field(value,"friction",.6,0,2);b.restitution=field(value,"restitution",.1,0,1);
     b.linearDamping=field(value,"linear_damping",.02,0,1);b.angularDamping=field(value,"angular_damping",.02,0,1);
+    b.crushRadius=0.;
+    if(value.contains("crush")){
+        const auto& crush=value.at("crush");
+        if(!crush.is_object())throw std::invalid_argument("physics.crush must be an object");
+        for(const auto& entry:crush.items())
+            if(entry.key()!="radius_m"&&entry.key()!="yield_speed_mps"&&entry.key()!="max_strain")
+                throw std::invalid_argument("unknown impact deformation option: "+entry.key());
+        if(object.role!="target"||object.earth)throw std::invalid_argument("impact deformation requires a solid target");
+        b.crushRadius=field(crush,"radius_m",2.,.05,50.);
+        b.crushYieldSpeed=field(crush,"yield_speed_mps",4.,.1,100.);
+        b.crushMaxStrain=field(crush,"max_strain",.65,.05,.85);
+    }
     if(value.contains("ballast")){const auto& q=value.at("ballast");if(!q.is_object())throw std::invalid_argument("ballast must be an object");for(const auto& item:q.items())if(item.key()!="mass_kg"&&item.key()!="position_m")throw std::invalid_argument("unknown ballast field");b.ballastMassKg=field(q,"mass_kg",0,0,1e12);const auto& p=q.at("position_m");if(!p.is_array()||p.size()!=3)throw std::invalid_argument("ballast position needs three values");for(int a=0;a<3;++a){b.ballastPosition[a]=p[a].get<double>();if(!std::isfinite(b.ballastPosition[a])||std::abs(b.ballastPosition[a])>1e8)throw std::invalid_argument("invalid ballast position");}if(b.ballastMassKg>0&&!containsBallast(object))throw std::invalid_argument("ballast must be inside an occupied voxel");}
     Grid grid(*object.volume);
     const auto declaredSupport=value.value("support",std::string("none"));
@@ -78,7 +90,10 @@ json encodeVoxelBody(const VoxelSceneObject& o) {
     const auto& b=o.body;
     json encoded={{"motion",b.motion},{"fracture",b.fracture},{"support",b.anchorAll?"all":"none"},{"fracture_energy_j_m2",b.fractureEnergyPerArea},
         {"friction",b.friction},{"restitution",b.restitution},{"linear_damping",b.linearDamping},{"angular_damping",b.angularDamping}};
-    if(b.ballastMassKg>0)encoded["ballast"]={{"mass_kg",b.ballastMassKg},{"position_m",{b.ballastPosition.x,b.ballastPosition.y,b.ballastPosition.z}}};return encoded;
+    if(b.ballastMassKg>0)encoded["ballast"]={{"mass_kg",b.ballastMassKg},{"position_m",{b.ballastPosition.x,b.ballastPosition.y,b.ballastPosition.z}}};
+    if(b.crushRadius>0.)encoded["crush"]={{"radius_m",b.crushRadius},
+        {"yield_speed_mps",b.crushYieldSpeed},{"max_strain",b.crushMaxStrain}};
+    return encoded;
 }
 vsg::dvec3 VoxelSceneObject::localCentreOfMass()const {const double ballast=body.ballastMassKg;if(ballast<=0)return volume->centreOfMass();const double mass=massKg();return (volume->centreOfMass()*(mass-ballast)+body.ballastPosition*ballast)/mass;}
 

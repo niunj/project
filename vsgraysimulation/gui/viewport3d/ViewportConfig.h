@@ -30,6 +30,8 @@ public:
     static ViewportConfig fromTopicFile(const std::string& path,const std::string& basePreset="earth_display");
     static ViewportConfig fromJson(const nlohmann::json& j);
     nlohmann::json toJson() const;
+    void useWorkspaceGlobe();
+    void useWorkspaceTerrain();
 
     /// 追加特性条目 (保持顺序; 重复 id 则更新参数)。
     void add(const std::string& id,

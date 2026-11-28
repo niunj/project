@@ -1,5 +1,9 @@
 #ifdef VSGRAYSIM_FORMAL_VALIDATION
 #include "testing/FormalChainValidation.h"
+#include <QDoubleSpinBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
 #endif
 /**
  * @file scene_designer/main.cpp
@@ -23,6 +27,8 @@
 
 #include "SceneDesignerWindow.h"
 #include "SceneStartDialog.h"
+#include "voxel/ModelLibraryDialog.h"
+#include "voxel/SharedSceneWorkspace.h"
 #include <telemetry/TelemetryManager.h>
 
 #ifndef QT6_PLUGIN_PATH
@@ -73,6 +79,44 @@ int main(int argc, char** argv) {
     app.setApplicationName("vsgraysim_scene_designer");
     app.setOrganizationName("vsgraysim");
     app.setApplicationDisplayName("VSG Scene Designer");
+    if (app.arguments().contains("--model-library")) {
+        vsgraysim::gui::ModelLibraryDialog library;
+        library.show();
+#ifdef VSGRAYSIM_FORMAL_VALIDATION
+        if (const auto screenshot=qEnvironmentVariable("VSGRAYSIM_MODEL_LIBRARY_PROBE"); !screenshot.isEmpty()) {
+            QTimer::singleShot(25000,&app,[&app]{app.exit(3);});
+            auto* probe=new QTimer(&library);
+            const auto temperature=qEnvironmentVariable("VSGRAYSIM_MODEL_LIBRARY_PROBE_TEMPERATURE");
+            QObject::connect(probe,&QTimer::timeout,&library,[&library,&app,probe,phase=0,screenshot,temperature]() mutable {
+                auto* preview=library.findChild<QLabel*>("libraryModelImage");
+                if (!preview || preview->pixmap().isNull()) return;
+                if (phase==0) {
+                    library.findChild<QDoubleSpinBox*>("libraryYaw")->setValue(12.);
+                    if (!temperature.isEmpty()) library.findChild<QLineEdit*>("temperature_k")->setText(temperature);
+                    library.findChild<QPushButton*>("librarySave")->click();
+                    phase=1;
+                    return;
+                }
+                const auto yaw=library.findChild<QDoubleSpinBox*>("libraryYaw")->value();
+                if (yaw==12. && library.findChild<QPushButton*>("librarySave")->isEnabled() &&
+                    (temperature.isEmpty() || library.findChild<QLineEdit*>("temperature_k")->text()==temperature)) {
+                    probe->stop();
+                    app.exit(library.grab().save(screenshot) ? 0 : 4);
+                }
+            });
+            probe->start(200);
+        }
+#endif
+        return app.exec();
+    }
+    if (argc == 1 || app.arguments().contains("--collaborate")) {
+        const auto args = app.arguments();
+        const auto index = args.indexOf("--collaborate");
+        const auto endpoint = index >= 0 && index + 1 < args.size() ? args.at(index + 1)
+            : qEnvironmentVariable("VSGRAYSIM_SERVICE_URL","http://127.0.0.1:8765");
+        qputenv("VSGRAYSIM_SERVICE_URL",endpoint.toUtf8());
+        return vsgraysim::gui::runSharedSceneWorkspace(app,endpoint);
+    }
 
     {
         // 异步日志: 渲染/加载热路径不被日志 I/O 阻塞, 后台线程落盘。
@@ -110,7 +154,7 @@ int main(int argc, char** argv) {
     QString terrain_template;
     QString open_scenario;
     if(argc==3&&QString::fromUtf8(argv[1])=="--scene-topic")scene_topic=QFileInfo(QString::fromUtf8(argv[2])).absoluteFilePath();
-    if (scene_topic.isEmpty() && argc > 1) terrain_template = QString::fromUtf8(argv[1]);
+    if (scene_topic.isEmpty() && argc > 1 && QString::fromUtf8(argv[1])!="--local") terrain_template = QString::fromUtf8(argv[1]);
     if (scene_topic.isEmpty() && argc > 2) open_scenario    = QString::fromUtf8(argv[2]);
 
     // 无任何工程参数时, 先弹出"选择模板和工程"启动页

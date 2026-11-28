@@ -7,6 +7,16 @@ namespace vsgraysim::earth {
 class VoxelTerrain;
 struct VoxelSceneObject;
 struct VoxelSceneSnapshot;
+struct VoxelEarthMeshStats {
+    double ms=0,stitchMs=0;
+    size_t rebuilt=0,reused=0;
+};
+VoxelEarthMeshStats voxelEarthMeshStats(const EarthSurfaceSnapshot&);
+bool sameVoxelEarthAtlas(const EarthSurfaceSnapshot&,const EarthSurfaceSnapshot&);
+struct VoxelEarthTriangleRange {uint32_t first,count;};
+using VoxelEarthTriangleBlocks=std::vector<std::vector<VoxelEarthTriangleRange>>;
+// Canonical triangle ranges in each stable row-major terrain block.
+const VoxelEarthTriangleBlocks* voxelEarthTriangleBlocks(const EarthSurfaceSnapshot&);
 /// A pinned georeferenced height field and imagery atlas for a bounded physics
 /// working set. The occupancy is the durable damage state; both display modes
 /// are derived from that state, never by reopening an undamaged source raster.
@@ -20,7 +30,8 @@ public:
     nlohmann::json encode() const;
     std::shared_ptr<VoxelTerrain> initialVolume() const;
     nlohmann::json inferredThermalMaterials(const VoxelTerrain&, double baseK) const;
-    EarthSurfaceSnapshotPtr makeSurface(std::shared_ptr<const VoxelTerrain>,const std::string& mode,bool rigidFragment=false) const;
+    EarthSurfaceSnapshotPtr makeSurface(std::shared_ptr<const VoxelTerrain>,const std::string& mode,bool rigidFragment=false,
+                                        EarthSurfaceSnapshotPtr previous={}) const;
     const nlohmann::json& provenance() const {return provenance_;}
     const nlohmann::json& materials() const {return materials_;}
     size_t residentBytes()const{return (heights_.size()+seaReference_.size())*sizeof(double)+rgba_.size();}

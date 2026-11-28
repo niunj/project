@@ -50,4 +50,43 @@ inline std::pair<double,double> cameraClip(const CameraPose& pose) {
     const double near=std::clamp(std::max(height,distance)*1e-4,.1,10000.);
     return {near,std::clamp(std::max(300000.,distance+2*horizon+10000.),300000.,1e8)};
 }
+
+struct EarthNavigation {
+    static constexpr double orbitDegreesPerPixel = .008 * 180. / vsg::PI;
+    static constexpr double panPerPixel = .0016;
+    static constexpr double zoomPerNotch = .82;
+    static constexpr double dollyPerPixel = .0035;
+    double yaw = 0., pitch = 0., zoom = 1., panX = 0., panY = 0.;
+
+    void orbit(double dx, double dy) {
+        yaw = std::remainder(yaw + dx * orbitDegreesPerPixel, 360.);
+        pitch = std::clamp(pitch + dy * orbitDegreesPerPixel, -89., 89.);
+    }
+    void pan(double dx, double dy) {
+        panX = std::clamp(panX - dx * panPerPixel, -4., 4.);
+        panY = std::clamp(panY + dy * panPerPixel, -4., 4.);
+    }
+    void dolly(double scale) { zoom = std::clamp(zoom * scale, .25, 4.); }
+};
+
+inline CameraPose workspaceEarthCamera(GeoAnchor anchor, bool globe, const EarthNavigation& input,
+                                       vsg::dvec3 aim = {0.,500.,0.}, vsg::dvec3 offset = {8400.,7900.,-10300.}) {
+    if (globe) {
+        anchor.lat_deg = std::clamp(anchor.lat_deg + input.pitch + input.panY * 55., -86., 86.);
+        anchor.lon_deg += input.yaw + input.panX * 55.;
+        const auto up = geoUp(anchor.lat_deg, anchor.lon_deg);
+        const auto east = geoEast(anchor.lat_deg, anchor.lon_deg);
+        return {up * std::clamp(17.8e6 * input.zoom, 8.1e6, 80e6), {0.,0.,0.}, -vsg::cross(east,up)};
+    }
+    const double radius = vsg::length(offset) * input.zoom;
+    const double azimuth = std::atan2(offset.x, offset.z) + vsg::radians(input.yaw);
+    const double altitude = std::clamp(std::atan2(offset.y, std::hypot(offset.x, offset.z)) + vsg::radians(input.pitch),
+                                       vsg::radians(3.), vsg::radians(86.));
+    const auto model = makeEnuToWorldMatrix(anchor);
+    offset = {radius * std::cos(altitude) * std::sin(azimuth), radius * std::sin(altitude),
+              radius * std::cos(altitude) * std::cos(azimuth)};
+    const auto up = model * vsg::dvec4(0.,1.,0.,0.);
+    CameraPose pose{model * (aim + offset), model * aim, {up.x,up.y,up.z}};
+    return input.panX == 0. && input.panY == 0. ? pose : panCamera(pose, input.panX * radius, input.panY * radius);
+}
 } // namespace simcore::geo

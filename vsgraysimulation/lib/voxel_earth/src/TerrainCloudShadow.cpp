@@ -94,6 +94,11 @@ TerrainCloudShadow::TerrainCloudShadow(const EarthSurfaceSnapshot& surface,vsg::
     cfg->init();
     node=vsg::StateGroup::create();cfg->copyTo(node);node->addChild(draw);
 }
+TerrainCloudShadow::TerrainCloudShadow(const TerrainCloudShadow& previous,vsg::ref_ptr<vsg::VertexIndexDraw> geometry)
+    :node(vsg::StateGroup::create(*previous.node)),parameters_(previous.parameters_) {
+    node->children.clear();
+    node->addChild(geometry);
+}
 void TerrainCloudShadow::update(const PlanetWeatherFrame& weather,const vsg::vec3& horizon,const vsg::vec3& zenith,bool atmosphere,const VoxelOcean* ocean) {
     (*parameters_)[0]=planetAdvection(weather);
     (*parameters_)[1]=vsg::vec4(weather.sun,weather.overcastAmount>=0?weather.overcastAmount:(weather.overcast?1.f:0.f));

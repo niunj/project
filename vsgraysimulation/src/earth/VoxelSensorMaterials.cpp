@@ -60,12 +60,60 @@ std::shared_ptr<const VoxelSensorMaterials> VoxelSensorMaterials::settled(const 
         const auto chart=(target-origin_)/cell_;const auto key=(size_t(std::floor(chart.z))*dimensions_[1]+size_t(std::floor(chart.y)))*dimensions_[0]+size_t(std::floor(chart.x));out->cells_.at(key)=index(source);
     }}return out;
 }
-std::shared_ptr<const VoxelSensorMaterials> VoxelSensorMaterials::paint(const json& region,const json& material)const{
+std::shared_ptr<const VoxelSensorMaterials> VoxelSensorMaterials::remapped(const VoxelTerrain& source,
+    const VoxelTerrain& target,const std::vector<uint32_t>& destinations)const {
+    auto out=std::make_shared<VoxelSensorMaterials>();
+    out->origin_=target.gridOrigin();out->dimensions_=target.dimensions();out->cell_=cell_;
+    out->palette_=palette_;out->cells_.resize(target.cellCount());
+    const auto n=source.dimensions();
+    for(size_t i=0;i<source.cellCount();++i)if(source.occupancy()[i]){
+        const auto centre=source.gridOrigin()+vsg::dvec3(i%n[0]+.5,i/n[0]%n[1]+.5,i/(size_t(n[0])*n[1])+.5)*cell_;
+        out->cells_.at(destinations.at(i))=index(centre);
+    }
+    return out;
+}
+std::shared_ptr<const VoxelSensorMaterials> VoxelSensorMaterials::paint(
+    const json& region,const json& material,const json& radarFallback)const {
     const auto low=triple(region.at("min_m")),high=triple(region.at("max_m"));
-    if(!material.is_object()||material.empty()||material.contains("density_kg_m3")||material.contains("color_rgba"))throw std::invalid_argument("spectral paint requires optical/thermal/radar properties only");
-    int first[3],last[3];for(int a=0;a<3;++a){if(low[a]>=high[a])throw std::invalid_argument("empty spectral paint region");first[a]=int(std::clamp(std::ceil((low[a]-origin_[a])/cell_-.5),0.,double(dimensions_[a])));last[a]=int(std::clamp(std::ceil((high[a]-origin_[a])/cell_-.5),0.,double(dimensions_[a])));if(first[a]>=last[a])throw std::invalid_argument("spectral paint misses voxel centres");}
-    auto out=std::make_shared<VoxelSensorMaterials>(*this);std::map<uint8_t,uint8_t> replacement;
-    for(int z=first[2];z<last[2];++z)for(int y=first[1];y<last[1];++y)for(int x=first[0];x<last[0];++x){const auto key=(size_t(z)*dimensions_[1]+y)*dimensions_[0]+x;const auto old=cells_[key];auto found=replacement.find(old);if(found==replacement.end()){auto merged=palette_.at(old);merged.update(material);if(material.contains("radar")&&palette_[old].contains("radar")){auto r=palette_[old]["radar"];r.update(material["radar"]);merged["radar"]=r;}merged=normalizeVoxelMaterial(merged);auto match=std::find(out->palette_.begin(),out->palette_.end(),merged);uint8_t id;if(match==out->palette_.end()){if(out->palette_.size()==256)throw std::invalid_argument("spectral palette exhausted (256 entries)");id=uint8_t(out->palette_.size());out->palette_.push_back(std::move(merged));}else id=uint8_t(match-out->palette_.begin());found=replacement.emplace(old,id).first;}out->cells_[key]=found->second;}
+    if(!material.is_object()||material.empty()||material.contains("density_kg_m3")||material.contains("color_rgba"))
+        throw std::invalid_argument("spectral paint requires optical/thermal/radar properties only");
+
+    std::array<int,3> first,last;
+    for(size_t axis=0;axis<3;++axis) {
+        if(low[axis]>=high[axis])throw std::invalid_argument("empty spectral paint region");
+        first[axis]=int(std::clamp(std::ceil((low[axis]-origin_[axis])/cell_-.5),0.,double(dimensions_[axis])));
+        last[axis]=int(std::clamp(std::ceil((high[axis]-origin_[axis])/cell_-.5),0.,double(dimensions_[axis])));
+        if(first[axis]>=last[axis])throw std::invalid_argument("spectral paint misses voxel centres");
+    }
+
+    auto out=std::make_shared<VoxelSensorMaterials>(*this);
+    std::array<int,256> replacement;
+    replacement.fill(-1);
+    const auto remap=[&](uint8_t index){
+        auto merged=palette_.at(index);
+        merged.update(material);
+        if(material.contains("radar")) {
+            auto radar=palette_[index].value("radar",radarFallback);
+            if(!radar.is_null()) {
+                radar.update(material["radar"]);
+                merged["radar"]=std::move(radar);
+            }
+        }
+        merged=normalizeVoxelMaterial(merged);
+        auto match=std::find(out->palette_.begin(),out->palette_.end(),merged);
+        if(match!=out->palette_.end())return int(match-out->palette_.begin());
+        if(out->palette_.size()==replacement.size())throw std::invalid_argument("spectral palette exhausted (256 entries)");
+        out->palette_.push_back(std::move(merged));
+        return int(out->palette_.size()-1);
+    };
+    for(int z=first[2];z<last[2];++z)for(int y=first[1];y<last[1];++y) {
+        const auto row=(size_t(z)*dimensions_[1]+y)*dimensions_[0];
+        for(int x=first[0];x<last[0];++x) {
+            const auto old=cells_[row+x];
+            if(replacement[old]<0)replacement[old]=remap(old);
+            out->cells_[row+x]=uint8_t(replacement[old]);
+        }
+    }
     return out;
 }
 uint8_t VoxelSensorMaterials::index(const vsg::dvec3& p)const{int at[3];for(int a=0;a<3;++a){const double n=std::floor((p[a]-origin_[a])/cell_);if(!std::isfinite(n)||n<0||n>=dimensions_[a])throw std::out_of_range("voxel material lookup outside original chart");at[a]=int(n);if(at[a]<0||at[a]>=dimensions_[a])throw std::out_of_range("voxel material lookup outside original chart");}return cells_[(size_t(at[2])*dimensions_[1]+at[1])*dimensions_[0]+at[0]];}

@@ -1,0 +1,1263 @@
+openapi: 3.1.1
+info:
+  title: VSG Ray Simulation Service
+  version: 1.0.0-draft
+  description: >
+    设计合同。运行、草稿和视口接口按能力逐阶段启用。
+    WebSocket 帧和媒体时序定义见 ../voxel_service_architecture.md。
+    多端 OpenUSD 协作、并发运行和内部多节点调度见 ../voxel_service_multiuser_architecture.md。
+    使用会话 cookie 的修改请求还需携带 X-CSRF-Token。
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+  - sessionCookie: []
+tags:
+  - name: Sessions
+  - name: Projects
+  - name: Authoring
+  - name: Jobs
+  - name: Simulation
+  - name: Views
+  - name: Streams
+paths:
+  /capabilities:
+    get:
+      operationId: getCapabilities
+      tags: [Sessions]
+      summary: 查询接口与当前后端能力
+      responses:
+        '200':
+          description: 能力目录
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Capabilities'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /sessions:
+    post:
+      operationId: openClientSession
+      tags: [Sessions]
+      summary: 为一个前端实例创建会话
+      parameters:
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_kind]
+              properties:
+                client_kind: {type: string, examples: [qt, browser, python]}
+      responses:
+        '201':
+          description: 绑定到认证用户的客户端 ID
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [client_id]
+                properties:
+                  client_id: {$ref: '#/components/schemas/Id'}
+        default: {$ref: '#/components/responses/Error'}
+  /sessions/{client_id}:
+    parameters:
+      - {$ref: '#/components/parameters/ClientPath'}
+    delete:
+      operationId: closeClientSession
+      tags: [Sessions]
+      summary: 关闭该客户端并释放其租约
+      responses:
+        '204': {description: 已关闭或已经关闭}
+        default: {$ref: '#/components/responses/Error'}
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [Projects]
+      summary: 列出已登记且有权访问的场景工程
+      responses:
+        '200':
+          description: 工程目录
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [project_id, name]
+                  properties:
+                    project_id: {$ref: '#/components/schemas/Id'}
+                    name: {type: string}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/revisions:
+    parameters:
+      - {$ref: '#/components/parameters/Project'}
+    get:
+      operationId: listPublishedRevisions
+      tags: [Projects]
+      summary: 列出工程的已发布版本
+      responses:
+        '200':
+          description: 发布版本清单
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PublishedRevision'}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/drafts:
+    parameters:
+      - {$ref: '#/components/parameters/Project'}
+    get:
+      operationId: listProjectDrafts
+      tags: [Authoring]
+      summary: 列出当前用户可打开的项目草稿
+      parameters:
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: 草稿摘要和续页游标
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [drafts]
+                properties:
+                  drafts:
+                    type: array
+                    items: {$ref: '#/components/schemas/DraftSummary'}
+                  next_cursor: {$ref: '#/components/schemas/Id'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createDraft
+      tags: [Authoring]
+      summary: 从已发布版本准备可写草稿
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [published_revision_id]
+              properties:
+                published_revision_id: {$ref: '#/components/schemas/Id'}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/asset-imports:
+    parameters:
+      - {$ref: '#/components/parameters/Project'}
+    post:
+      operationId: prepareAsset
+      tags: [Projects]
+      summary: 从已登记的源资产准备模型或地形
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_asset_id, kind]
+              properties:
+                source_asset_id: {$ref: '#/components/schemas/Id'}
+                kind: {type: string, enum: [target_model, terrain]}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /drafts/{draft_id}:
+    parameters:
+      - {$ref: '#/components/parameters/Draft'}
+    get:
+      operationId: getDraft
+      tags: [Authoring]
+      summary: 查询草稿、体素对象与当前修订
+      responses:
+        '200':
+          description: 草稿快照
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Draft'}
+        default: {$ref: '#/components/responses/Error'}
+  /drafts/{draft_id}/edit-plans:
+    parameters:
+      - {$ref: '#/components/parameters/Draft'}
+    post:
+      operationId: prepareEditPlan
+      tags: [Authoring]
+      summary: 生成或预检方案并绑定草稿版本
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_draft_revision]
+              properties:
+                expected_draft_revision: {$ref: '#/components/schemas/Counter'}
+                instruction: {type: string, minLength: 1}
+                plan: {$ref: '#/components/schemas/DeploymentPlan'}
+                selected_object_id: {$ref: '#/components/schemas/Id'}
+                selected_pick_id: {$ref: '#/components/schemas/Id'}
+              oneOf:
+                - required: [instruction]
+                - required: [plan]
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+  /drafts/{draft_id}/layers:
+    parameters:
+      - {$ref: '#/components/parameters/Draft'}
+    get:
+      operationId: listDraftLayers
+      tags: [Authoring]
+      summary: 查询共享草稿的 OpenUSD 图层和可编辑目标
+      responses:
+        '200':
+          description: 某一已提交草稿修订的图层清单
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DraftLayers'}
+        default: {$ref: '#/components/responses/Error'}
+  /drafts/{draft_id}/transactions:
+    parameters:
+      - {$ref: '#/components/parameters/Draft'}
+    post:
+      operationId: commitDraftTransaction
+      tags: [Authoring]
+      summary: 原子应用、撤销或添加已准备的资产
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_draft_revision]
+              properties:
+                expected_draft_revision: {$ref: '#/components/schemas/Counter'}
+                edit_layer_id: {$ref: '#/components/schemas/Id'}
+                expected_layer_revision:
+                  $ref: '#/components/schemas/Counter'
+                  description: 客户端所读基础草稿中对应图层修订
+                conflict_policy:
+                  type: string
+                  enum: [strict, rebase_if_disjoint]
+                  default: strict
+                  description: 非冲突重放需要服务能力，后台必须在当前草稿上重新预检。
+                edit_lock_id:
+                  $ref: '#/components/schemas/Id'
+                  description: 启用编辑锁后可用于需独占的拓扑等操作
+                plan_id: {$ref: '#/components/schemas/Id'}
+                undo_transaction_id: {$ref: '#/components/schemas/Id'}
+                add_prepared_asset:
+                  type: object
+                  required: [prepared_asset_id, object_id]
+                  properties:
+                    prepared_asset_id: {$ref: '#/components/schemas/Id'}
+                    object_id: {$ref: '#/components/schemas/Id'}
+                    position_local_m: {$ref: '#/components/schemas/Vec3'}
+              dependentRequired:
+                edit_layer_id: [expected_layer_revision]
+                expected_layer_revision: [edit_layer_id]
+              oneOf:
+                - required: [plan_id]
+                - required: [undo_transaction_id]
+                - required: [add_prepared_asset]
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+  /drafts/{draft_id}/publish:
+    parameters:
+      - {$ref: '#/components/parameters/Draft'}
+    post:
+      operationId: publishDraft
+      tags: [Authoring]
+      summary: 发布不可变的正式场景版本
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_draft_revision]
+              properties:
+                expected_draft_revision: {$ref: '#/components/schemas/Counter'}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /jobs/{job_id}:
+    parameters:
+      - {$ref: '#/components/parameters/Job'}
+    get:
+      operationId: getJob
+      tags: [Jobs]
+      summary: 查询作业阶段、回执或最终状态
+      responses:
+        '200':
+          description: 当前作业状态
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: cancelJob
+      tags: [Jobs]
+      summary: 请求取消可取消且尚未提交的作业
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runs:
+    get:
+      operationId: listRuns
+      tags: [Simulation]
+      summary: 列出当前用户有权访问的独立运行会话
+      parameters:
+        - name: project_id
+          in: query
+          schema: {$ref: '#/components/schemas/Id'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: 独立运行会话和续页游标
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items: {$ref: '#/components/schemas/Run'}
+                  next_cursor: {$ref: '#/components/schemas/Id'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: startRun
+      tags: [Simulation]
+      summary: 加载一个已发布版本并初始化暂停态
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id, published_revision_id]
+              properties:
+                project_id: {$ref: '#/components/schemas/Id'}
+                published_revision_id: {$ref: '#/components/schemas/Id'}
+                checkpoint_id: {$ref: '#/components/schemas/Id'}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+    get:
+      operationId: getRun
+      tags: [Simulation]
+      summary: 查询运行阶段与最近确认的状态
+      responses:
+        '200':
+          description: 权威运行状态
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: closeRun
+      tags: [Simulation]
+      summary: 关闭已停止或故障的运行会话并释放活动槽位
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+      responses:
+        '204': {description: 已关闭或已经关闭。已提交的检查点保留。}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}/commands:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+    post:
+      operationId: sendRunCommand
+      tags: [Simulation]
+      summary: 排队执行固定步边界命令
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_generation_id, command]
+              properties:
+                expected_generation_id: {$ref: '#/components/schemas/Id'}
+                command: {type: string, enum: [play, pause, step, stop, checkpoint, recover]}
+                expected_tick: {$ref: '#/components/schemas/Counter'}
+                control_lease_id:
+                  $ref: '#/components/schemas/Id'
+                  description: 开启共享主控时，播放、暂停、单步和停止要求有效的 run_control 租约。
+              allOf:
+                - if:
+                    properties:
+                      command: {const: step}
+                  then:
+                    required: [expected_tick]
+            example: {expected_generation_id: gen-02, command: step, expected_tick: '1200'}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}/equipment:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+    get:
+      operationId: listEquipment
+      tags: [Simulation]
+      summary: 查询运行会话内的在线装备及产品能力
+      parameters:
+        - name: platform_id
+          in: query
+          description: 可选。只列出挂载到指定平台的装备。
+          schema: {$ref: '#/components/schemas/InstanceId'}
+      responses:
+        '200':
+          description: 装备目录版本和描述
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run_id, generation_id, equipment]
+                properties:
+                  run_id: {$ref: '#/components/schemas/Id'}
+                  generation_id: {$ref: '#/components/schemas/Id'}
+                  equipment:
+                    type: array
+                    items: {$ref: '#/components/schemas/Equipment'}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}/platforms:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+    get:
+      operationId: listPlatforms
+      tags: [Simulation]
+      summary: 查询同一权威时刻的平台状态和可用控制
+      responses:
+        '200':
+          description: 带时间戳与坐标锚点的平台状态
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clock, geo_anchor, platforms]
+                properties:
+                  clock: {$ref: '#/components/schemas/RunStamp'}
+                  geo_anchor: {$ref: '#/components/schemas/GeoAnchor'}
+                  platforms:
+                    type: array
+                    items: {$ref: '#/components/schemas/Platform'}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}/platforms/{platform_id}/commands:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/Client'}
+      - {$ref: '#/components/parameters/Idempotency'}
+    post:
+      operationId: sendPlatformCommand
+      tags: [Simulation]
+      summary: 执行已授权且当前型号支持的平台操作
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InstanceCommand'}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}/platforms/{platform_id}:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+      - {$ref: '#/components/parameters/Platform'}
+    get:
+      operationId: getPlatform
+      tags: [Simulation]
+      summary: 查询一个平台的操控能力、操控占用和状态快照
+      responses:
+        '200':
+          description: 带权威时间和坐标锚点的单平台状态
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clock, geo_anchor, platform]
+                properties:
+                  clock: {$ref: '#/components/schemas/RunStamp'}
+                  geo_anchor: {$ref: '#/components/schemas/GeoAnchor'}
+                  platform: {$ref: '#/components/schemas/Platform'}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}/equipment/{equipment_id}/commands:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+      - {$ref: '#/components/parameters/Equipment'}
+      - {$ref: '#/components/parameters/Client'}
+      - {$ref: '#/components/parameters/Idempotency'}
+    post:
+      operationId: sendEquipmentCommand
+      tags: [Simulation]
+      summary: 执行已授权且当前设备支持的设备控制
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InstanceCommand'}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}/diagnostics:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+    get:
+      operationId: getRunDiagnostics
+      tags: [Simulation]
+      summary: 查询后台工作单元和任务的负载及健康
+      responses:
+        '200':
+          description: 供有权限的运维或仿真主控读取的监控状态
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run_id, generation_id, workers]
+                properties:
+                  run_id: {$ref: '#/components/schemas/Id'}
+                  generation_id: {$ref: '#/components/schemas/Id'}
+                  workers:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, state]
+                      properties:
+                        kind: {type: string, enum: [world, measurement, render]}
+                        state: {type: string}
+                        gpu_slot: {type: string}
+                        queue_depth: {type: integer, minimum: 0}
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      required: [task_id, kind, state]
+                      properties:
+                        task_id: {$ref: '#/components/schemas/Id'}
+                        kind: {type: string}
+                        state: {type: string}
+                  timing: {type: object, description: 各阶段采样数量和毫秒分位数}
+        default: {$ref: '#/components/responses/Error'}
+  /runs/{run_id}/leases:
+    parameters:
+      - {$ref: '#/components/parameters/Run'}
+    post:
+      operationId: acquireRunLease
+      tags: [Simulation]
+      summary: 为当前客户端申请任务、装订或数据租约
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AcquireLease'}
+      responses:
+        '201': {$ref: '#/components/responses/Lease'}
+        default: {$ref: '#/components/responses/Error'}
+  /leases/{lease_id}/renew:
+    parameters:
+      - {$ref: '#/components/parameters/Lease'}
+    post:
+      operationId: renewLease
+      tags: [Simulation]
+      summary: 按服务端时钟续期当前客户端的租约
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+      responses:
+        '200': {$ref: '#/components/responses/Lease'}
+        default: {$ref: '#/components/responses/Error'}
+  /leases/{lease_id}:
+    parameters:
+      - {$ref: '#/components/parameters/Lease'}
+    delete:
+      operationId: releaseLease
+      tags: [Simulation]
+      summary: 释放当前客户端的租约
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+      responses:
+        '204': {description: 已释放或已经释放}
+        default: {$ref: '#/components/responses/Error'}
+
+  /views:
+    post:
+      operationId: createView
+      tags: [Views]
+      summary: 创建引用草稿或运行会话的独立视口
+      parameters:
+        - {$ref: '#/components/parameters/Client'}
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source: {$ref: '#/components/schemas/ViewSource'}
+                camera: {$ref: '#/components/schemas/Camera'}
+                width_px: {type: integer, minimum: 1}
+                height_px: {type: integer, minimum: 1}
+      responses:
+        '201':
+          description: 视口描述和资源租约
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/View'}
+        default: {$ref: '#/components/responses/Error'}
+  /views/{view_id}:
+    parameters:
+      - {$ref: '#/components/parameters/View'}
+      - {$ref: '#/components/parameters/Client'}
+    get:
+      operationId: getView
+      tags: [Views]
+      summary: 查询当前视口的相机、尺寸和版本
+      responses:
+        '200':
+          description: 当前视口描述
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/View'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: closeView
+      tags: [Views]
+      summary: 释放当前客户端的视口
+      responses:
+        '204': {description: 已关闭或已经关闭}
+        default: {$ref: '#/components/responses/Error'}
+  /views/{view_id}/camera:
+    parameters:
+      - {$ref: '#/components/parameters/View'}
+      - {$ref: '#/components/parameters/Client'}
+    put:
+      operationId: setViewCamera
+      tags: [Views]
+      summary: 设置独立视口相机并返回已确认的相机版本
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_view_generation, expected_camera_revision, camera]
+              properties:
+                expected_view_generation: {$ref: '#/components/schemas/Id'}
+                expected_camera_revision: {$ref: '#/components/schemas/Counter'}
+                camera: {$ref: '#/components/schemas/Camera'}
+      responses:
+        '200':
+          description: 相机已更新
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/View'}
+        default: {$ref: '#/components/responses/Error'}
+  /views/{view_id}/frames:
+    parameters:
+      - {$ref: '#/components/parameters/View'}
+      - {$ref: '#/components/parameters/Client'}
+    post:
+      operationId: captureViewFrame
+      tags: [Views]
+      summary: 按指定相机版本抓取可拾取的冻结帧
+      parameters:
+        - {$ref: '#/components/parameters/Idempotency'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_view_generation, camera_revision]
+              properties:
+                expected_view_generation: {$ref: '#/components/schemas/Id'}
+                camera_revision: {$ref: '#/components/schemas/Counter'}
+      responses:
+        '202': {$ref: '#/components/responses/Accepted'}
+        default: {$ref: '#/components/responses/Error'}
+  /views/{view_id}/picks:
+    parameters:
+      - {$ref: '#/components/parameters/View'}
+      - {$ref: '#/components/parameters/Client'}
+    post:
+      operationId: pickViewFrame
+      tags: [Views]
+      summary: 使用实际显示帧的相机和快照求交
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [frame_id, u, v]
+              properties:
+                frame_id: {$ref: '#/components/schemas/Id'}
+                u: {type: number, minimum: 0, maximum: 1}
+                v: {type: number, minimum: 0, maximum: 1}
+                mask: {type: string, enum: [any, terrain, object], default: any}
+            example: {frame_id: frame-47, u: 0.35, v: 0.72, mask: terrain}
+      responses:
+        '200':
+          description: 拾取结果与其来源
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Pick'}
+        default: {$ref: '#/components/responses/Error'}
+  /frames/{frame_id}:
+    parameters:
+      - {$ref: '#/components/parameters/Frame'}
+    get:
+      operationId: getFrameMetadata
+      tags: [Views]
+      summary: 查询冻结帧的相机及场景来源
+      responses:
+        '200':
+          description: 帧元数据
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Frame'}
+        default: {$ref: '#/components/responses/Error'}
+  /frames/{frame_id}/image:
+    parameters:
+      - {$ref: '#/components/parameters/Frame'}
+    get:
+      operationId: getFrameImage
+      tags: [Views]
+      summary: 下载冻结帧原尺寸 PNG
+      responses:
+        '200':
+          description: PNG 像素流
+          content:
+            image/png: {}
+        default: {$ref: '#/components/responses/Error'}
+
+  /events:
+    get:
+      operationId: openEventStream
+      tags: [Streams]
+      summary: 建立状态 WebSocket
+      description: 升级后绑定 client_id 并订阅运行、草稿、视口、作业或特定平台状态。消息定义见架构文档。
+      responses:
+        '101': {description: 已切换为 WebSocket}
+        default: {$ref: '#/components/responses/Error'}
+  /products:
+    get:
+      operationId: openProductStream
+      tags: [Streams]
+      summary: 建立独立的装备产品 WebSocket
+      description: 升级后绑定 client_id 并提交有效数据租约 ID。二进制结构见架构文档。
+      responses:
+        '101': {description: 已切换为 WebSocket}
+        default: {$ref: '#/components/responses/Error'}
+
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: vsim_session}
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema: {$ref: '#/components/schemas/Id'}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+    Idempotency:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    Client:
+      name: X-Client-Id
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    ClientPath:
+      name: client_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    Project:
+      name: project_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    Draft:
+      name: draft_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    Job:
+      name: job_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    Run:
+      name: run_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    Platform:
+      name: platform_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/InstanceId'}
+    Equipment:
+      name: equipment_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/InstanceId'}
+    Lease:
+      name: lease_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    View:
+      name: view_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    Frame:
+      name: frame_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+  responses:
+    Accepted:
+      description: 已受理。查询作业以确认最终结果。
+      headers:
+        Location:
+          description: 作业状态地址
+          schema: {type: string, format: uri-reference}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Job'}
+    Lease:
+      description: 已生效的租约
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Lease'}
+    Error:
+      description: 请求错误与可读诊断
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+  schemas:
+    Id: {type: string, minLength: 1, maxLength: 128}
+    InstanceId: {type: integer, minimum: 1, maximum: 4294967295}
+    Counter: {type: string, pattern: '^(0|[1-9][0-9]*)$'}
+    Vec3:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items: {type: number}
+    Wgs84Position:
+      type: object
+      required: [latitude_deg, longitude_deg, ellipsoid_height_m]
+      properties:
+        latitude_deg: {type: number, minimum: -90, maximum: 90}
+        longitude_deg: {type: number, minimum: -180, maximum: 180}
+        ellipsoid_height_m: {type: number}
+    GeoAnchor:
+      allOf:
+        - $ref: '#/components/schemas/Wgs84Position'
+        - type: object
+          required: [heading_deg, local_frame]
+          properties:
+            heading_deg: {type: number}
+            local_frame: {const: east-up-south-metres}
+    Capabilities:
+      type: object
+      required: [api_version, features, models, limits]
+      properties:
+        api_version: {type: string}
+        features:
+          type: object
+          additionalProperties: {type: boolean}
+          example:
+            run_control: true
+            draft_edit: false
+            frozen_view: false
+            webrtc: false
+            shared_drafts: false
+            disjoint_rebase: false
+            multi_run: false
+            shared_run_control: false
+            distributed_workers: false
+            platform_telemetry: false
+            continuous_platform_input: false
+        models:
+          type: array
+          items:
+            type: object
+            required: [model_id, kind, capabilities]
+            properties:
+              model_id: {$ref: '#/components/schemas/Id'}
+              kind: {type: string, enum: [platform, equipment]}
+              capabilities:
+                type: array
+                items: {type: string}
+              state_schema_id: {$ref: '#/components/schemas/Id'}
+              state_schema: {type: object, description: 状态字段的 JSON Schema 和语义单位}
+            dependentRequired:
+              state_schema_id: [state_schema]
+              state_schema: [state_schema_id]
+        limits:
+          type: object
+          properties:
+            max_active_runs: {type: integer, minimum: 1}
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        request_id: {$ref: '#/components/schemas/Id'}
+        current_version: {type: object}
+    PublishedRevision:
+      type: object
+      required: [project_id, published_revision_id, terrain_dataset_id]
+      properties:
+        project_id: {$ref: '#/components/schemas/Id'}
+        published_revision_id: {$ref: '#/components/schemas/Id'}
+        terrain_dataset_id: {$ref: '#/components/schemas/Id'}
+        manifest_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        source_draft_revision: {$ref: '#/components/schemas/Counter'}
+        usd_manifest_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+    DraftSummary:
+      type: object
+      required: [draft_id, project_id, published_revision_id, draft_revision]
+      properties:
+        draft_id: {$ref: '#/components/schemas/Id'}
+        project_id: {$ref: '#/components/schemas/Id'}
+        published_revision_id: {$ref: '#/components/schemas/Id'}
+        draft_revision: {$ref: '#/components/schemas/Counter'}
+    DraftLayers:
+      type: object
+      required: [draft_id, draft_revision, layers]
+      properties:
+        draft_id: {$ref: '#/components/schemas/Id'}
+        draft_revision: {$ref: '#/components/schemas/Counter'}
+        layers:
+          type: array
+          description: 服务端组合顺序。前项强于后项。权限由当前会话决定。
+          items:
+            type: object
+            required: [layer_id, layer_revision, kind, editable]
+            properties:
+              layer_id: {$ref: '#/components/schemas/Id'}
+              layer_revision: {$ref: '#/components/schemas/Counter'}
+              kind: {type: string, enum: [root, assets, layout, equipment, materials, environment, terrain_edits]}
+              editable: {type: boolean}
+    Draft:
+      type: object
+      required: [draft_id, project_id, published_revision_id, draft_revision, geo_anchor, objects]
+      properties:
+        draft_id: {$ref: '#/components/schemas/Id'}
+        project_id: {$ref: '#/components/schemas/Id'}
+        published_revision_id: {$ref: '#/components/schemas/Id'}
+        draft_revision: {$ref: '#/components/schemas/Counter'}
+        geo_anchor: {$ref: '#/components/schemas/GeoAnchor'}
+        objects:
+          type: array
+          items:
+            type: object
+            required: [object_id, role]
+            properties:
+              object_id: {$ref: '#/components/schemas/Id'}
+              parent_object_id: {$ref: '#/components/schemas/Id'}
+              role: {type: string}
+    DeploymentPlan:
+      type: object
+      required: [format, actions]
+      additionalProperties: false
+      properties:
+        format: {const: scene-deployment-v1}
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: object
+            required: [op]
+            properties:
+              op: {type: string, enum: [add_target, place, route, attach_sensor, material, weather]}
+      description: 具体参数、单位与范围按 scene-deployment-v1 现有校验器判定。
+    Job:
+      type: object
+      required: [job_id, kind, state]
+      properties:
+        job_id: {$ref: '#/components/schemas/Id'}
+        kind:
+          type: string
+          enum: [create_draft, prepare_asset, prepare_plan, edit, publish, start_run, run_command, instance_command, capture_frame]
+        state: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
+        stage: {type: string}
+        progress: {type: number, minimum: 0, maximum: 1}
+        result: {$ref: '#/components/schemas/JobResult'}
+        error: {$ref: '#/components/schemas/Error'}
+      allOf:
+        - if:
+            properties:
+              state: {const: succeeded}
+          then:
+            required: [result]
+        - if:
+            properties:
+              state: {const: failed}
+          then:
+            required: [error]
+    JobResult:
+      type: object
+      properties:
+        draft: {$ref: '#/components/schemas/Draft'}
+        prepared_asset_id: {$ref: '#/components/schemas/Id'}
+        plan_id: {$ref: '#/components/schemas/Id'}
+        plan: {$ref: '#/components/schemas/DeploymentPlan'}
+        draft_revision: {$ref: '#/components/schemas/Counter'}
+        transaction_id: {$ref: '#/components/schemas/Id'}
+        published_revision: {$ref: '#/components/schemas/PublishedRevision'}
+        run: {$ref: '#/components/schemas/Run'}
+        applied_at: {$ref: '#/components/schemas/RunStamp'}
+        control_revision: {$ref: '#/components/schemas/Counter'}
+        checkpoint_id: {$ref: '#/components/schemas/Id'}
+        frame_id: {$ref: '#/components/schemas/Id'}
+      description: >
+        create_draft 返回 draft。prepare_asset 返回 prepared_asset_id。
+        prepare_plan 返回 plan_id、plan 和 draft_revision。edit 返回 transaction_id 和 draft_revision。
+        publish 返回 published_revision。start_run 返回 run。run_command 返回 applied_at，若写入检查点附 checkpoint_id。
+        instance_command 返回 applied_at。capture_frame 返回 frame_id。
+    Run:
+      type: object
+      required: [run_id, generation_id, project_id, published_revision_id, state, play_requested]
+      properties:
+        run_id: {$ref: '#/components/schemas/Id'}
+        generation_id: {$ref: '#/components/schemas/Id'}
+        project_id: {$ref: '#/components/schemas/Id'}
+        published_revision_id: {$ref: '#/components/schemas/Id'}
+        state: {type: string, enum: [loading, paused, waiting_for_leases, running, stopped, fault, recovering]}
+        play_requested: {type: boolean}
+        fixed_step_s: {type: number, exclusiveMinimum: 0}
+        clock: {$ref: '#/components/schemas/RunStamp'}
+        geo_anchor: {$ref: '#/components/schemas/GeoAnchor'}
+        last_checkpoint_id: {$ref: '#/components/schemas/Id'}
+    RunStamp:
+      type: object
+      required: [run_id, generation_id, tick, state_revision, content_revision, sim_time_ns]
+      properties:
+        run_id: {$ref: '#/components/schemas/Id'}
+        generation_id: {$ref: '#/components/schemas/Id'}
+        tick: {$ref: '#/components/schemas/Counter'}
+        state_revision: {$ref: '#/components/schemas/Counter'}
+        content_revision: {$ref: '#/components/schemas/Counter'}
+        sim_time_ns: {$ref: '#/components/schemas/Counter'}
+        utc_time: {type: string, format: date-time}
+    CommandDescriptor:
+      type: object
+      required: [command_id, effect_domain, arguments_schema]
+      properties:
+        command_id: {$ref: '#/components/schemas/Id'}
+        effect_domain: {type: string, enum: [presentation, simulation]}
+        arguments_schema: {type: object, description: 该指令参数的 JSON Schema}
+    InstanceCommand:
+      type: object
+      required: [expected_generation_id, control_lease_id, command_id, arguments]
+      properties:
+        expected_generation_id: {$ref: '#/components/schemas/Id'}
+        control_lease_id: {$ref: '#/components/schemas/Id'}
+        command_id: {$ref: '#/components/schemas/Id'}
+        arguments: {type: object}
+    Platform:
+      type: object
+      required: [platform_id, model_id, position_local_m, rotation_xyzw, commands]
+      properties:
+        platform_id: {$ref: '#/components/schemas/InstanceId'}
+        model_id: {$ref: '#/components/schemas/Id'}
+        object_id: {$ref: '#/components/schemas/Id'}
+        console_kind: {type: string, description: 该型号建议的显控面板类型}
+        state_schema_id: {$ref: '#/components/schemas/Id'}
+        control_state: {type: string, enum: [unavailable, available, occupied]}
+        control_revision: {$ref: '#/components/schemas/Counter'}
+        continuous_input_schema: {type: object, description: 支持连续操纵时声明输入的类型、单位和限制}
+        position_local_m: {$ref: '#/components/schemas/Vec3'}
+        rotation_xyzw:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: {type: number}
+          description: 从对象局部轴旋转到场景局部轴的单位四元数
+        velocity_local_mps: {$ref: '#/components/schemas/Vec3'}
+        model_state: {type: object, description: 按型号声明的状态字段}
+        commands:
+          type: array
+          items: {$ref: '#/components/schemas/CommandDescriptor'}
+    Equipment:
+      type: object
+      required: [equipment_id, model_id, name, powered, products, commands]
+      properties:
+        equipment_id: {$ref: '#/components/schemas/InstanceId'}
+        platform_id: {$ref: '#/components/schemas/InstanceId'}
+        model_id: {$ref: '#/components/schemas/Id'}
+        name: {type: string}
+        powered: {type: boolean}
+        products:
+          type: array
+          items: {type: string}
+        commands:
+          type: array
+          items: {$ref: '#/components/schemas/CommandDescriptor'}
+    AcquireLease:
+      type: object
+      required: [expected_generation_id, kind]
+      properties:
+        expected_generation_id: {$ref: '#/components/schemas/Id'}
+        kind: {type: string, enum: [world, equipment_link, equipment_data, platform_control, equipment_control, run_control]}
+        equipment_id: {$ref: '#/components/schemas/InstanceId'}
+        platform_id: {$ref: '#/components/schemas/InstanceId'}
+      oneOf:
+        - properties:
+            kind: {enum: [world, run_control]}
+            equipment_id: false
+            platform_id: false
+        - properties:
+            kind: {enum: [equipment_link, equipment_data, equipment_control]}
+            platform_id: false
+          required: [equipment_id]
+        - properties:
+            kind: {const: platform_control}
+            equipment_id: false
+          required: [platform_id]
+    Lease:
+      type: object
+      required: [lease_id, client_id, kind, expires_in_ms]
+      properties:
+        lease_id: {$ref: '#/components/schemas/Id'}
+        client_id: {$ref: '#/components/schemas/Id'}
+        kind: {type: string, enum: [world, equipment_link, equipment_data, platform_control, equipment_control, run_control, view]}
+        expires_in_ms: {type: integer, minimum: 1}
+        run_id: {$ref: '#/components/schemas/Id'}
+        generation_id: {$ref: '#/components/schemas/Id'}
+        equipment_id: {$ref: '#/components/schemas/InstanceId'}
+        platform_id: {$ref: '#/components/schemas/InstanceId'}
+        view_id: {$ref: '#/components/schemas/Id'}
+    Camera:
+      type: object
+      required: [eye_ecef_m, target_ecef_m, up_ecef, vertical_fov_deg]
+      properties:
+        eye_ecef_m: {$ref: '#/components/schemas/Vec3'}
+        target_ecef_m: {$ref: '#/components/schemas/Vec3'}
+        up_ecef: {$ref: '#/components/schemas/Vec3'}
+        vertical_fov_deg: {type: number, exclusiveMinimum: 0, exclusiveMaximum: 180}
+    ViewSource:
+      oneOf:
+        - type: object
+          required: [draft_id]
+          additionalProperties: false
+          properties:
+            draft_id: {$ref: '#/components/schemas/Id'}
+        - type: object
+          required: [run_id, expected_generation_id]
+          additionalProperties: false
+          properties:
+            run_id: {$ref: '#/components/schemas/Id'}
+            expected_generation_id: {$ref: '#/components/schemas/Id'}
+    View:
+      type: object
+      required: [view_id, view_generation, camera_revision, camera, source, width_px, height_px, lease]
+      properties:
+        view_id: {$ref: '#/components/schemas/Id'}
+        view_generation: {$ref: '#/components/schemas/Id'}
+        camera_revision: {$ref: '#/components/schemas/Counter'}
+        camera: {$ref: '#/components/schemas/Camera'}
+        source: {$ref: '#/components/schemas/ViewSource'}
+        width_px: {type: integer, minimum: 1}
+        height_px: {type: integer, minimum: 1}
+        lease: {$ref: '#/components/schemas/Lease'}
+    FrameSource:
+      oneOf:
+        - type: object
+          required: [draft_id, draft_revision]
+          additionalProperties: false
+          properties:
+            draft_id: {$ref: '#/components/schemas/Id'}
+            draft_revision: {$ref: '#/components/schemas/Counter'}
+        - $ref: '#/components/schemas/RunStamp'
+    Frame:
+      type: object
+      required: [frame_id, view_id, view_generation, camera_revision, camera, source, geo_anchor, terrain_dataset_id, width_px, height_px]
+      properties:
+        frame_id: {$ref: '#/components/schemas/Id'}
+        view_id: {$ref: '#/components/schemas/Id'}
+        view_generation: {$ref: '#/components/schemas/Id'}
+        camera_revision: {$ref: '#/components/schemas/Counter'}
+        camera: {$ref: '#/components/schemas/Camera'}
+        source: {$ref: '#/components/schemas/FrameSource'}
+        geo_anchor: {$ref: '#/components/schemas/GeoAnchor'}
+        terrain_dataset_id: {$ref: '#/components/schemas/Id'}
+        width_px: {type: integer, minimum: 1}
+        height_px: {type: integer, minimum: 1}
+    Pick:
+      type: object
+      required: [frame_id, source, hit_kind]
+      properties:
+        frame_id: {$ref: '#/components/schemas/Id'}
+        source: {$ref: '#/components/schemas/FrameSource'}
+        hit_kind: {type: string, enum: [none, object, voxel_terrain, background_terrain]}
+        pick_id: {$ref: '#/components/schemas/Id'}
+        object_id: {$ref: '#/components/schemas/Id'}
+        position_local_m: {$ref: '#/components/schemas/Vec3'}
+        wgs84: {$ref: '#/components/schemas/Wgs84Position'}
+      allOf:
+        - if:
+            properties:
+              hit_kind: {const: object}
+          then:
+            required: [object_id]
+        - if:
+            properties:
+              hit_kind: {enum: [object, voxel_terrain, background_terrain]}
+          then:
+            required: [pick_id, wgs84]
